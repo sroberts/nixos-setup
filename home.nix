@@ -49,6 +49,7 @@
     btop
     fastfetch
     jq
+    fd
     qq-cli          # JFryy/qq — JSON/YAML explorer
     pipx            # for q-text-as-data, jsongrep (installed via activation below)
 
@@ -118,9 +119,8 @@
 
   programs.git = {
     enable = true;
-    # set these:
-    # userName = "Scott";
-    # userEmail = "you@example.com";
+    userName = "Scott J Roberts";
+    userEmail = "scott.roberts@gmail.com";
   };
 
   programs.home-manager.enable = true;

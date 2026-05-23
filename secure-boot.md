@@ -71,28 +71,51 @@ anything is unsigned, stop and fix it before touching BIOS.
 ## Step 5 — Enroll keys
 
 ```bash
-sudo sbctl enroll-keys --microsoft
+sudo sbctl enroll-keys --microsoft --firmware-builtin
 ```
 
-`--microsoft` keeps Microsoft's keys alongside yours. **Keep this flag** — on
-Framework hardware it ensures firmware/EC updates via `fwupd` and option ROMs
-still validate. Without it you risk locking out legitimate firmware.
+Two flags, both load-bearing on Framework:
 
-If your firmware requires "Setup Mode" first, reboot into BIOS, clear/erase the
-existing Secure Boot keys to enter Setup Mode, save, boot back in, then re-run the
-enroll command.
+- `--microsoft` enrolls Microsoft's OEM certificates alongside yours, so
+  Option ROMs signed by Microsoft (which some hardware presents during boot)
+  still validate.
+- `--firmware-builtin` keeps the keys that came pre-provisioned with the
+  Framework firmware. This is what allows `fwupd` BIOS/EC updates to keep
+  validating after Secure Boot is on. Upstream lanzaboote docs call this out
+  specifically for Framework.
+
+Without **both**, you risk locking out legitimate firmware updates.
+
+### Entering Setup Mode (Framework-specific)
+
+The firmware must be in Setup Mode for `enroll-keys` to install new keys. On
+Framework, do **NOT** use "Erase all Secure Boot Settings" — the firmware is
+bugged and that path doesn't reliably enter Setup Mode (see the [Framework
+forum thread](https://community.frame.work/t/cant-enable-secure-boot-setup-mode/57683/5)).
+Instead, in the BIOS:
+
+1. Select **Administer Secure Boot**.
+2. For each of **PK Options**, **KEK Options**, and **DB Options**:
+   - Select **Delete \***.
+   - For each entry inside, press Enter and confirm **Delete this signature**.
+3. Press F10 to save and exit, reboot back into NixOS, then re-run the
+   `sbctl enroll-keys` command above.
 
 ## Step 6 — Enable Secure Boot in BIOS
 
-Reboot into BIOS (F2), enable Secure Boot, save and exit.
+Reboot into BIOS (F2) → **Administer Secure Boot** → enable **Enforce Secure
+Boot**, save and exit (F10).
 
 ## Step 7 — Confirm
 
 ```bash
-sudo sbctl status
+sudo sbctl status      # lanzaboote-aware view (Measured UKI flag)
+bootctl status         # canonical upstream check
 ```
 
-Expect `Secure Boot: enabled (user)` and `Measured UKI: yes`.
+Expect `Secure Boot: enabled (user)` from `bootctl status`, and from `sbctl
+status` confirm `Installed:	✓ sbctl is installed`, `Setup Mode:	✗ Disabled`,
+and `Secure Boot:	✓ Enabled`.
 
 ---
 

@@ -76,11 +76,15 @@ cat ~/.ssh/id_ed25519.pub   # paste into GitHub -> Settings -> SSH keys
 
 ## Step 4 — Clone + install (from the live ISO)
 
+The minimal ISO does **not** ship `git` — pull it into an ephemeral shell with
+`nix-shell -p git`. (The graphical ISO has it pre-installed, so you can skip
+the wrapper there.)
+
 ```bash
 # Clone into a temp location (token in URL, Option A shown)
 GH_USER=scott
-git clone https://$GH_USER:<TOKEN>@github.com/$GH_USER/nixos-config.git /tmp/cfg
-# (Option B: git clone git@github.com:scott/nixos-config.git /tmp/cfg)
+nix-shell -p git --run "git clone https://$GH_USER:<TOKEN>@github.com/$GH_USER/nixos-config.git /tmp/cfg"
+# (Option B: nix-shell -p git --run "git clone git@github.com:scott/nixos-config.git /tmp/cfg")
 
 # Place the flake next to the hardware file generated in Step 2
 rm /mnt/etc/nixos/configuration.nix          # drop the auto-generated stub
