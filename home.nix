@@ -1,0 +1,215 @@
+# User-level configuration: packages, shell, dotfiles, DMS.
+{ inputs, pkgs, ... }:
+
+{
+  home.username = "scott";
+  home.homeDirectory = "/home/scott";
+  home.stateVersion = "26.05";
+
+  ############################################################
+  # DankMaterialShell + niri integration
+  ############################################################
+  imports = [
+    inputs.dms.homeModules.dank-material-shell
+    inputs.dms.homeModules.niri
+  ];
+
+  programs.dank-material-shell = {
+    enable = true;
+    enableSystemMonitoring = true;
+    niri = {
+      enableKeybinds = true; # DMS preset binds (launcher, lock, power menu)
+      enableSpawn = true;    # auto-start DMS with niri
+    };
+  };
+
+  # niri input — natural scrolling, tap-to-click, disable-while-typing.
+  # Schema is validated at build time by niri-flake.
+  programs.niri.settings = {
+    input.touchpad = {
+      tap = true;
+      natural-scroll = true;
+      dwt = true;
+    };
+  };
+
+  ############################################################
+  # CLI / TUI tools
+  ############################################################
+  home.packages = with pkgs; [
+    # From the bootstrap script
+    neovim
+    typst
+    yara-x          # binary is `yr`
+    gum
+    crush           # charmbracelet/crush
+    glow
+    lazygit
+    lazydocker
+    btop
+    fastfetch
+    jq
+    qq-cli          # JFryy/qq — JSON/YAML explorer
+    pipx            # for q-text-as-data, jsongrep (installed via activation below)
+
+    # Wayland / niri ergonomics
+    wl-clipboard
+    brightnessctl
+    playerctl
+    alacritty
+    foot
+    fuzzel
+    matugen
+    cava
+    xwayland-satellite
+
+    # AI CLIs — Option B (hourly-updated flake). For Option A, delete the next
+    # line and add `claude-code` to this list instead.
+    inputs.claude-code-nix.packages.${pkgs.system}.claude-code
+    gemini-cli
+  ];
+
+  ############################################################
+  # Shell + integrations (replaces the script's ~/.zshrc edits)
+  ############################################################
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
+    shellAliases = {
+      ls = "eza";
+      ll = "eza -l";
+      la = "eza -la";
+      tree = "eza --tree";
+      cat = "bat";
+    };
+  };
+
+  programs.zoxide = {
+    enable = true;
+    enableZshIntegration = true;
+    options = [ "--cmd cd" ]; # cd -> zoxide, matching the script
+  };
+
+  programs.fzf = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
+  programs.eza = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
+  programs.bat.enable = true;
+  programs.starship.enable = true;
+
+  # mise for per-project runtime pins (python/node/go)
+  programs.mise = {
+    enable = true;
+    enableZshIntegration = true;
+    globalConfig.tools = {
+      python = "latest";
+      node = "lts";
+      go = "latest";
+    };
+  };
+
+  programs.git = {
+    enable = true;
+    # set these:
+    # userName = "Scott";
+    # userEmail = "you@example.com";
+  };
+
+  programs.home-manager.enable = true;
+
+  ############################################################
+  # Activation hooks — the imperative bits Nix can't declare
+  ############################################################
+
+  # pipx tools not packaged in nixpkgs
+  home.activation.pipxTools = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      export PATH="$HOME/.local/bin:$PATH"
+      ${pkgs.pipx}/bin/pipx install --force q-text-as-data >/dev/null 2>&1 || true
+      ${pkgs.pipx}/bin/pipx install --force jsongrep >/dev/null 2>&1 || true
+    '';
+  };
+
+  # LazyVim starter — clone once, leave existing config alone
+  home.activation.lazyvimStarter = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      if [ ! -e "$HOME/.config/nvim" ]; then
+        ${pkgs.git}/bin/git clone --depth=1 https://github.com/LazyVim/starter "$HOME/.config/nvim"
+        rm -rf "$HOME/.config/nvim/.git"
+      fi
+    '';
+  };
+
+  # CyberChef — no nixpkgs package; pull the latest release zip
+  home.activation.cyberchef = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="$HOME/.local/share/cyberchef"
+      LAUNCHER="$HOME/.local/bin/cyberchef"
+      if [ ! -x "$LAUNCHER" ] || [ ! -d "$DEST" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp -d)
+        URL=$(${pkgs.curl}/bin/curl -fsSL https://api.github.com/repos/gchq/CyberChef/releases/latest \
+              | ${pkgs.gnugrep}/bin/grep -oE '"browser_download_url": *"[^"]+\.zip"' \
+              | ${pkgs.coreutils}/bin/head -1 \
+              | ${pkgs.gnused}/bin/sed -E 's/.*"(https[^"]+)".*/\1/')
+        if [ -n "$URL" ]; then
+          ${pkgs.curl}/bin/curl -fsSL -o "$TMP/cc.zip" "$URL" && {
+            ${pkgs.coreutils}/bin/mkdir -p "$DEST" "$HOME/.local/bin"
+            ${pkgs.unzip}/bin/unzip -q -o "$TMP/cc.zip" -d "$DEST"
+            IDX=$(${pkgs.findutils}/bin/find "$DEST" -maxdepth 3 -name 'CyberChef_v*.html' -print -quit)
+            [ -z "$IDX" ] && IDX=$(${pkgs.findutils}/bin/find "$DEST" -maxdepth 3 -name 'index.html' -print -quit)
+            if [ -n "$IDX" ]; then
+              ${pkgs.coreutils}/bin/printf '#!/usr/bin/env bash\nxdg-open "%s"\n' "$IDX" > "$LAUNCHER"
+              ${pkgs.coreutils}/bin/chmod +x "$LAUNCHER"
+            fi
+          }
+        fi
+        ${pkgs.coreutils}/bin/rm -rf "$TMP"
+      fi
+    '';
+  };
+
+  # Post-install TODO checklist
+  home.activation.todoMd = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      if [ ! -f "$HOME/TODO.md" ]; then
+        ${pkgs.coreutils}/bin/cat > "$HOME/TODO.md" <<'TODO'
+# Post-install TODO
+
+Things the flake can't do for you.
+
+- [ ] Connect to Wifi (or verify NetworkManager picked it up)
+- [ ] Sign into 1Password (desktop + Chromium extension)
+- [ ] Sign into Gmail
+- [ ] Sign into GitHub: `gh auth login`
+- [ ] Set wallpaper (DMS derives the Material You theme from it)
+- [ ] Set up Obsidian Sync + enable Iconize community plugin
+- [ ] Register Typora license
+- [ ] Chromium extensions: 1Password, Obsidian Web Clipper, Instapaper
+- [ ] Sign in to Slack, Discord, Signal, Zoom
+- [ ] Download Playdate Simulator: https://play.date/dev/
+- [ ] Pull Ollama models: `ollama pull llama3.2`
+- [ ] Authenticate Claude Code: run `claude`
+- [ ] Authenticate Gemini CLI: `gemini auth`
+- [ ] Verify `dms doctor -v` reports green
+- [ ] `sudo fwupdmgr update` for BIOS/EC firmware
+TODO
+      fi
+    '';
+  };
+}
