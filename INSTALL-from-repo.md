@@ -48,10 +48,60 @@ Before you commit, set the two placeholders:
 ## Step 2 — On the target machine: partition + encrypt
 
 Boot the live ISO (minimal or graphical — either works; you'll use a terminal,
-not Calamares). Follow **Phase 1 of the main plan** through
-`nixos-generate-config --root /mnt`. That produces
-`/mnt/etc/nixos/hardware-configuration.nix` describing the encrypted LVM-on-LUKS
-layout. Then come back here.
+not Calamares). Get on Wi-Fi (`nmtui` on minimal, applet on graphical).
+
+> **This erases the disk.** Confirm `lsblk` shows `nvme0n1` as your target
+> first. If your NVMe is named differently (e.g., `nvme1n1`), substitute it
+> in every command below.
+
+```bash
+sudo -i
+
+# 1. Partition: 1 GiB ESP + LUKS container for the rest
+sgdisk --zap-all /dev/nvme0n1
+sgdisk -n 1:0:+1G   -t 1:ef00 -c 1:ESP         /dev/nvme0n1
+sgdisk -n 2:0:0     -t 2:8309 -c 2:cryptsystem /dev/nvme0n1
+mkfs.fat -F32 -n BOOT /dev/nvme0n1p1
+
+# 2. LUKS2 (set a strong passphrase — this unlocks the machine at every boot)
+cryptsetup luksFormat --type luks2 /dev/nvme0n1p2
+cryptsetup open /dev/nvme0n1p2 cryptsystem
+
+# 3. LVM inside LUKS: 92 GiB swap + root on the remainder
+pvcreate /dev/mapper/cryptsystem
+vgcreate vg /dev/mapper/cryptsystem
+lvcreate -L 92G       -n swap vg
+lvcreate -l 100%FREE  -n root vg
+
+# 4. Filesystems + mount. Swap MUST be active when config is generated, so
+#    nixos-generate-config writes it into hardware-configuration.nix.
+mkfs.ext4 -L nixos /dev/vg/root
+mkswap   -L swap   /dev/vg/swap
+mount /dev/vg/root /mnt
+mkdir -p /mnt/boot
+mount /dev/nvme0n1p1 /mnt/boot
+swapon /dev/vg/swap
+
+# 5. Generate the hardware config — this is what creates /mnt/etc/nixos/
+nixos-generate-config --root /mnt
+```
+
+**Verify before moving on:**
+
+```bash
+ls /mnt/etc/nixos/
+# expected: configuration.nix  hardware-configuration.nix
+```
+
+`hardware-configuration.nix` must list your LUKS UUID and the swap entry. If
+either is missing, swap wasn't on when you ran step 5 — re-run `swapon
+/dev/vg/swap` followed by `nixos-generate-config --root /mnt`.
+
+> **Why this and not Calamares' "encrypt" checkbox:** the checkbox encrypts
+> root but doesn't give you a deliberately sized encrypted swap wired for
+> resume. Manual LVM-on-LUKS gives encrypted root + 92 GiB swap under a
+> single passphrase, with hibernation working out of the box. The full
+> rationale is in `nixos-danklinux-framework13-amd-install-plan.md` (Phase 1).
 
 ---
 
@@ -76,6 +126,10 @@ cat ~/.ssh/id_ed25519.pub   # paste into GitHub -> Settings -> SSH keys
 
 ## Step 4 — Clone + install (from the live ISO)
 
+> **Pre-flight:** `/mnt/etc/nixos/hardware-configuration.nix` must exist
+> before you start this step. If `ls /mnt/etc/nixos/` errors, Step 2 didn't
+> complete — go back and run it; do **not** create `/mnt/etc` by hand.
+
 The minimal ISO does **not** ship `git` — pull it into an ephemeral shell with
 `nix-shell -p git`. (The graphical ISO has it pre-installed, so you can skip
 the wrapper there.)
@@ -86,9 +140,14 @@ GH_USER=scott
 nix-shell -p git --run "git clone https://$GH_USER:<TOKEN>@github.com/$GH_USER/nixos-config.git /tmp/cfg"
 # (Option B: nix-shell -p git --run "git clone git@github.com:scott/nixos-config.git /tmp/cfg")
 
-# Place the flake next to the hardware file generated in Step 2
+# Place the flake next to the hardware file generated in Step 2.
+# flake.lock is optional on the very first install (it doesn't exist
+# in the repo yet); on every install after that, it MUST come along
+# or you won't get the same input versions as last time.
 rm /mnt/etc/nixos/configuration.nix          # drop the auto-generated stub
-cp /tmp/cfg/flake.nix /tmp/cfg/configuration.nix /tmp/cfg/home.nix /mnt/etc/nixos/
+for f in flake.nix flake.lock configuration.nix home.nix; do
+  [ -f /tmp/cfg/$f ] && cp /tmp/cfg/$f /mnt/etc/nixos/
+done
 # hardware-configuration.nix is already in /mnt/etc/nixos from Step 2 — leave it
 
 # Install
