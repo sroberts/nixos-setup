@@ -11,17 +11,16 @@ NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running nir
 | `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. |
 | `hardware-configuration.nix` | **Not in the repo.** Generated per-machine by `nixos-generate-config`. Carries the LUKS UUID and filesystem layout. Stays on disk only. |
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |
-| `nixos-danklinux-framework13-amd-install-plan.md` | The long-form design doc. Read for the *why* behind every choice. |
-| `INSTALL-from-repo.md` | Step-by-step for installing onto a fresh Framework from this private repo. |
+| `INSTALL.md` | Single canonical install runbook (partition → encrypt → install → verify) plus rationale, gotchas, and migration notes. |
 | `secure-boot.md` | lanzaboote post-install runbook with Framework-specific key enrollment. |
 | `CLAUDE.md` | Context for Claude Code; useful for humans too. |
 
 ## Where to start
 
-- **Fresh install on a new Framework** → `INSTALL-from-repo.md`. It assumes you've read the *Bottom Line* of the plan doc but not the rest.
+- **Fresh install on a new Framework** → `INSTALL.md`. Top-to-bottom; no other doc needed during the install.
 - **Already running, want to make a change** → edit a `.nix` file, then `sudo nixos-rebuild switch --flake .#framework13`.
 - **Enabling Secure Boot** → `secure-boot.md`. Do this only after the encrypted system boots reliably.
-- **Want to know why X is the way it is** → `nixos-danklinux-framework13-amd-install-plan.md`. Phase headings map to the same blocks you'll see in `configuration.nix`.
+- **Want to know why X is the way it is** → read `configuration.nix` and `home.nix` directly; the "Stack at a glance" table in `INSTALL.md` covers the high-level decisions, and the comments in the `.nix` files cover the rest.
 
 ## Day-to-day commands
 
