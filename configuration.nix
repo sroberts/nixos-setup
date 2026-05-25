@@ -129,7 +129,7 @@
 
   services.ollama = {
     enable = true;
-    acceleration = "rocm"; # Radeon 780M iGPU; switch to "cpu" if rocm crashes
+    package = pkgs.ollama-rocm; # Radeon 780M iGPU; switch to pkgs.ollama (cpu) or pkgs.ollama-vulkan if rocm crashes
   };
 
   ############################################################

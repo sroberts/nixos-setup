@@ -344,7 +344,9 @@ it with `git revert` so the repo and running generation stay in sync.
 5. **lmstudio is unfree** — `nixpkgs.config.allowUnfree = true` is mandatory
    (already set).
 6. **Ollama ROCm on Radeon 780M** is hit-or-miss. If you see crashes, swap
-   `acceleration = "cpu"` in `configuration.nix` and confirm Vulkan instead.
+   `services.ollama.package` to `pkgs.ollama` (CPU) or `pkgs.ollama-vulkan`.
+   The older `services.ollama.acceleration = "rocm"` option was removed
+   upstream; the working API is `services.ollama.package = pkgs.ollama-rocm`.
 7. **Claude Code via Nix bundles its own Node** — your project's
    `npm`/`node` from mise stays untouched. Intentional; prevents the "wrong
    shell" error that affected earlier Nix packaging.
