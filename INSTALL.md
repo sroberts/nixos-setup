@@ -154,12 +154,22 @@ cd ~/nixos-setup
 ```
 
 Bring the machine-specific hardware file Calamares generated into the
-working copy. `.gitignore` keeps it out of commits.
+working copy, then stage it without committing. The stage is the
+*important* part: Nix flakes only evaluate files known to Git, so a
+gitignored file sitting in the working tree is invisible to the build
+even though it's right there. Staging with `-f` overrides .gitignore for
+the index; you keep it out of remote by simply never committing it.
 
 ```bash
 sudo cp /etc/nixos/hardware-configuration.nix ~/nixos-setup/
 sudo chown $USER:users ~/nixos-setup/hardware-configuration.nix
+git add -f hardware-configuration.nix
 ```
+
+`git status` will show it as staged forever. That's fine — don't `git
+commit` while it's staged (it'd push your LUKS UUID to remote), but
+otherwise leave it alone. The file is needed in the index for every
+`nixos-rebuild --flake` you'll ever run on this machine.
 
 Make `~/nixos-setup` the live config so `nixos-rebuild` finds your edits:
 
