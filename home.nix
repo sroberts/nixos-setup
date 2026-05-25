@@ -50,8 +50,10 @@
     fastfetch
     jq
     fd
-    qq-cli          # JFryy/qq — JSON/YAML explorer
     pipx            # for q-text-as-data, jsongrep (installed via activation below)
+    # JFryy/qq isn't in nixpkgs. If you want it, add a go-install activation
+    # hook below (mise already provides `go`), or `go install github.com/JFryy/qq@latest`
+    # by hand.
 
     # Wayland / niri ergonomics
     wl-clipboard
