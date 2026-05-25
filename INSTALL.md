@@ -141,8 +141,10 @@ Open a GNOME terminal. Make sure NetworkManager has Wi-Fi (use the GNOME
 status menu if needed), then:
 
 ```bash
-# Pull the repo (graphical ISO and Calamares-installed GNOME both ship git)
-git clone https://github.com/sroberts/nixos-setup.git ~/nixos-setup
+# Calamares' default install doesn't include git — pull it ephemerally
+# for the one-shot clone. After the rebuild below, git lands in
+# environment.systemPackages and is available system-wide.
+nix-shell -p git --run "git clone https://github.com/sroberts/nixos-setup.git ~/nixos-setup"
 cd ~/nixos-setup
 ```
 
