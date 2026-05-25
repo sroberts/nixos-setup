@@ -141,11 +141,16 @@ Open a GNOME terminal. Make sure NetworkManager has Wi-Fi (use the GNOME
 status menu if needed), then:
 
 ```bash
-# Calamares' default install doesn't include git — pull it ephemerally
-# for the one-shot clone. After the rebuild below, git lands in
-# environment.systemPackages and is available system-wide.
-nix-shell -p git --run "git clone https://github.com/sroberts/nixos-setup.git ~/nixos-setup"
+# Calamares' default install doesn't include git, and per-user nix
+# channels may not be set up yet, which makes `nix-shell -p git` flaky.
+# Install git into your user profile via the system-level nixos channel
+# (Calamares configured that one) — works on the first try.
+nix-env -iA nixos.git
+git clone https://github.com/sroberts/nixos-setup.git ~/nixos-setup
 cd ~/nixos-setup
+# After the nixos-rebuild below, git lands in environment.systemPackages
+# and is on PATH system-wide; the user-profile copy is redundant from
+# then on (remove later with `nix-env -e git` if you care).
 ```
 
 Bring the machine-specific hardware file Calamares generated into the
