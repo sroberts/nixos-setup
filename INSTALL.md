@@ -6,20 +6,31 @@ installing. For Secure Boot, work through this guide first, then see
 `secure-boot.md` as a follow-up. For the *why* behind specific Nix options,
 read `configuration.nix` / `home.nix` directly — they're the source of truth.
 
+> **Two install paths.** The default path uses the Calamares graphical
+> installer to get an encrypted base, then layers this flake on top with
+> `nixos-rebuild`. It's robust, has a rollback safety net, and matches what
+> most people want. If you specifically need **hibernation** (suspend-to-disk),
+> you instead need the manual LVM-on-LUKS layout in the appendix at the end
+> of this file — Calamares' "encrypt" option doesn't give you a
+> persistent-key swap large enough for it.
+
 ---
 
 ## Bottom Line
 
-Install NixOS unstable (26.05) with a **manually partitioned, fully encrypted
-LVM-on-LUKS** disk (encrypted root + a 92 GiB encrypted swap sized for
-hibernation), then build the system from this flake. Three facts drive the
-sequencing:
+Install NixOS unstable (26.05) with an encrypted disk via the Calamares
+graphical installer, sign into the user account it created, then point
+`nixos-rebuild` at this flake. The rebuild replaces GNOME with niri + DMS
+and installs everything else.
 
-- **Encryption is install-time and irreversible.** Bolt-on later means
-  reinstall. Happens in Step 2.
-- **Hibernation needs persistent-key encrypted swap ≥ RAM image size.**
-  Random-key swap can't survive a power cycle, so swap lives inside the same
-  LUKS container as root.
+Three facts drive the sequencing:
+
+- **Encryption is install-time.** Calamares' "Encrypt system" checkbox is
+  what you want; opting out later means a reinstall.
+- **Set the root and user passwords in the GUI.** This is where the manual
+  install path most commonly fails (locked accounts → emergency mode with
+  no recovery shell). Calamares can't proceed without both passwords being
+  set, so you get a guaranteed-working base.
 - **Secure Boot is post-install only.** lanzaboote layers signing onto a
   booting system. Enabling Secure Boot in BIOS before keys are enrolled
   leaves you unbootable. Do it after this guide; see `secure-boot.md`.
@@ -40,8 +51,8 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Compositor | niri via `niri-flake` (sodiboo) | DMS-compatible; declarative |
 | Shell/UI | DankMaterialShell flake + home-manager module | Faster updates than nixpkgs; `niri.enableKeybinds` shortcut |
 | Greeter | `dms-greeter` (unstable nixpkgs) | Theme-synced with DMS |
-| Disk | LUKS2 + LVM | One passphrase unlocks root + swap; required for encrypted hibernation |
-| Swap | 92 GiB LV inside LUKS | Persistent-key encrypted swap; holds the hibernation image |
+| Disk (default) | LUKS-encrypted ext4 (via Calamares) | Encrypted root; no LVM, no hibernation |
+| Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Encrypted root + hibernation-capable swap |
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
 
 If you have a Ryzen AI 300 (not 7040), swap the hardware module to
@@ -61,14 +72,15 @@ multi-watt standby drain on the 7040. Then in BIOS:
 
 ### 2. USB media
 
-Download the **NixOS unstable minimal or graphical ISO** from nixos.org. The
-minimal ISO is fine (we partition by hand from a terminal). Flash with `dd`
-or Rufus — don't use Etcher from a NixOS host, it's no longer packaged.
+Download the **NixOS unstable graphical (GNOME) ISO** from nixos.org and flash
+it with `dd` or Rufus — don't use Etcher from a NixOS host, it's no longer
+packaged. The graphical ISO ships Calamares, which is the installer this
+guide uses.
 
 ### 3. Set your git identity in `home.nix`
 
-`programs.git.userName` / `userEmail` are committed values. Set them on your
-current machine before you push, so the target machine's commits go out
+`programs.git.settings.user.{name,email}` are committed values. Set them on
+your current machine before you push, so the target machine's commits go out
 under the right author.
 
 ### 4. Push the repo to GitHub (if you haven't)
@@ -84,149 +96,56 @@ secrets stay local.
 
 ---
 
-## Step 1 — Partition + encrypt (on the target machine)
+## Step 1 — Install the base with Calamares
 
-Boot the live ISO, connect Wi-Fi (`nmtui` on minimal, applet on graphical).
+Boot the graphical ISO, wait for the GNOME live session to load, then launch
+**Install NixOS** from the desktop. Click through to the *Storage* step.
 
-> **This erases the disk.** Run `lsblk` first and confirm `nvme0n1` is your
-> target. If your NVMe is named differently (e.g., `nvme1n1`), substitute it
-> in every command below.
+**Critical choices:**
 
-```bash
-sudo -i
+- **Storage:** "Erase disk" (the whole disk gets reformatted).
+- **Encrypt:** check **"Encrypt system."** Set a strong LUKS passphrase —
+  you'll type it at every boot.
+- **User account:** username `scott` (must match the `scott` referenced
+  throughout `configuration.nix` and `home.nix`). Set **both** the user
+  password and the root password in the GUI. Don't leave root blank — that's
+  what causes the locked-emergency-mode dead-end in the manual path.
+- **Locale / timezone:** whatever you want.
+- **Desktop:** leave the default (GNOME). It's what Calamares installs;
+  we'll replace it with niri + DMS in Step 3.
 
-# 1. Partition: 1 GiB ESP + LUKS container for the rest
-sgdisk --zap-all /dev/nvme0n1
-sgdisk -n 1:0:+1G   -t 1:ef00 -c 1:ESP         /dev/nvme0n1
-sgdisk -n 2:0:0     -t 2:8309 -c 2:cryptsystem /dev/nvme0n1
-mkfs.fat -F32 -n BOOT /dev/nvme0n1p1
+Click through to install. Calamares writes an encrypted ext4 root + an
+unencrypted FAT32 ESP, plus a small unencrypted swap that's not sized for
+hibernation. (If you need hibernation, stop here and use the manual layout
+in the appendix instead.)
 
-# 2. LUKS2 (this passphrase unlocks the machine at every boot — make it strong)
-cryptsetup luksFormat --type luks2 /dev/nvme0n1p2
-cryptsetup open /dev/nvme0n1p2 cryptsystem
+When it finishes, reboot. Pull the USB out.
 
-# 3. LVM inside LUKS: 92 GiB swap + root on the remainder
-pvcreate /dev/mapper/cryptsystem
-vgcreate vg /dev/mapper/cryptsystem
-lvcreate -L 92G       -n swap vg
-lvcreate -l 100%FREE  -n root vg
+## Step 2 — First boot
 
-# 4. Filesystems + mount. Swap MUST be active when config is generated, so
-#    nixos-generate-config writes it into hardware-configuration.nix.
-mkfs.ext4 -L nixos /dev/vg/root
-mkswap   -L swap   /dev/vg/swap
-mount /dev/vg/root /mnt
-mkdir -p /mnt/boot
-mount /dev/nvme0n1p1 /mnt/boot
-swapon /dev/vg/swap
+At the LUKS passphrase prompt, type the passphrase you set in Calamares.
+GNOME's GDM should appear; sign in as `scott`. You now have a working
+NixOS install — this is the base that the rest of this guide builds on.
 
-# 5. Generate the hardware config — this is what creates /mnt/etc/nixos/
-nixos-generate-config --root /mnt
-```
+If anything goes wrong from here, you can always boot back into this
+generation from the systemd-boot menu (it gets named "default" + the
+date). That's the safety net.
 
-**Verify before moving on:**
+## Step 3 — Layer this flake on top
+
+Open a GNOME terminal. Make sure NetworkManager has Wi-Fi (use the GNOME
+status menu if needed), then:
 
 ```bash
-ls /mnt/etc/nixos/
-# expected: configuration.nix  hardware-configuration.nix
-```
-
-`hardware-configuration.nix` must list your LUKS UUID **and** the swap entry.
-If swap is missing, swap wasn't on when you ran step 5 — re-run `swapon
-/dev/vg/swap` followed by `nixos-generate-config --root /mnt`.
-
-> **Why this and not the Calamares "encrypt" checkbox:** the checkbox
-> encrypts root but doesn't give you a deliberately sized encrypted swap
-> wired for resume. Manual LVM-on-LUKS gives encrypted root + 92 GiB swap
-> under a single passphrase, with hibernation working out of the box.
-
----
-
-## Step 2 — Authenticate to the private repo
-
-The live ISO has no GitHub credentials. Pick one:
-
-### Option A — Fine-grained token (fastest for one-time install)
-
-On GitHub: Settings → Developer settings → Fine-grained tokens → generate one
-scoped to **only** this repo, **Contents: Read-only**, expiring in a few days.
-
-### Option B — SSH key (durable; best if the machine stays in your fleet)
-
-On the live ISO or after first boot:
-
-```bash
-ssh-keygen -t ed25519 -C "framework13"
-cat ~/.ssh/id_ed25519.pub   # paste into GitHub → Settings → SSH keys
-```
-
----
-
-## Step 3 — Clone the repo and install
-
-> **Pre-flight:** `/mnt/etc/nixos/hardware-configuration.nix` must exist
-> before you start. If `ls /mnt/etc/nixos/` errors, Step 1 didn't complete —
-> go back and run it; do **not** create `/mnt/etc` by hand.
-
-The minimal ISO does **not** ship `git` — pull it into an ephemeral shell
-with `nix-shell -p git`. (The graphical ISO has it pre-installed, so you can
-skip the wrapper there.)
-
-```bash
-# Clone into a temp location (token in URL, Option A shown)
-GH_USER=scott
-nix-shell -p git --run "git clone https://$GH_USER:<TOKEN>@github.com/$GH_USER/nixos-setup.git /tmp/cfg"
-# (Option B: nix-shell -p git --run "git clone git@github.com:$GH_USER/nixos-setup.git /tmp/cfg")
-
-# Place the flake next to the hardware file generated in Step 1.
-# flake.lock is optional on the very first install (it may not exist
-# in the repo yet); on every install after that, it MUST come along
-# or you won't get the same input versions as last time.
-rm /mnt/etc/nixos/configuration.nix          # drop the auto-generated stub
-for f in flake.nix flake.lock configuration.nix home.nix; do
-  [ -f /tmp/cfg/$f ] && cp /tmp/cfg/$f /mnt/etc/nixos/
-done
-# hardware-configuration.nix is already in /mnt/etc/nixos — leave it
-
-# Install
-nixos-install --flake /mnt/etc/nixos#framework13 \
-  --option experimental-features 'nix-command flakes'
-
-# Set the root password when prompted
-reboot
-```
-
-First build pulls niri, DMS, Claude Code, and home-manager — expect 15–40
-minutes depending on bandwidth.
-
-> **Why we build from the local copy** (`/mnt/etc/nixos`, a path) **rather
-> than `github:user/repo`:** Nix never authenticates to GitHub for the build,
-> so the token only had to last for the `git clone`. Building from the
-> `github:` URL would force a token into `nix.settings.access-tokens` (a
-> committed credential leak) and wouldn't include your local
-> `hardware-configuration.nix`.
-
-At boot you'll get the LUKS passphrase prompt, then the dms-greeter.
-Hibernation works immediately — `boot.resumeDevice = "/dev/vg/swap"` in
-`configuration.nix` points the resume at the encrypted swap.
-
----
-
-## Step 4 — Set up the working copy for ongoing changes
-
-After first boot, in your user shell:
-
-```bash
-GH_USER=scott
-
-# Option A: clone with the token, then immediately scrub it from the stored remote
-git clone https://$GH_USER:<TOKEN>@github.com/$GH_USER/nixos-setup.git ~/nixos-setup
+# Pull the repo (graphical ISO and Calamares-installed GNOME both ship git)
+git clone https://github.com/sroberts/nixos-setup.git ~/nixos-setup
 cd ~/nixos-setup
-git remote set-url origin https://github.com/$GH_USER/nixos-setup.git
-# (Option B: clone git@... and the remote is already token-free)
+```
 
-# Bring the machine's hardware file into the working copy (never commit it;
-# .gitignore already lists it)
+Bring the machine-specific hardware file Calamares generated into the
+working copy. `.gitignore` keeps it out of commits.
+
+```bash
 sudo cp /etc/nixos/hardware-configuration.nix ~/nixos-setup/
 sudo chown $USER:users ~/nixos-setup/hardware-configuration.nix
 ```
@@ -238,9 +157,31 @@ sudo rm -rf /etc/nixos
 sudo ln -s ~/nixos-setup /etc/nixos
 ```
 
-If `flake.lock` didn't exist in the repo when you installed, the install
-generated one in `/etc/nixos/flake.lock`. Commit it now so the next machine
-reproduces this one:
+Now the big rebuild. This replaces GNOME with niri + DMS, installs all the
+CLI/GUI packages, sets up shell integrations and activation hooks, and
+generates `~/TODO.md` for the things Nix can't declare.
+
+```bash
+sudo nixos-rebuild switch --flake .#framework13
+```
+
+Expect 15–40 minutes depending on bandwidth — niri, DMS, Claude Code, and
+home-manager are all in the closure. The download buffer is bumped to
+256 MiB in `configuration.nix`, so you won't see the "download buffer is
+full" warnings you'd otherwise hit.
+
+When it finishes, log out of GNOME (or just reboot). At the dms-greeter,
+sign in as `scott` and you'll land in niri + DMS.
+
+**If the rebuild fails or the new session won't start**, this is where the
+Calamares base saves you. From the systemd-boot menu, pick the older
+generation (it'll still boot GNOME with the GDM greeter). Then debug from
+there, or `sudo nixos-rebuild --rollback switch` to drop back permanently.
+
+## Step 4 — Lock in the lock file
+
+If `flake.lock` didn't exist in the repo when you cloned, the rebuild just
+generated one. Commit it so the next machine reproduces this one:
 
 ```bash
 cd ~/nixos-setup
@@ -249,25 +190,18 @@ git commit -m "Pin flake inputs from first install"
 git push
 ```
 
----
-
-## Step 5 — Verify the install
+## Step 5 — Verify
 
 ```bash
-# Encryption: confirm root + swap are LUKS-backed under one container
-lsblk                          # vg-root and vg-swap sit under cryptsystem (LUKS)
-sudo cryptsetup status cryptsystem
-
-# Hibernation: resume target set, swap active and large enough
-cat /sys/power/resume          # non-zero device
-swapon --show                  # 92G swap present
-systemctl hibernate            # should power off fully, then restore on unlock
+# Encryption: root sits under cryptroot
+lsblk
+sudo cryptsetup status cryptroot   # name may differ; check `lsblk` output
 
 # Power profiles working, TLP not loaded
 powerprofilesctl get
 systemctl status tlp 2>&1 | head -2
 
-# Kernel 6.12+ floor
+# Kernel 6.12+ floor for Ryzen 7040
 uname -r
 
 # Firmware
@@ -280,7 +214,7 @@ dms doctor -v
 # Docker available without sudo
 docker run --rm hello-world
 
-# Ollama up
+# Ollama up (if rocm caused a crash, swap to pkgs.ollama-vulkan or pkgs.ollama in configuration.nix)
 curl -s http://localhost:11434/api/version
 
 # AI CLIs on PATH
@@ -342,8 +276,10 @@ it with `git revert` so the repo and running generation stay in sync.
    #1586): let `niri.enableKeybinds = true` handle it; if binds are still
    empty, copy DMS's default `binds.kdl` manually.
 4. **Keep a recovery USB.** With an encrypted root, a broken boot chain
-   means recovering from the live ISO: `cryptsetup open` → `vgchange -ay` →
-   mount → roll back. `secure-boot.md` has the exact commands.
+   means recovering from the live ISO: `cryptsetup open` → `mount` →
+   `nixos-enter` → roll back. `secure-boot.md` has the exact commands;
+   substitute the LVM steps with plain mount if you used the Calamares
+   layout.
 5. **lmstudio is unfree** — `nixpkgs.config.allowUnfree = true` is mandatory
    (already set).
 6. **Ollama ROCm on Radeon 780M** is hit-or-miss. If you see crashes, swap
@@ -358,13 +294,7 @@ it with `git revert` so the repo and running generation stay in sync.
 9. **Secure Boot is a separate project.** See `secure-boot.md`. Get the
    encrypted system booting reliably first, then enable lanzaboote. Never
    flip Secure Boot ON in BIOS before keys are enrolled.
-10. **Hibernation needs swap ≥ RAM image.** 92 GiB covers ~64 GB RAM
-    comfortably (relies on compression above that). If you have 96 GB and
-    routinely run RAM hot, bump the swap LV before installing.
-11. **Don't use random-key swap** (`randomEncryption`). It can't survive
-    the power cycle hibernation requires. Swap must live inside the
-    persistent LUKS container, which Step 1's layout ensures.
-12. **Don't reference this repo as a flake input.** It would force a token
+10. **Don't reference this repo as a flake input.** It would force a token
     into `nix.settings.access-tokens` (a committed credential leak), and the
     `github:` fetch wouldn't include your local `hardware-configuration.nix`.
     Always build from the local clone.
@@ -384,6 +314,107 @@ it with `git revert` so the repo and running generation stay in sync.
 | `README.md` | Yes | Orientation and day-to-day commands |
 | `CLAUDE.md` | Yes | Context for AI coding agents working in this repo |
 | `hardware-configuration.nix` | **No** | Machine-specific disk UUIDs + LUKS device |
+
+---
+
+## Appendix — manual LVM-on-LUKS install (for hibernation)
+
+Use this path only if you specifically need hibernation. It gives you
+encrypted root + a 92 GiB encrypted swap inside the same LUKS container,
+under one passphrase. The trade-off is no built-in rollback safety net
+during install — if it goes wrong, you're recovering from the live ISO.
+
+You also need to **uncomment** `boot.resumeDevice = "/dev/vg/swap"` in
+`configuration.nix` (it's commented out by default for the Calamares path)
+before the rebuild in Step 3.
+
+Boot the live ISO (minimal or graphical), connect Wi-Fi, then:
+
+> **This erases the disk.** Run `lsblk` first and confirm `nvme0n1` is your
+> target. If your NVMe is named differently (e.g., `nvme1n1`), substitute it
+> in every command below.
+
+```bash
+sudo -i
+
+# 1. Partition: 1 GiB ESP + LUKS container for the rest
+sgdisk --zap-all /dev/nvme0n1
+sgdisk -n 1:0:+1G   -t 1:ef00 -c 1:ESP         /dev/nvme0n1
+sgdisk -n 2:0:0     -t 2:8309 -c 2:cryptsystem /dev/nvme0n1
+mkfs.fat -F32 -n BOOT /dev/nvme0n1p1
+
+# 2. LUKS2 (this passphrase unlocks the machine at every boot — make it strong)
+cryptsetup luksFormat --type luks2 /dev/nvme0n1p2
+cryptsetup open /dev/nvme0n1p2 cryptsystem
+
+# 3. LVM inside LUKS: 92 GiB swap + root on the remainder
+pvcreate /dev/mapper/cryptsystem
+vgcreate vg /dev/mapper/cryptsystem
+lvcreate -L 92G       -n swap vg
+lvcreate -l 100%FREE  -n root vg
+
+# 4. Filesystems + mount. Swap MUST be active when config is generated, so
+#    nixos-generate-config writes it into hardware-configuration.nix.
+mkfs.ext4 -L nixos /dev/vg/root
+mkswap   -L swap   /dev/vg/swap
+mount /dev/vg/root /mnt
+mkdir -p /mnt/boot
+mount /dev/nvme0n1p1 /mnt/boot
+swapon /dev/vg/swap
+
+# 5. Generate the hardware config
+nixos-generate-config --root /mnt
+```
+
+Verify before installing:
+
+```bash
+ls /mnt/etc/nixos/
+# expected: configuration.nix  hardware-configuration.nix
+
+grep -A3 swapDevices /mnt/etc/nixos/hardware-configuration.nix
+# must list /dev/disk/by-uuid/... pointing at the swap LV
+```
+
+Then clone this repo, copy the flake files in, and run `nixos-install`:
+
+```bash
+# Minimal ISO needs nix-shell -p git; graphical ISO has git pre-installed
+nix-shell -p git --run "git clone https://github.com/sroberts/nixos-setup.git /tmp/cfg"
+
+rm /mnt/etc/nixos/configuration.nix          # drop the auto-generated stub
+for f in flake.nix flake.lock configuration.nix home.nix; do
+  [ -f /tmp/cfg/$f ] && cp /tmp/cfg/$f /mnt/etc/nixos/
+done
+
+# IMPORTANT: uncomment boot.resumeDevice before installing
+sed -i 's|^  # boot.resumeDevice = "/dev/vg/swap";|  boot.resumeDevice = "/dev/vg/swap";|' /mnt/etc/nixos/configuration.nix
+
+nixos-install --flake /mnt/etc/nixos#framework13 \
+  --option experimental-features 'nix-command flakes'
+# Set the root password when prompted — DO NOT skip
+reboot
+```
+
+Then proceed to Step 4 (`flake.lock`) and Step 5 (verify), plus add a
+hibernation check:
+
+```bash
+swapon --show                  # 92G swap present
+cat /sys/power/resume          # non-zero device
+systemctl hibernate            # should power off fully, then restore on unlock
+```
+
+Known additional gotchas for this path:
+
+- **Hibernation needs swap ≥ RAM image.** 92 GiB covers ~64 GB RAM
+  comfortably (relies on compression above that). If you have 96 GB and
+  routinely run RAM hot, bump the swap LV before installing.
+- **Don't use random-key swap** (`randomEncryption`). It can't survive
+  the power cycle hibernation requires. Swap must live inside the
+  persistent LUKS container.
+- **Don't skip the root-password prompt at `nixos-install`.** Empty
+  password = locked account = no recovery shell from emergency mode.
 
 ---
 

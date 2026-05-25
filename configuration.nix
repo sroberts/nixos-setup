@@ -35,17 +35,16 @@
   ############################################################
   # Disk encryption + hibernation (suspend-to-disk)
   #
-  # Layout (created manually at install — see Phase 1 of the plan):
-  #   nvme0n1p1  ESP (unencrypted, FAT32)
-  #   nvme0n1p2  LUKS2 container -> LVM vg "vg"
-  #                vg/swap  92 GiB   (encrypted swap, holds hibernation image)
-  #                vg/root  rest     (encrypted root, ext4)
+  # Default (Calamares install): ESP + LUKS-encrypted ext4 root, no LVM,
+  # no dedicated swap. Disk is encrypted; hibernation is NOT available
+  # because there's no persistent-key encrypted swap.
   #
-  # The LUKS unlock entry + filesystems + swapDevices are auto-written into
-  # hardware-configuration.nix by `nixos-generate-config`. We only declare the
-  # resume target here, using the STABLE LVM path so it's machine-independent.
+  # If you want hibernation: redo the install with the manual LVM-on-LUKS
+  # layout in INSTALL.md's appendix (ESP + LUKS2 -> LVM with vg/swap 92 GiB
+  # + vg/root). Then uncomment the resumeDevice line below — it points at
+  # the stable LVM path so it's machine-independent.
   ############################################################
-  boot.resumeDevice = "/dev/vg/swap";
+  # boot.resumeDevice = "/dev/vg/swap";
 
   # Optional: let the lid / power key hibernate instead of sleep.
   # services.logind.lidSwitch = "hibernate";
@@ -112,6 +111,12 @@
   };
 
   systemd.user.services.niri-flake-polkit.enable = false;
+
+  # Tear out GNOME left behind by the Calamares base install. Harmless
+  # to keep on if you used the manual install path (nothing to disable).
+  services.xserver.enable = false;
+  services.displayManager.gdm.enable = false;
+  services.desktopManager.gnome.enable = false;
 
   xdg.portal = {
     enable = true;

@@ -17,7 +17,11 @@ NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running nir
 
 ## Where to start
 
-- **Fresh install on a new Framework** → `INSTALL.md`. Top-to-bottom; no other doc needed during the install.
+- **Fresh install on a new Framework** → `INSTALL.md`. Default path uses the
+  Calamares GUI installer for an encrypted base, then layers this flake on
+  top with `nixos-rebuild`. Robust and has a rollback safety net.
+  Hibernation-capable install (manual LVM-on-LUKS) is documented as an
+  appendix in the same file.
 - **Already running, want to make a change** → edit a `.nix` file, then `sudo nixos-rebuild switch --flake .#framework13`.
 - **Enabling Secure Boot** → `secure-boot.md`. Do this only after the encrypted system boots reliably.
 - **Want to know why X is the way it is** → read `configuration.nix` and `home.nix` directly; the "Stack at a glance" table in `INSTALL.md` covers the high-level decisions, and the comments in the `.nix` files cover the rest.
