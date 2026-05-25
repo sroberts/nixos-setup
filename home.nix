@@ -51,10 +51,15 @@
     fastfetch
     jq
     fd
-    pipx            # for q-text-as-data, jsongrep (installed via activation below)
-    # JFryy/qq isn't in nixpkgs. If you want it, add a go-install activation
-    # hook below (mise already provides `go`), or `go install github.com/JFryy/qq@latest`
-    # by hand.
+    # pipx is intentionally NOT installed via Nix: its build-time deps in
+    # current nixos-unstable (black, black[extras], nox) cycle through
+    # transient failures. Install pipx + the two tools we want manually
+    # post-boot (mise provides python):
+    #   pip install --user pipx
+    #   pipx ensurepath
+    #   pipx install q-text-as-data jsongrep
+    # JFryy/qq also isn't in nixpkgs; `go install github.com/JFryy/qq@latest`
+    # picks it up via mise's Go toolchain.
 
     # Wayland / niri ergonomics
     wl-clipboard
@@ -134,16 +139,10 @@
   # Activation hooks — the imperative bits Nix can't declare
   ############################################################
 
-  # pipx tools not packaged in nixpkgs
-  home.activation.pipxTools = {
-    after = [ "writeBoundary" ];
-    before = [ ];
-    data = ''
-      export PATH="$HOME/.local/bin:$PATH"
-      ${pkgs.pipx}/bin/pipx install --force q-text-as-data >/dev/null 2>&1 || true
-      ${pkgs.pipx}/bin/pipx install --force jsongrep >/dev/null 2>&1 || true
-    '';
-  };
+  # pipx + its tools are installed manually post-boot — see the comment in
+  # home.packages above. The previous home.activation.pipxTools hook was
+  # removed because pipx itself currently fails to build in nixos-unstable
+  # (test-time deps black/black[extras]/nox flap).
 
   # LazyVim starter — clone once, leave existing config alone
   home.activation.lazyvimStarter = {
@@ -209,6 +208,8 @@ Things the flake can't do for you.
 - [ ] Sign in to Slack, Discord, Signal, Zoom
 - [ ] Download Playdate Simulator: https://play.date/dev/
 - [ ] Pull Ollama models: `ollama pull llama3.2`
+- [ ] Install pipx + tools: `pip install --user pipx && pipx ensurepath && pipx install q-text-as-data jsongrep`
+- [ ] Install JFryy/qq: `go install github.com/JFryy/qq@latest`
 - [ ] Authenticate Claude Code: run `claude`
 - [ ] Authenticate Gemini CLI: `gemini auth`
 - [ ] Verify `dms doctor -v` reports green
