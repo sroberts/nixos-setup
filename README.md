@@ -7,7 +7,7 @@ NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running nir
 | File | What it is |
 |---|---|
 | `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and the `framework13` host. |
-| `configuration.nix` | System-level: bootloader, encryption resume target, services, system packages, the `scott` user. |
+| `configuration.nix` | System-level: bootloader, encryption resume target, services, system packages, the `sroberts` user. |
 | `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. |
 | `hardware-configuration.nix` | **Not in the repo.** Generated per-machine by `nixos-generate-config`. Carries the LUKS UUID and filesystem layout. Stays on disk only. |
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |

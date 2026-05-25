@@ -7,21 +7,22 @@ installing. For Secure Boot, work through this guide first, then see
 read `configuration.nix` / `home.nix` directly — they're the source of truth.
 
 > **Two install paths.** The default path uses the Calamares graphical
-> installer to get an encrypted base, then layers this flake on top with
-> `nixos-rebuild`. It's robust, has a rollback safety net, and matches what
-> most people want. If you specifically need **hibernation** (suspend-to-disk),
-> you instead need the manual LVM-on-LUKS layout in the appendix at the end
-> of this file — Calamares' "encrypt" option doesn't give you a
-> persistent-key swap large enough for it.
+> installer to get an encrypted base (with optional hibernation-sized
+> swap), then layers this flake on top with `nixos-rebuild`. It's robust
+> and has a rollback safety net. The appendix at the end covers a manual
+> LVM-on-LUKS install for anyone who wants the LVM layout specifically;
+> hibernation is no longer the reason to take that path — Calamares' new
+> "Swap with Hibernate" option handles it for the default flow.
 
 ---
 
 ## Bottom Line
 
 Install NixOS unstable (26.05) with an encrypted disk via the Calamares
-graphical installer, sign into the user account it created, then point
-`nixos-rebuild` at this flake. The rebuild replaces GNOME with niri + DMS
-and installs everything else.
+graphical installer (with the "Swap with Hibernate" option for
+suspend-to-disk support), sign into the user account it created, then
+point `nixos-rebuild` at this flake. The rebuild replaces GNOME with
+niri + DMS and installs everything else.
 
 Three facts drive the sequencing:
 
@@ -51,8 +52,8 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Compositor | niri via `niri-flake` (sodiboo) | DMS-compatible; declarative |
 | Shell/UI | DankMaterialShell flake + home-manager module | Faster updates than nixpkgs; `niri.enableKeybinds` shortcut |
 | Greeter | `dms-greeter` (unstable nixpkgs) | Theme-synced with DMS |
-| Disk (default) | LUKS-encrypted ext4 (via Calamares) | Encrypted root; no LVM, no hibernation |
-| Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Encrypted root + hibernation-capable swap |
+| Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
+| Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Same encryption + hibernation, with LVM for multi-volume management |
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
 
 If you have a Ryzen AI 300 (not 7040), swap the hardware module to
@@ -106,7 +107,11 @@ Boot the graphical ISO, wait for the GNOME live session to load, then launch
 - **Storage:** "Erase disk" (the whole disk gets reformatted).
 - **Encrypt:** check **"Encrypt system."** Set a strong LUKS passphrase —
   you'll type it at every boot.
-- **User account:** username `scott` (must match the `scott` referenced
+- **Swap:** select **"Swap (with Hibernate)"**. This creates a swap
+  partition sized for the hibernation image. Without it, suspend-to-disk
+  won't work; suspend-to-RAM still will. If you don't care about
+  hibernation, any swap option (or none) is fine.
+- **User account:** username `sroberts` (must match the `sroberts` referenced
   throughout `configuration.nix` and `home.nix`). Set **both** the user
   password and the root password in the GUI. Don't leave root blank — that's
   what causes the locked-emergency-mode dead-end in the manual path.
@@ -114,17 +119,16 @@ Boot the graphical ISO, wait for the GNOME live session to load, then launch
 - **Desktop:** leave the default (GNOME). It's what Calamares installs;
   we'll replace it with niri + DMS in Step 3.
 
-Click through to install. Calamares writes an encrypted ext4 root + an
-unencrypted FAT32 ESP, plus a small unencrypted swap that's not sized for
-hibernation. (If you need hibernation, stop here and use the manual layout
-in the appendix instead.)
+Click through to install. Calamares writes an encrypted ext4 root, an
+unencrypted FAT32 ESP, and (if you picked Swap with Hibernate) a swap
+partition sized for the RAM image.
 
 When it finishes, reboot. Pull the USB out.
 
 ## Step 2 — First boot
 
 At the LUKS passphrase prompt, type the passphrase you set in Calamares.
-GNOME's GDM should appear; sign in as `scott`. You now have a working
+GNOME's GDM should appear; sign in as `sroberts`. You now have a working
 NixOS install — this is the base that the rest of this guide builds on.
 
 If anything goes wrong from here, you can always boot back into this
@@ -171,7 +175,7 @@ home-manager are all in the closure. The download buffer is bumped to
 full" warnings you'd otherwise hit.
 
 When it finishes, log out of GNOME (or just reboot). At the dms-greeter,
-sign in as `scott` and you'll land in niri + DMS.
+sign in as `sroberts` and you'll land in niri + DMS.
 
 **If the rebuild fails or the new session won't start**, this is where the
 Calamares base saves you. From the systemd-boot menu, pick the older
@@ -196,6 +200,11 @@ git push
 # Encryption: root sits under cryptroot
 lsblk
 sudo cryptsetup status cryptroot   # name may differ; check `lsblk` output
+
+# Hibernation (if you picked Swap with Hibernate in Calamares)
+swapon --show                      # swap device should be listed
+cat /sys/power/resume              # non-zero device path
+systemctl hibernate                # should power off fully, then restore on unlock
 
 # Power profiles working, TLP not loaded
 powerprofilesctl get
@@ -317,16 +326,20 @@ it with `git revert` so the repo and running generation stay in sync.
 
 ---
 
-## Appendix — manual LVM-on-LUKS install (for hibernation)
+## Appendix — manual LVM-on-LUKS install
 
-Use this path only if you specifically need hibernation. It gives you
-encrypted root + a 92 GiB encrypted swap inside the same LUKS container,
-under one passphrase. The trade-off is no built-in rollback safety net
-during install — if it goes wrong, you're recovering from the live ISO.
+Use this path only if you specifically want the LVM layout (e.g. for
+multi-volume management, easier resize later, or a deliberately sized
+encrypted swap LV inside the same LUKS container). Hibernation is *not*
+a reason to take this path anymore — Calamares' "Swap with Hibernate"
+option in Step 1 gives you that on the default flow.
 
-You also need to **uncomment** `boot.resumeDevice = "/dev/vg/swap"` in
-`configuration.nix` (it's commented out by default for the Calamares path)
-before the rebuild in Step 3.
+The trade-off is no built-in rollback safety net during install — if it
+goes wrong, you're recovering from the live ISO.
+
+You'll also need to **uncomment** `boot.resumeDevice = "/dev/vg/swap"` at
+the bottom of the `boot.resumeDevice` block in `configuration.nix`
+before the rebuild in Step 3, so the kernel resumes from the LVM swap LV.
 
 Boot the live ISO (minimal or graphical), connect Wi-Fi, then:
 

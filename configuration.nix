@@ -35,16 +35,24 @@
   ############################################################
   # Disk encryption + hibernation (suspend-to-disk)
   #
-  # Default (Calamares install): ESP + LUKS-encrypted ext4 root, no LVM,
-  # no dedicated swap. Disk is encrypted; hibernation is NOT available
-  # because there's no persistent-key encrypted swap.
+  # Default (Calamares install): ESP + LUKS-encrypted ext4 root. If you
+  # selected the "Swap with Hibernate" option in Calamares, a swap
+  # partition sized for the hibernation image is also created and
+  # nixos-generate-config writes it into hardware-configuration.nix's
+  # `swapDevices`. The kernel resumes from the first listed swap device
+  # by default — no boot.resumeDevice needed. Verify after first boot
+  # with `systemctl hibernate`.
   #
-  # If you want hibernation: redo the install with the manual LVM-on-LUKS
-  # layout in INSTALL.md's appendix (ESP + LUKS2 -> LVM with vg/swap 92 GiB
-  # + vg/root). Then uncomment the resumeDevice line below — it points at
-  # the stable LVM path so it's machine-independent.
-  ############################################################
-  # boot.resumeDevice = "/dev/vg/swap";
+  # If Calamares' swap detection or hibernation doesn't pick up
+  # automatically, uncomment one of these lines pointing at YOUR machine's
+  # swap device (run `swapon --show` to find it):
+  #
+  #   boot.resumeDevice = "/dev/disk/by-uuid/<your-swap-uuid>";
+  #
+  # If you used INSTALL.md's manual LVM-on-LUKS appendix instead, the
+  # stable LVM path is:
+  #
+  #   boot.resumeDevice = "/dev/vg/swap";
 
   # Optional: let the lid / power key hibernate instead of sleep.
   # services.logind.lidSwitch = "hibernate";
@@ -105,8 +113,8 @@
   services.displayManager.dms-greeter = {
     enable = true;
     compositor.name = "niri";
-    configHome = "/home/scott";
-    configFiles = [ "/home/scott/.config/DankMaterialShell/settings.json" ];
+    configHome = "/home/sroberts";
+    configFiles = [ "/home/sroberts/.config/DankMaterialShell/settings.json" ];
     logs = { save = true; path = "/tmp/dms-greeter.log"; };
   };
 
@@ -142,7 +150,7 @@
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = true;
-    polkitPolicyOwners = [ "scott" ];
+    polkitPolicyOwners = [ "sroberts" ];
   };
 
   ############################################################
@@ -162,7 +170,7 @@
   ############################################################
   # User
   ############################################################
-  users.users.scott = {
+  users.users.sroberts = {
     isNormalUser = true;
     description = "Scott";
     shell = pkgs.zsh;

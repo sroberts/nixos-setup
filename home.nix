@@ -2,8 +2,8 @@
 { inputs, pkgs, ... }:
 
 {
-  home.username = "scott";
-  home.homeDirectory = "/home/scott";
+  home.username = "sroberts";
+  home.homeDirectory = "/home/sroberts";
   home.stateVersion = "26.05";
 
   ############################################################
