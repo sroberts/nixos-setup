@@ -18,8 +18,9 @@
     enable = true;
     enableSystemMonitoring = true;
     niri = {
-      enableKeybinds = true; # DMS preset binds (launcher, lock, power menu)
-      enableSpawn = true;    # auto-start DMS with niri
+      enableKeybinds = true;       # DMS preset binds (launcher, lock, power menu)
+      enableSpawn = true;          # auto-start DMS with niri
+      includes.enable = false;     # DMS warns if both enableKeybinds and includes.enable are on; enableKeybinds is the recommended path
     };
   };
 
@@ -68,7 +69,7 @@
 
     # AI CLIs — Option B (hourly-updated flake). For Option A, delete the next
     # line and add `claude-code` to this list instead.
-    inputs.claude-code-nix.packages.${pkgs.system}.claude-code
+    inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
     gemini-cli
   ];
 
@@ -121,8 +122,10 @@
 
   programs.git = {
     enable = true;
-    userName = "Scott J Roberts";
-    userEmail = "scott.roberts@gmail.com";
+    settings.user = {
+      name = "Scott J Roberts";
+      email = "scott.roberts@gmail.com";
+    };
   };
 
   programs.home-manager.enable = true;
