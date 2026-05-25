@@ -329,9 +329,12 @@ it with `git revert` so the repo and running generation stay in sync.
 
 ## Known gotchas
 
-1. **niri-flake niri-stable is on 25.08 but DMS needs 25.11.** Use
-   `niri-unstable` from the flake or the version in nixpkgs unstable. Don't
-   mix.
+1. **niri-flake niri-stable is on 25.08 but DMS needs 25.11.** This config
+   pins `programs.niri.package` to `niri-unstable` from the flake (see
+   `configuration.nix`). We also `.overrideAttrs (doCheck = false)` to skip
+   niri's in-build cargo tests, which can SIGABRT in the Nix build sandbox
+   even when the runtime binary is fine. Don't drop the override unless
+   you've verified niri's upstream test suite passes in a sandbox.
 2. **Native module vs flake module for DMS:** nixpkgs-unstable's
    `programs.dank-material-shell` works; the flake gives DMS git head and
    `niri.enableKeybinds`. This repo uses the flake.

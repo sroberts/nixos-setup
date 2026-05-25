@@ -84,6 +84,16 @@
   # niri + DankMaterialShell greeter
   ############################################################
   programs.niri.enable = true;
+  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08),
+  # but DMS requires niri 25.11+. Pin to niri-unstable, and disable the
+  # in-build cargo test suite — those tests sometimes SIGABRT inside the
+  # Nix build sandbox (filesystem assumptions that don't hold), even when
+  # the binary itself works at runtime. We don't gain confidence by
+  # running niri's own tests during our system build.
+  programs.niri.package =
+    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs (old: {
+      doCheck = false;
+    });
 
   services.displayManager.dms-greeter = {
     enable = true;
