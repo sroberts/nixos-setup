@@ -24,6 +24,14 @@
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelPackages = pkgs.linuxPackages_latest; # 6.12+ floor for Ryzen 7040
 
+  # FAT32 doesn't support Unix perms, so the ESP defaults to world-readable.
+  # bootctl writes a kernel random-seed file in /boot/loader and (correctly)
+  # complains: any local user could read the seed and learn things about the
+  # kernel's entropy pool. Mount /boot with restrictive masks so files and
+  # directories under the ESP are owner-only (root). Merges with the
+  # /boot entry that nixos-generate-config wrote to hardware-configuration.nix.
+  fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
+
   ############################################################
   # Disk encryption + hibernation (suspend-to-disk)
   #
