@@ -101,7 +101,18 @@
   networking.networkmanager.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
-  services.fprintd.enable = true; # Goodix reader
+  # Goodix fingerprint reader. fprintd runs the daemon; the PAM hooks
+  # below let it stand in for a password. Enroll once with `fprintd-enroll`
+  # before the integrations are useful.
+  services.fprintd.enable = true;
+  security.pam.services = {
+    sudo.fprintAuth = true;        # sudo prompt
+    login.fprintAuth = true;       # TTY login
+    su.fprintAuth = true;          # su to another user
+    polkit-1.fprintAuth = true;    # GUI privilege prompts (e.g. password change)
+    greetd.fprintAuth = true;      # dms-greeter at the login screen
+    swaylock.fprintAuth = true;    # DMS lock screen wraps swaylock
+  };
 
   ############################################################
   # niri + DankMaterialShell greeter
