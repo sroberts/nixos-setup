@@ -352,12 +352,13 @@
     '';
   };
 
-  # DMS wallpaper, monochrome theme, imperial units. Downloads the wallpaper
-  # if missing, jq-merges the four keys into DMS's settings.json (preserving
+  # DMS wallpaper, dynamic theme, imperial units. Downloads the wallpaper
+  # if missing, jq-merges the keys into DMS's settings.json (preserving
   # other runtime-written keys), then nudges a running DMS via `dms ipc` so
-  # changes apply live without a log-out. "monochrome" is a built-in DMS
-  # stock theme that drives matugen's scheme-monochrome algorithm —
-  # grayscale UI regardless of wallpaper colors.
+  # changes apply live without a log-out. "dynamic" is DMS's auto-from-
+  # wallpaper theme: matugen derives a Material You palette from the
+  # current wallpaper (default matugenScheme = scheme-tonal-spot). The
+  # category="dynamic" string is what DMS's UI shows as "Auto".
   home.activation.dmsWallpaperAndTheme = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -375,7 +376,7 @@
 
       ${pkgs.coreutils}/bin/mkdir -p "$SETTINGS_DIR"
       TMP=$(${pkgs.coreutils}/bin/mktemp)
-      MERGE='. + {wallpaperPath: $wp, currentThemeName: "monochrome", useFahrenheit: true, windSpeedUnit: "mph"}'
+      MERGE='. + {wallpaperPath: $wp, currentThemeName: "dynamic", currentThemeCategory: "dynamic", useFahrenheit: true, windSpeedUnit: "mph"}'
       if [ -f "$SETTINGS" ]; then
         ${pkgs.jq}/bin/jq --arg wp "$WALLPAPER" "$MERGE" "$SETTINGS" > "$TMP" \
           && ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
@@ -389,7 +390,8 @@
       # running yet — settings.json will be picked up on its next startup.
       if [ -x "$DMS_BIN" ]; then
         "$DMS_BIN" ipc wallpaper set "$WALLPAPER" > /dev/null 2>&1 || true
-        "$DMS_BIN" ipc settings set currentThemeName monochrome > /dev/null 2>&1 || true
+        "$DMS_BIN" ipc settings set currentThemeName dynamic > /dev/null 2>&1 || true
+        "$DMS_BIN" ipc settings set currentThemeCategory dynamic > /dev/null 2>&1 || true
         "$DMS_BIN" ipc settings set useFahrenheit true > /dev/null 2>&1 || true
         "$DMS_BIN" ipc settings set windSpeedUnit mph > /dev/null 2>&1 || true
       fi
