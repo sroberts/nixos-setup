@@ -352,11 +352,12 @@
     '';
   };
 
-  # DMS wallpaper + theme. Downloads the wallpaper if missing, then jq-merges
-  # wallpaperPath + currentThemeName into DMS's settings.json (preserves any
-  # other keys DMS has written at runtime, like nightModeEnabled).
-  # "monochrome" is a built-in DMS stock theme that uses matugen's
-  # scheme-monochrome algorithm — grayscale UI regardless of wallpaper.
+  # DMS wallpaper, monochrome theme, imperial units. Downloads the wallpaper
+  # if missing, jq-merges the four keys into DMS's settings.json (preserving
+  # other runtime-written keys), then nudges a running DMS via `dms ipc` so
+  # changes apply live without a log-out. "monochrome" is a built-in DMS
+  # stock theme that drives matugen's scheme-monochrome algorithm —
+  # grayscale UI regardless of wallpaper colors.
   home.activation.dmsWallpaperAndTheme = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -365,6 +366,7 @@
       SETTINGS_DIR="$HOME/.config/DankMaterialShell"
       SETTINGS="$SETTINGS_DIR/settings.json"
       URL="https://images.unsplash.com/photo-1533134486753-c833f0ed4866?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+      DMS_BIN="/etc/profiles/per-user/$USER/bin/dms"
 
       if [ ! -f "$WALLPAPER" ]; then
         ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$WALLPAPER")"
@@ -373,15 +375,23 @@
 
       ${pkgs.coreutils}/bin/mkdir -p "$SETTINGS_DIR"
       TMP=$(${pkgs.coreutils}/bin/mktemp)
+      MERGE='. + {wallpaperPath: $wp, currentThemeName: "monochrome", useFahrenheit: true, windSpeedUnit: "mph"}'
       if [ -f "$SETTINGS" ]; then
-        ${pkgs.jq}/bin/jq --arg wp "$WALLPAPER" \
-          '. + {wallpaperPath: $wp, currentThemeName: "monochrome"}' \
-          "$SETTINGS" > "$TMP" && ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
+        ${pkgs.jq}/bin/jq --arg wp "$WALLPAPER" "$MERGE" "$SETTINGS" > "$TMP" \
+          && ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
       else
-        ${pkgs.jq}/bin/jq -n --arg wp "$WALLPAPER" \
-          '{wallpaperPath: $wp, currentThemeName: "monochrome"}' \
-          > "$SETTINGS"
+        ${pkgs.jq}/bin/jq -n --arg wp "$WALLPAPER" "$MERGE" > "$SETTINGS"
         ${pkgs.coreutils}/bin/rm -f "$TMP"
+      fi
+
+      # Best-effort: push changes to a running DMS via IPC so they apply
+      # without log-out. Silently no-op on fresh installs where DMS isn't
+      # running yet — settings.json will be picked up on its next startup.
+      if [ -x "$DMS_BIN" ]; then
+        "$DMS_BIN" ipc wallpaper set "$WALLPAPER" > /dev/null 2>&1 || true
+        "$DMS_BIN" ipc settings set currentThemeName monochrome > /dev/null 2>&1 || true
+        "$DMS_BIN" ipc settings set useFahrenheit true > /dev/null 2>&1 || true
+        "$DMS_BIN" ipc settings set windSpeedUnit mph > /dev/null 2>&1 || true
       fi
     '';
   };
