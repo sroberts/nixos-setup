@@ -1,12 +1,12 @@
 # nixos-setup
 
-NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + DankMaterialShell on encrypted LVM-on-LUKS with hibernation-capable swap. Single host: `framework13`.
+NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + DankMaterialShell on encrypted LVM-on-LUKS with hibernation-capable swap. Single host: `sjr-fw13`.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and the `framework13` host. |
+| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and the `sjr-fw13` host. |
 | `configuration.nix` | System-level: bootloader, encryption resume target, services, system packages, the `sroberts` user. |
 | `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. |
 | `hardware-configuration.nix` | **Not in the repo.** Generated per-machine by `nixos-generate-config`. Carries the LUKS UUID and filesystem layout. Stays on disk only. |
@@ -22,7 +22,7 @@ NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running nir
   top with `nixos-rebuild`. Robust and has a rollback safety net.
   Hibernation-capable install (manual LVM-on-LUKS) is documented as an
   appendix in the same file.
-- **Already running, want to make a change** → edit a `.nix` file, then `sudo nixos-rebuild switch --flake .#framework13`.
+- **Already running, want to make a change** → edit a `.nix` file, then `sudo nixos-rebuild switch --flake .#sjr-fw13`.
 - **Enabling Secure Boot** → `secure-boot.md`. Do this only after the encrypted system boots reliably.
 - **Want to know why X is the way it is** → read `configuration.nix` and `home.nix` directly; the "Stack at a glance" table in `INSTALL.md` covers the high-level decisions, and the comments in the `.nix` files cover the rest.
 
@@ -30,13 +30,13 @@ NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running nir
 
 ```bash
 # Apply a config change you just made
-sudo nixos-rebuild switch --flake .#framework13
+sudo nixos-rebuild switch --flake .#sjr-fw13
 
 # Try a change without making it the default boot generation
-sudo nixos-rebuild test --flake .#framework13
+sudo nixos-rebuild test --flake .#sjr-fw13
 
 # Build for next boot, don't activate now
-sudo nixos-rebuild boot --flake .#framework13
+sudo nixos-rebuild boot --flake .#sjr-fw13
 
 # Update all inputs (writes flake.lock)
 nix flake update

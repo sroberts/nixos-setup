@@ -183,7 +183,7 @@ CLI/GUI packages, sets up shell integrations and activation hooks, and
 generates `~/TODO.md` for the things Nix can't declare.
 
 ```bash
-sudo nixos-rebuild switch --flake .#framework13
+sudo nixos-rebuild switch --flake .#sjr-fw13
 ```
 
 Expect 15–40 minutes depending on bandwidth — niri, DMS, Claude Code, and
@@ -276,7 +276,7 @@ cd ~/nixos-setup
 git pull                                      # grab changes from any machine
 nix flake update                              # bump all inputs
 # Or: nix flake update dms                    # bump one input
-sudo nixos-rebuild switch --flake .#framework13
+sudo nixos-rebuild switch --flake .#sjr-fw13
 
 # commit your edits (hardware-configuration.nix stays gitignored)
 git add -A && git commit -m "..." && git push
@@ -420,7 +420,7 @@ done
 # IMPORTANT: uncomment boot.resumeDevice before installing
 sed -i 's|^  # boot.resumeDevice = "/dev/vg/swap";|  boot.resumeDevice = "/dev/vg/swap";|' /mnt/etc/nixos/configuration.nix
 
-nixos-install --flake /mnt/etc/nixos#framework13 \
+nixos-install --flake /mnt/etc/nixos#sjr-fw13 \
   --option experimental-features 'nix-command flakes'
 # Set the root password when prompted — DO NOT skip
 reboot

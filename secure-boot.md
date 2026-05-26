@@ -54,7 +54,7 @@ This generates your platform keys in `/var/lib/sbctl`.
 ## Step 3 — Rebuild (signs the boot chain, still in Secure Boot OFF)
 
 ```bash
-sudo nixos-rebuild switch --flake ~/nixos-config#framework13
+sudo nixos-rebuild switch --flake ~/nixos-config#sjr-fw13
 ```
 
 lanzaboote replaces systemd-boot and signs the kernel + initrd as a unified image.

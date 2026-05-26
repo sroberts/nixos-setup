@@ -89,7 +89,7 @@
   ############################################################
   # Networking, Bluetooth, fingerprint
   ############################################################
-  networking.hostName = "framework13";
+  networking.hostName = "sjr-fw13";
   networking.networkmanager.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
