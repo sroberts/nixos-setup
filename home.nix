@@ -209,6 +209,7 @@
     gum
     crush           # charmbracelet/crush
     glow
+    gh
     lazygit
     lazydocker
     btop
