@@ -352,6 +352,40 @@
     '';
   };
 
+  # DMS wallpaper + theme. Downloads the wallpaper if missing, then jq-merges
+  # wallpaperPath + currentThemeName into DMS's settings.json (preserves any
+  # other keys DMS has written at runtime, like nightModeEnabled).
+  # "monochrome" is a built-in DMS stock theme that uses matugen's
+  # scheme-monochrome algorithm — grayscale UI regardless of wallpaper.
+  home.activation.dmsWallpaperAndTheme = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      WALLPAPER="$HOME/Pictures/wallpapers/dms-default.jpg"
+      SETTINGS_DIR="$HOME/.config/DankMaterialShell"
+      SETTINGS="$SETTINGS_DIR/settings.json"
+      URL="https://images.unsplash.com/photo-1533134486753-c833f0ed4866?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+
+      if [ ! -f "$WALLPAPER" ]; then
+        ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$WALLPAPER")"
+        ${pkgs.curl}/bin/curl -fsSL -o "$WALLPAPER" "$URL"
+      fi
+
+      ${pkgs.coreutils}/bin/mkdir -p "$SETTINGS_DIR"
+      TMP=$(${pkgs.coreutils}/bin/mktemp)
+      if [ -f "$SETTINGS" ]; then
+        ${pkgs.jq}/bin/jq --arg wp "$WALLPAPER" \
+          '. + {wallpaperPath: $wp, currentThemeName: "monochrome"}' \
+          "$SETTINGS" > "$TMP" && ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
+      else
+        ${pkgs.jq}/bin/jq -n --arg wp "$WALLPAPER" \
+          '{wallpaperPath: $wp, currentThemeName: "monochrome"}' \
+          > "$SETTINGS"
+        ${pkgs.coreutils}/bin/rm -f "$TMP"
+      fi
+    '';
+  };
+
   # Post-install TODO checklist
   home.activation.todoMd = {
     after = [ "writeBoundary" ];
@@ -367,7 +401,6 @@ Things the flake can't do for you.
 - [ ] Sign into 1Password (desktop + Chromium extension)
 - [ ] Sign into Gmail
 - [ ] Sign into GitHub: `gh auth login`
-- [ ] Set wallpaper (DMS derives the Material You theme from it)
 - [ ] Set up Obsidian Sync + enable Iconize community plugin
 - [ ] Register Typora license
 - [ ] Chromium extensions: 1Password, Obsidian Web Clipper, Instapaper
