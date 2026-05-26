@@ -32,7 +32,14 @@
       natural-scroll = true;
       dwt = true;
     };
+    binds = {
+      "Mod+Return".action.spawn = "ghostty";
+    };
   };
+
+  # Default terminal for tools that consult $TERMINAL (lazygit edit, fzf,
+  # xdg-terminal-exec helpers, etc.).
+  home.sessionVariables.TERMINAL = "ghostty";
 
   ############################################################
   # CLI / TUI tools
@@ -67,6 +74,7 @@
     playerctl
     alacritty
     foot
+    ghostty
     fuzzel
     matugen
     cava
