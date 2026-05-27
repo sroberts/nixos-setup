@@ -110,34 +110,50 @@
     login.fprintAuth = true;       # TTY login
     su.fprintAuth = true;          # su to another user
     polkit-1.fprintAuth = true;    # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true;      # dms-greeter at the login screen
-    swaylock.fprintAuth = true;    # DMS lock screen wraps swaylock
+    greetd.fprintAuth = true;      # tuigreet at the login screen
+    # Noctalia's lock screen runs its own PAM context; we don't add fprintAuth
+    # there. Wayland lock-screen PAM stacks tend to omit the `unix-early`
+    # password reader that login/greetd have, so layering pam_fprintd on top
+    # breaks the password fallback (fprintd blocks the conversation while the
+    # user is typing). Lock-screen fingerprint, if wanted, should be wired
+    # through Noctalia's own settings, not this PAM map.
   };
 
   ############################################################
-  # niri + DankMaterialShell greeter
+  # niri + greetd (tuigreet) login
   ############################################################
   programs.niri.enable = true;
-  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08),
-  # but DMS requires niri 25.11+. Pin to niri-unstable, and disable the
-  # in-build cargo test suite — those tests sometimes SIGABRT inside the
-  # Nix build sandbox (filesystem assumptions that don't hold), even when
-  # the binary itself works at runtime. We don't gain confidence by
-  # running niri's own tests during our system build.
+  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08).
+  # Pin to niri-unstable because Quickshell-based shells (Noctalia and the
+  # ecosystem that shares its Wayland-protocol footprint) track niri's
+  # latest, and the stable tag lags. Also disable the in-build cargo test
+  # suite — those tests sometimes SIGABRT inside the Nix build sandbox
+  # (filesystem assumptions that don't hold), even when the binary itself
+  # works at runtime. We don't gain confidence by running niri's own tests
+  # during our system build.
   programs.niri.package =
     (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs (old: {
       doCheck = false;
     });
 
-  services.displayManager.dms-greeter = {
+  # tuigreet on tty1, launching niri (which auto-spawns Noctalia via
+  # spawn-at-startup in home.nix). `--remember` keeps the last username
+  # pre-filled; `--time` shows a clock. The session command is the same
+  # one DankInstaller-style configs use to start niri.
+  services.greetd = {
     enable = true;
-    compositor.name = "niri";
-    configHome = "/home/sroberts";
-    configFiles = [ "/home/sroberts/.config/DankMaterialShell/settings.json" ];
-    logs = { save = true; path = "/tmp/dms-greeter.log"; };
+    settings = {
+      default_session = {
+        command = "${pkgs.greetd.tuigreet}/bin/tuigreet --time --remember --cmd niri-session";
+        user = "greeter";
+      };
+    };
   };
 
-  systemd.user.services.niri-flake-polkit.enable = false;
+  # niri-flake's polkit user service is left at its default (enabled).
+  # DMS used to provide its own polkit agent, so we disabled the niri one
+  # to avoid double-registration; Noctalia does not provide a polkit
+  # agent, so we want niri's back.
 
   # Tear out GNOME left behind by the Calamares base install. Harmless
   # to keep on if you used the manual install path (nothing to disable).

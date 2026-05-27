@@ -1,4 +1,4 @@
-# User-level configuration: packages, shell, dotfiles, DMS.
+# User-level configuration: packages, shell, dotfiles, Noctalia.
 { inputs, pkgs, ... }:
 
 {
@@ -7,21 +7,16 @@
   home.stateVersion = "26.05";
 
   ############################################################
-  # DankMaterialShell + niri integration
+  # Noctalia shell
   ############################################################
   imports = [
-    inputs.dms.homeModules.dank-material-shell
-    inputs.dms.homeModules.niri
+    inputs.noctalia.homeModules.default
   ];
 
-  programs.dank-material-shell = {
+  programs.noctalia-shell = {
     enable = true;
-    enableSystemMonitoring = true;
-    niri = {
-      enableKeybinds = true;       # DMS preset binds (launcher, lock, power menu)
-      enableSpawn = true;          # auto-start DMS with niri
-      includes.enable = false;     # DMS warns if both enableKeybinds and includes.enable are on; enableKeybinds is the recommended path
-    };
+    # systemd.enable is upstream-deprecated — Noctalia is intended to be
+    # spawned by the compositor (see spawn-at-startup below). Leaving it off.
   };
 
   # niri input — natural scrolling, tap-to-click, disable-while-typing.
@@ -32,12 +27,20 @@
       natural-scroll = true;
       dwt = true;
     };
+    # Auto-start Noctalia with niri. Noctalia's home-module writes the
+    # config files; the compositor is responsible for launching the
+    # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
+    spawn-at-startup = [
+      { command = [ "noctalia-shell" ]; }
+    ];
     # niri upstream default keybinds, verbatim, with the terminal binary
-    # swapped from alacritty to ghostty. DMS's enableKeybinds writes into
-    # the same niri-flake bind option, so the upstream binds that DMS
-    # already owns (Super+Alt+L lock, Mod+Comma settings, Mod+V clipboard,
-    # XF86Audio* media) are omitted here — defining them again would be a
-    # Nix eval error. Wrap a key in `lib.mkForce` to override DMS instead.
+    # swapped from alacritty to ghostty. The session/media/lock/brightness
+    # binds at the bottom of this block were previously owned by DMS's
+    # `enableKeybinds`; with Noctalia in charge of the shell UI we wire
+    # them directly to the underlying utilities (wpctl, playerctl,
+    # brightnessctl, loginctl). Noctalia exposes IPC for its own panels
+    # (settings, clipboard, launcher) — bind those once the IPC surface
+    # is finalised in your local Noctalia config.
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".action.show-hotkey-overlay = [];
@@ -159,7 +162,7 @@
       # Previous workspace toggle
       "Mod+Tab".action.focus-workspace-previous = [];
 
-      # Consume / expel (Mod+Comma omitted — DMS owns it for the settings panel)
+      # Consume / expel
       "Mod+BracketLeft".action.consume-or-expel-window-left = [];
       "Mod+BracketRight".action.consume-or-expel-window-right = [];
       "Mod+Period".action.expel-window-from-column = [];
@@ -178,7 +181,7 @@
       "Mod+Shift+Minus".action.set-window-height = "-10%";
       "Mod+Shift+Equal".action.set-window-height = "+10%";
 
-      # Floating + tabbed display (Mod+V omitted — DMS owns it for clipboard)
+      # Floating + tabbed display
       "Mod+Shift+V".action.switch-focus-between-floating-and-tiling = [];
       "Mod+W".action.toggle-column-tabbed-display = [];
 
@@ -191,6 +194,23 @@
       "Mod+Shift+E".action.quit = [];
       "Mod+Shift+P".action.power-off-monitors = [];
       "Mod+Ctrl+Shift+T".action.toggle-debug-tint = [];
+
+      # Lock (logind path — Noctalia listens for loginctl lock-session and
+      # raises its lock screen). Matches the DMS-era default keybind.
+      "Super+Alt+L".action.spawn = [ "loginctl" "lock-session" ];
+
+      # Media keys — PipeWire sinks via wpctl, transport via playerctl.
+      "XF86AudioRaiseVolume".action.spawn = [ "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+" ];
+      "XF86AudioLowerVolume".action.spawn = [ "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-" ];
+      "XF86AudioMute".action.spawn = [ "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle" ];
+      "XF86AudioMicMute".action.spawn = [ "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle" ];
+      "XF86AudioPlay".action.spawn = [ "playerctl" "play-pause" ];
+      "XF86AudioNext".action.spawn = [ "playerctl" "next" ];
+      "XF86AudioPrev".action.spawn = [ "playerctl" "previous" ];
+
+      # Brightness — Framework keyboard top row.
+      "XF86MonBrightnessUp".action.spawn = [ "brightnessctl" "s" "5%+" ];
+      "XF86MonBrightnessDown".action.spawn = [ "brightnessctl" "s" "5%-" ];
     };
   };
 
@@ -352,51 +372,9 @@
     '';
   };
 
-  # DMS wallpaper, dynamic theme, imperial units. Downloads the wallpaper
-  # if missing, jq-merges the keys into DMS's settings.json (preserving
-  # other runtime-written keys), then nudges a running DMS via `dms ipc` so
-  # changes apply live without a log-out. "dynamic" is DMS's auto-from-
-  # wallpaper theme: matugen derives a Material You palette from the
-  # current wallpaper (default matugenScheme = scheme-tonal-spot). The
-  # category="dynamic" string is what DMS's UI shows as "Auto".
-  home.activation.dmsWallpaperAndTheme = {
-    after = [ "writeBoundary" ];
-    before = [ ];
-    data = ''
-      WALLPAPER="$HOME/Pictures/wallpapers/dms-default.jpg"
-      SETTINGS_DIR="$HOME/.config/DankMaterialShell"
-      SETTINGS="$SETTINGS_DIR/settings.json"
-      URL="https://images.unsplash.com/photo-1533134486753-c833f0ed4866?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      DMS_BIN="/etc/profiles/per-user/$USER/bin/dms"
-
-      if [ ! -f "$WALLPAPER" ]; then
-        ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$WALLPAPER")"
-        ${pkgs.curl}/bin/curl -fsSL -o "$WALLPAPER" "$URL"
-      fi
-
-      ${pkgs.coreutils}/bin/mkdir -p "$SETTINGS_DIR"
-      TMP=$(${pkgs.coreutils}/bin/mktemp)
-      MERGE='. + {wallpaperPath: $wp, currentThemeName: "dynamic", currentThemeCategory: "dynamic", useFahrenheit: true, windSpeedUnit: "mph"}'
-      if [ -f "$SETTINGS" ]; then
-        ${pkgs.jq}/bin/jq --arg wp "$WALLPAPER" "$MERGE" "$SETTINGS" > "$TMP" \
-          && ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
-      else
-        ${pkgs.jq}/bin/jq -n --arg wp "$WALLPAPER" "$MERGE" > "$SETTINGS"
-        ${pkgs.coreutils}/bin/rm -f "$TMP"
-      fi
-
-      # Best-effort: push changes to a running DMS via IPC so they apply
-      # without log-out. Silently no-op on fresh installs where DMS isn't
-      # running yet — settings.json will be picked up on its next startup.
-      if [ -x "$DMS_BIN" ]; then
-        "$DMS_BIN" ipc wallpaper set "$WALLPAPER" > /dev/null 2>&1 || true
-        "$DMS_BIN" ipc settings set currentThemeName dynamic > /dev/null 2>&1 || true
-        "$DMS_BIN" ipc settings set currentThemeCategory dynamic > /dev/null 2>&1 || true
-        "$DMS_BIN" ipc settings set useFahrenheit true > /dev/null 2>&1 || true
-        "$DMS_BIN" ipc settings set windSpeedUnit mph > /dev/null 2>&1 || true
-      fi
-    '';
-  };
+  # Wallpaper + theme are intentionally not auto-provisioned anymore.
+  # Set them once in Noctalia's UI on first run; matugen-derived theming
+  # follows from Noctalia's wallpaper-driven palette.
 
   # Post-install TODO checklist
   home.activation.todoMd = {
@@ -423,7 +401,7 @@ Things the flake can't do for you.
 - [ ] Install JFryy/qq: `go install github.com/JFryy/qq@latest`
 - [ ] Authenticate Claude Code: run `claude`
 - [ ] Authenticate Gemini CLI: `gemini auth`
-- [ ] Verify `dms doctor -v` reports green
+- [ ] Set wallpaper in Noctalia (right-click bar → Settings → Wallpaper)
 - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
 TODO
       fi

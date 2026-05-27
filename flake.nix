@@ -1,5 +1,5 @@
 {
-  description = "Scott's Framework 13 AMD — NixOS + niri + DankMaterialShell (encrypted, hibernate, secure-boot-ready)";
+  description = "Scott's Framework 13 AMD — NixOS + niri + Noctalia (encrypted, hibernate, secure-boot-ready)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,8 +16,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    dms = {
-      url = "github:AvengeMedia/DankMaterialShell/stable";
+    noctalia = {
+      url = "github:noctalia-dev/noctalia-shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -42,7 +42,7 @@
     , home-manager
     , nixos-hardware
     , niri
-    , dms
+    , noctalia
     , claude-code-nix
     , ...
     }@inputs:
