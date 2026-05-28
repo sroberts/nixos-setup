@@ -63,6 +63,26 @@
   #
   #   boot.resumeDevice = "/dev/vg/swap";
 
+  # This host (Calamares "Swap with Hibernate" path): the 103 GiB hibernation
+  # swap is its OWN LUKS partition (nvme0n1p3). hardware-configuration.nix
+  # lists it in swapDevices but nixos-generate-config did NOT emit a LUKS
+  # unlock for it (only root's), so it was never decrypted — swap stayed at
+  # 0 B and hibernate was impossible. Unlock it here and point resume at the
+  # decrypted mapper. Kept in this tracked file rather than the regenerated
+  # hardware-configuration.nix so a future `nixos-generate-config` can't drop
+  # it again. (LUKS UUIDs are identifiers, not secrets.) If swap shares root's
+  # passphrase the initrd unlocks both from one prompt; otherwise expect a
+  # second passphrase prompt at boot.
+  boot.initrd.luks.devices."luks-7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea".device =
+    "/dev/disk/by-uuid/7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea";
+  boot.resumeDevice = "/dev/mapper/luks-7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea";
+
+  # Idle escalation timing (swayidle in home.nix triggers the actions):
+  # lock @ 5 min, then `systemctl suspend-then-hibernate` @ 15 min. That
+  # suspends to RAM and, HibernateDelaySec later, wakes and hibernates to
+  # disk — so hibernate lands at 20 min total idle.
+  systemd.sleep.settings.Sleep.HibernateDelaySec = 300;
+
   # Optional: let the lid / power key hibernate instead of sleep.
   # services.logind.lidSwitch = "hibernate";
 

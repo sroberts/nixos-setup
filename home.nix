@@ -263,6 +263,35 @@
     };
   };
 
+  # Idle management. niri implements the ext-idle-notify protocol, so swayidle
+  # drives the escalation: lock at 5 min, suspend-then-hibernate at 15 min.
+  # suspend-then-hibernate suspends to RAM immediately, then hibernates after
+  # HibernateDelaySec (set to 5 min in configuration.nix) — i.e. hibernate at
+  # 20 min total idle. Lock uses `loginctl lock-session` (Noctalia raises its
+  # lock screen on the logind signal), the same shell-agnostic path as the
+  # Super+Alt+L bind; XDG_SESSION_ID reaches the user systemd manager, so the
+  # session resolves correctly from this service. before-sleep locks ahead of
+  # any suspend/hibernate so the screen is never left unlocked on resume.
+  services.swayidle = {
+    enable = true;
+    timeouts = [
+      {
+        timeout = 300;
+        command = "loginctl lock-session";
+      }
+      {
+        timeout = 900;
+        command = "systemctl suspend-then-hibernate";
+      }
+    ];
+    events = [
+      {
+        event = "before-sleep";
+        command = "loginctl lock-session";
+      }
+    ];
+  };
+
   # Default terminal for tools that consult $TERMINAL (lazygit edit, fzf,
   # xdg-terminal-exec helpers, etc.).
   home.sessionVariables.TERMINAL = "ghostty";
