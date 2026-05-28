@@ -3,13 +3,21 @@
 #
 # NOTE: when enabling Secure Boot (see the SECURE BOOT block below), add `lib`
 # to the function arguments: { config, pkgs, lib, inputs, ... }
-{ config, pkgs, inputs, ... }:
+{
+  config,
+  pkgs,
+  inputs,
+  ...
+}:
 
 {
   ############################################################
   # Nix / nixpkgs
   ############################################################
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   # Default download buffer is 1 MiB, which fills constantly on big builds
   # (first install, niri/dms/claude-code together). 256 MiB silences the
   # "download buffer is full" warnings without meaningful memory cost.
@@ -30,7 +38,10 @@
   # kernel's entropy pool. Mount /boot with restrictive masks so files and
   # directories under the ESP are owner-only (root). Merges with the
   # /boot entry that nixos-generate-config wrote to hardware-configuration.nix.
-  fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
+  fileSystems."/boot".options = [
+    "fmask=0077"
+    "dmask=0077"
+  ];
 
   ############################################################
   # Disk encryption + hibernation (suspend-to-disk)
@@ -106,11 +117,11 @@
   # before the integrations are useful.
   services.fprintd.enable = true;
   security.pam.services = {
-    sudo.fprintAuth = true;        # sudo prompt
-    login.fprintAuth = true;       # TTY login
-    su.fprintAuth = true;          # su to another user
-    polkit-1.fprintAuth = true;    # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true;      # tuigreet at the login screen
+    sudo.fprintAuth = true; # sudo prompt
+    login.fprintAuth = true; # TTY login
+    su.fprintAuth = true; # su to another user
+    polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
+    greetd.fprintAuth = true; # tuigreet at the login screen
     # Noctalia's lock screen runs its own PAM context; we don't add fprintAuth
     # there. Wayland lock-screen PAM stacks tend to omit the `unix-early`
     # password reader that login/greetd have, so layering pam_fprintd on top
@@ -132,9 +143,10 @@
   # works at runtime. We don't gain confidence by running niri's own tests
   # during our system build.
   programs.niri.package =
-    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs (old: {
-      doCheck = false;
-    });
+    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs
+      (old: {
+        doCheck = false;
+      });
 
   # tuigreet on tty1, launching niri (which auto-spawns Noctalia via
   # spawn-at-startup in home.nix). `--remember` keeps the last username
@@ -209,7 +221,13 @@
     isNormalUser = true;
     description = "Scott";
     shell = pkgs.zsh;
-    extraGroups = [ "wheel" "networkmanager" "docker" "video" "input" ];
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "docker"
+      "video"
+      "input"
+    ];
   };
 
   ############################################################

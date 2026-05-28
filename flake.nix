@@ -37,14 +37,15 @@
   };
 
   outputs =
-    { self
-    , nixpkgs
-    , home-manager
-    , nixos-hardware
-    , niri
-    , noctalia
-    , claude-code-nix
-    , ...
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      nixos-hardware,
+      niri,
+      noctalia,
+      claude-code-nix,
+      ...
     }@inputs:
     {
       nixosConfigurations.sjr-fw13 = nixpkgs.lib.nixosSystem {
