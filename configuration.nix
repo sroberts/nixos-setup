@@ -1,10 +1,8 @@
 # System-level configuration for the Framework 13 AMD.
 # User-level packages and dotfiles live in home.nix.
-#
-# NOTE: when enabling Secure Boot (see the SECURE BOOT block below), add `lib`
-# to the function arguments: { config, pkgs, lib, inputs, ... }
 {
   config,
+  lib,
   pkgs,
   inputs,
   ...
@@ -85,6 +83,11 @@
   services.power-profiles-daemon.enable = true; # NOT tlp on Ryzen 7040
   services.tlp.enable = false;
   services.fstrim.enable = true;
+  # Noctalia's battery widget (and any UPower consumer) needs the daemon
+  # registered on the system bus; without it the shell logs
+  # `org.freedesktop.DBus.Error.ServiceUnknown` and silently drops battery
+  # state. power-profiles-daemon doesn't pull it in on its own.
+  services.upower.enable = true;
 
   ############################################################
   # Audio (PipeWire)
@@ -162,10 +165,14 @@
     };
   };
 
-  # niri-flake's polkit user service is left at its default (enabled).
-  # DMS used to provide its own polkit agent, so we disabled the niri one
-  # to avoid double-registration; Noctalia does not provide a polkit
-  # agent, so we want niri's back.
+  # Polkit auth agent: defer to Noctalia's `polkit-agent` plugin (seeded in
+  # home.nix as part of plugins.json) rather than niri-flake's bundled
+  # polkit-kde-agent service. Two agents would race on the
+  # org.freedesktop.PolicyKit1.AuthenticationAgent bus name; the upstream
+  # plugin docs explicitly require the other agent to be disabled. Force
+  # the unit off — niri-flake hard-codes `wantedBy = [ "niri.service" ]`
+  # with no opt-out option, so this is the only knob.
+  systemd.user.services.niri-flake-polkit.enable = lib.mkForce false;
 
   # Tear out GNOME left behind by the Calamares base install. Harmless
   # to keep on if you used the manual install path (nothing to disable).

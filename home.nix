@@ -416,6 +416,58 @@
   # Set them once in Noctalia's UI on first run; matugen-derived theming
   # follows from Noctalia's wallpaper-driven palette.
 
+  # Seed Noctalia's config files on first run.
+  #
+  # Why settings.json: Noctalia opens a modal SetupWizard whenever this
+  # file is missing (Commons/Settings.qml: `shouldOpenSetupWizard = true`
+  # on ENOENT). The wizard hides the bar until dismissed — on an
+  # unattended fresh boot the user sees a bare wallpaper and assumes the
+  # shell didn't start. An empty stub is enough to skip it; Noctalia
+  # fills in defaults and runs all migrations on next load.
+  #
+  # Why plugins.json: mirrors CachyOS's curated default, enabling the
+  # official Noctalia plugin source plus `polkit-agent`. The matching
+  # disable for niri-flake's polkit-kde-agent lives in configuration.nix
+  # — both would otherwise race on the PolicyKit1 bus name.
+  #
+  # Why home.activation and not xdg.configFile / programs.noctalia-shell:
+  # Noctalia writes these files at runtime (settings UI, plugin toggles),
+  # and a store-path symlink would silently break those writes. Seeding
+  # once + handing ownership to Noctalia keeps the UI functional.
+  home.activation.noctaliaConfigSeed = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      CFG="$HOME/.config/noctalia"
+      ${pkgs.coreutils}/bin/mkdir -p "$CFG"
+
+      if [ ! -e "$CFG/settings.json" ]; then
+        ${pkgs.coreutils}/bin/printf '{}\n' > "$CFG/settings.json"
+      fi
+
+      if [ ! -e "$CFG/plugins.json" ]; then
+        ${pkgs.coreutils}/bin/cat > "$CFG/plugins.json" <<'PLUGINS'
+      {
+        "sources": [
+          {
+            "enabled": true,
+            "name": "Noctalia Plugins",
+            "url": "https://github.com/noctalia-dev/noctalia-plugins"
+          }
+        ],
+        "states": {
+          "polkit-agent": {
+            "enabled": true,
+            "sourceUrl": "https://github.com/noctalia-dev/noctalia-plugins"
+          }
+        },
+        "version": 2
+      }
+      PLUGINS
+      fi
+    '';
+  };
+
   # Post-install TODO checklist
   home.activation.todoMd = {
     after = [ "writeBoundary" ];

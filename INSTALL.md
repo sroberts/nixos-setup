@@ -324,6 +324,23 @@ it with `git revert` so the repo and running generation stay in sync.
     into `nix.settings.access-tokens` (a committed credential leak), and the
     `github:` fetch wouldn't include your local `hardware-configuration.nix`.
     Always build from the local clone.
+11. **Noctalia first-run SetupWizard.** Stock Noctalia opens a modal setup
+    wizard when `~/.config/noctalia/settings.json` doesn't exist. The wizard
+    hides the bar until dismissed — on an unattended fresh boot you see a
+    bare wallpaper. `home.nix` seeds an empty `settings.json` (and a CachyOS-
+    matching `plugins.json`) via `home.activation.noctaliaConfigSeed` so the
+    wizard is skipped and the bar renders immediately. If you ever want the
+    wizard back, `rm ~/.config/noctalia/settings.json` and re-launch the
+    shell. The seed runs once per fresh `$HOME` — after first boot Noctalia
+    owns those files and the settings UI writes back to them normally.
+12. **Polkit auth agent swap.** This flake disables niri-flake's bundled
+    `polkit-kde-agent` (`systemd.user.services.niri-flake-polkit.enable =
+    lib.mkForce false`) in favour of Noctalia's `polkit-agent` plugin, which
+    is enabled in the seeded `plugins.json`. Two agents on the PolicyKit1
+    bus would race; the Noctalia plugin docs explicitly require the other to
+    be disabled. The plugin is fetched at runtime from
+    [github.com/noctalia-dev/noctalia-plugins](https://github.com/noctalia-dev/noctalia-plugins)
+    on Noctalia's first launch — needs network.
 
 ---
 
