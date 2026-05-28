@@ -29,6 +29,10 @@ jobs:
       # The real one is per-machine and gitignored (see CLAUDE.md / INSTALL.md).
       # The fileSystems / boot options come from this file on the real host;
       # in CI we only need the flake to *evaluate*, not boot.
+      #
+      # `git add` is required because Nix flakes only see git-tracked files
+      # in a dirty tree — without it, the stub exists on disk but Nix can't
+      # find it via the flake's source root.
       - name: Stub hardware-configuration.nix
         run: |
           cat > hardware-configuration.nix <<'EOF'
@@ -45,6 +49,7 @@ jobs:
             hardware.cpu.amd.updateMicrocode = lib.mkDefault true;
           }
           EOF
+          git add -f hardware-configuration.nix
 
       - name: nix flake check
         run: nix flake check --no-build --show-trace
