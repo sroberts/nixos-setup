@@ -1,15 +1,21 @@
 # System-level configuration for the Framework 13 AMD.
 # User-level packages and dotfiles live in home.nix.
-#
-# NOTE: when enabling Secure Boot (see the SECURE BOOT block below), add `lib`
-# to the function arguments: { config, pkgs, lib, inputs, ... }
-{ config, pkgs, inputs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
 
 {
   ############################################################
   # Nix / nixpkgs
   ############################################################
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   # Default download buffer is 1 MiB, which fills constantly on big builds
   # (first install, niri/dms/claude-code together). 256 MiB silences the
   # "download buffer is full" warnings without meaningful memory cost.
@@ -30,7 +36,10 @@
   # kernel's entropy pool. Mount /boot with restrictive masks so files and
   # directories under the ESP are owner-only (root). Merges with the
   # /boot entry that nixos-generate-config wrote to hardware-configuration.nix.
-  fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
+  fileSystems."/boot".options = [
+    "fmask=0077"
+    "dmask=0077"
+  ];
 
   ############################################################
   # Disk encryption + hibernation (suspend-to-disk)
@@ -54,8 +63,23 @@
   #
   #   boot.resumeDevice = "/dev/vg/swap";
 
-  # Optional: let the lid / power key hibernate instead of sleep.
-  # services.logind.lidSwitch = "hibernate";
+  # The per-host hibernation swap unlock and boot.resumeDevice are
+  # machine-specific (LUKS UUIDs differ per disk), so they live in the host's
+  # own module: hosts/<hostname>/default.nix. See hosts/README.md for how a
+  # new machine sets them up.
+
+  # Idle escalation timing (swayidle in home.nix triggers the actions):
+  # lock @ 5 min, then `systemctl suspend-then-hibernate` @ 15 min. That
+  # suspends to RAM and, HibernateDelaySec later, wakes and hibernates to
+  # disk — so hibernate lands at 20 min total idle.
+  systemd.sleep.settings.Sleep.HibernateDelaySec = 300;
+
+  # Closing the lid suspends to RAM, then hibernates HibernateDelaySec later —
+  # the same suspend-then-hibernate escalation the idle timeout uses. Applies
+  # on battery and AC (HandleLidSwitchExternalPower defaults to this value);
+  # HandleLidSwitchDocked defaults to "ignore", so an external display keeps
+  # the session alive with the lid shut.
+  services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
 
   ############################################################
   # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md
@@ -74,6 +98,11 @@
   services.power-profiles-daemon.enable = true; # NOT tlp on Ryzen 7040
   services.tlp.enable = false;
   services.fstrim.enable = true;
+  # Noctalia's battery widget (and any UPower consumer) needs the daemon
+  # registered on the system bus; without it the shell logs
+  # `org.freedesktop.DBus.Error.ServiceUnknown` and silently drops battery
+  # state. power-profiles-daemon doesn't pull it in on its own.
+  services.upower.enable = true;
 
   ############################################################
   # Audio (PipeWire)
@@ -97,7 +126,7 @@
   ############################################################
   # Networking, Bluetooth, fingerprint
   ############################################################
-  networking.hostName = "sjr-fw13";
+  # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
@@ -106,38 +135,59 @@
   # before the integrations are useful.
   services.fprintd.enable = true;
   security.pam.services = {
-    sudo.fprintAuth = true;        # sudo prompt
-    login.fprintAuth = true;       # TTY login
-    su.fprintAuth = true;          # su to another user
-    polkit-1.fprintAuth = true;    # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true;      # dms-greeter at the login screen
-    swaylock.fprintAuth = true;    # DMS lock screen wraps swaylock
+    sudo.fprintAuth = true; # sudo prompt
+    login.fprintAuth = true; # TTY login
+    su.fprintAuth = true; # su to another user
+    polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
+    greetd.fprintAuth = true; # tuigreet at the login screen
+    # Noctalia's lock screen runs its own PAM context; we don't add fprintAuth
+    # there. Wayland lock-screen PAM stacks tend to omit the `unix-early`
+    # password reader that login/greetd have, so layering pam_fprintd on top
+    # breaks the password fallback (fprintd blocks the conversation while the
+    # user is typing). Lock-screen fingerprint, if wanted, should be wired
+    # through Noctalia's own settings, not this PAM map.
   };
 
   ############################################################
-  # niri + DankMaterialShell greeter
+  # niri + greetd (tuigreet) login
   ############################################################
   programs.niri.enable = true;
-  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08),
-  # but DMS requires niri 25.11+. Pin to niri-unstable, and disable the
-  # in-build cargo test suite — those tests sometimes SIGABRT inside the
-  # Nix build sandbox (filesystem assumptions that don't hold), even when
-  # the binary itself works at runtime. We don't gain confidence by
-  # running niri's own tests during our system build.
+  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08).
+  # Pin to niri-unstable because Quickshell-based shells (Noctalia and the
+  # ecosystem that shares its Wayland-protocol footprint) track niri's
+  # latest, and the stable tag lags. Also disable the in-build cargo test
+  # suite — those tests sometimes SIGABRT inside the Nix build sandbox
+  # (filesystem assumptions that don't hold), even when the binary itself
+  # works at runtime. We don't gain confidence by running niri's own tests
+  # during our system build.
   programs.niri.package =
-    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs (old: {
-      doCheck = false;
-    });
+    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs
+      (old: {
+        doCheck = false;
+      });
 
-  services.displayManager.dms-greeter = {
+  # tuigreet on tty1, launching niri (which auto-spawns Noctalia via
+  # spawn-at-startup in home.nix). `--remember` keeps the last username
+  # pre-filled; `--time` shows a clock. The session command is the same
+  # one DankInstaller-style configs use to start niri.
+  services.greetd = {
     enable = true;
-    compositor.name = "niri";
-    configHome = "/home/sroberts";
-    configFiles = [ "/home/sroberts/.config/DankMaterialShell/settings.json" ];
-    logs = { save = true; path = "/tmp/dms-greeter.log"; };
+    settings = {
+      default_session = {
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd niri-session";
+        user = "greeter";
+      };
+    };
   };
 
-  systemd.user.services.niri-flake-polkit.enable = false;
+  # Polkit auth agent: defer to Noctalia's `polkit-agent` plugin (seeded in
+  # home.nix as part of plugins.json) rather than niri-flake's bundled
+  # polkit-kde-agent service. Two agents would race on the
+  # org.freedesktop.PolicyKit1.AuthenticationAgent bus name; the upstream
+  # plugin docs explicitly require the other agent to be disabled. Force
+  # the unit off — niri-flake hard-codes `wantedBy = [ "niri.service" ]`
+  # with no opt-out option, so this is the only knob.
+  systemd.user.services.niri-flake-polkit.enable = lib.mkForce false;
 
   # Tear out GNOME left behind by the Calamares base install. Harmless
   # to keep on if you used the manual install path (nothing to disable).
@@ -193,7 +243,13 @@
     isNormalUser = true;
     description = "Scott";
     shell = pkgs.zsh;
-    extraGroups = [ "wheel" "networkmanager" "docker" "video" "input" ];
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "docker"
+      "video"
+      "input"
+    ];
   };
 
   ############################################################

@@ -1,15 +1,16 @@
 # nixos-setup
 
-NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + DankMaterialShell on encrypted LVM-on-LUKS with hibernation-capable swap. Single host: `sjr-fw13`.
+NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + DankMaterialShell on encrypted LVM-on-LUKS with hibernation-capable swap. The only host today is `sjr-fw13`, but the layout is multi-host: each machine is a directory under `hosts/` that `flake.nix` discovers automatically. See `hosts/README.md` to add one.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and the `sjr-fw13` host. |
-| `configuration.nix` | System-level: bootloader, encryption resume target, services, system packages, the `sroberts` user. |
-| `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. |
-| `hardware-configuration.nix` | **Not in the repo.** Generated per-machine by `nixos-generate-config`. Carries the LUKS UUID and filesystem layout. Stays on disk only. |
+| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and auto-discovers every host under `hosts/` (no host hardcoded). |
+| `configuration.nix` | Shared system-level config: bootloader, services, system packages, the `sroberts` user. Host-agnostic. |
+| `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. Shared across hosts. |
+| `hosts/<name>/` | Per-machine: `default.nix` (hostname, `nixos-hardware` model module, swap/resume) + the committed `hardware-configuration.nix` (LUKS UUID, filesystems). See `hosts/README.md`. |
+| `scripts/new-host.sh` | Scaffolds a new `hosts/<name>/` on a fresh machine. |
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |
 | `INSTALL.md` | Single canonical install runbook (partition → encrypt → install → verify) plus rationale, gotchas, and migration notes. |
 | `secure-boot.md` | lanzaboote post-install runbook with Framework-specific key enrollment. |
@@ -52,7 +53,7 @@ nix-collect-garbage -d                   # user generations
 sudo nix-collect-garbage -d              # system generations
 ```
 
-After every config edit you intend to keep: `git add -A && git commit`. The repo *is* the source of truth — drift between repo and machine is the bug you're trying to avoid. `hardware-configuration.nix` is gitignored, so `git add -A` won't pull it in.
+After every config edit you intend to keep: `git add -A && git commit`. The repo *is* the source of truth — drift between repo and machine is the bug you're trying to avoid. Each host's `hardware-configuration.nix` is committed under `hosts/<name>/` (the LUKS UUIDs are identifiers, not secrets), so the repo fully describes every machine.
 
 ## First-time-on-this-machine prep
 

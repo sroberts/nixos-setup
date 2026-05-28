@@ -92,8 +92,9 @@ git add -A && git commit -m "ready to install"
 git push
 ```
 
-`.gitignore` already excludes `hardware-configuration.nix`, so machine
-secrets stay local.
+Each host's `hardware-configuration.nix` is committed under `hosts/<name>/`
+(LUKS UUIDs are identifiers, not secrets). The disk passphrase you set in
+Calamares is what protects the data, and it never touches the repo.
 
 ---
 
@@ -153,23 +154,31 @@ cd ~/nixos-setup
 # then on (remove later with `nix-env -e git` if you care).
 ```
 
-Bring the machine-specific hardware file Calamares generated into the
-working copy, then stage it without committing. The stage is the
-*important* part: Nix flakes only evaluate files known to Git, so a
-gitignored file sitting in the working tree is invisible to the build
-even though it's right there. Staging with `-f` overrides .gitignore for
-the index; you keep it out of remote by simply never committing it.
+Bring the machine-specific hardware file Calamares generated into this
+host's directory. Nix flakes only evaluate files known to Git, so the
+per-host `hardware-configuration.nix` has to be tracked for the build to
+see it — `scripts/new-host.sh` copies it in and `git add`s it for you, and
+also auto-detects the hibernation swap LUKS UUID:
 
 ```bash
-sudo cp /etc/nixos/hardware-configuration.nix ~/nixos-setup/
-sudo chown $USER:users ~/nixos-setup/hardware-configuration.nix
-git add -f hardware-configuration.nix
+scripts/new-host.sh sjr-fw13
 ```
 
-`git status` will show it as staged forever. That's fine — don't `git
-commit` while it's staged (it'd push your LUKS UUID to remote), but
-otherwise leave it alone. The file is needed in the index for every
-`nixos-rebuild --flake` you'll ever run on this machine.
+If `hosts/sjr-fw13/` already exists in the repo (it's the committed host)
+and you're **reinstalling from scratch**, your fresh disk has *new* LUKS
+UUIDs, so overwrite the committed file and update the swap unlock:
+
+```bash
+sudo cp /etc/nixos/hardware-configuration.nix hosts/sjr-fw13/hardware-configuration.nix
+sudo chown $USER:users hosts/sjr-fw13/hardware-configuration.nix
+# then edit hosts/sjr-fw13/default.nix and replace the swap LUKS UUID
+# (find it with `swapon --show` → the /dev/mapper/luks-<uuid> name)
+```
+
+These files carry only LUKS UUIDs (identifiers, not secrets) and the
+filesystem layout, so committing them is fine and makes the repo a true
+source of truth. The committed `hosts/sjr-fw13/` already matches *this*
+machine — you only regenerate on a fresh disk.
 
 Make `~/nixos-setup` the live config so `nixos-rebuild` finds your edits:
 
@@ -278,7 +287,7 @@ nix flake update                              # bump all inputs
 # Or: nix flake update dms                    # bump one input
 sudo nixos-rebuild switch --flake .#sjr-fw13
 
-# commit your edits (hardware-configuration.nix stays gitignored)
+# commit your edits (per-host hardware configs under hosts/ are tracked too)
 git add -A && git commit -m "..." && git push
 ```
 
@@ -324,6 +333,23 @@ it with `git revert` so the repo and running generation stay in sync.
     into `nix.settings.access-tokens` (a committed credential leak), and the
     `github:` fetch wouldn't include your local `hardware-configuration.nix`.
     Always build from the local clone.
+11. **Noctalia first-run SetupWizard.** Stock Noctalia opens a modal setup
+    wizard when `~/.config/noctalia/settings.json` doesn't exist. The wizard
+    hides the bar until dismissed — on an unattended fresh boot you see a
+    bare wallpaper. `home.nix` seeds an empty `settings.json` (and a CachyOS-
+    matching `plugins.json`) via `home.activation.noctaliaConfigSeed` so the
+    wizard is skipped and the bar renders immediately. If you ever want the
+    wizard back, `rm ~/.config/noctalia/settings.json` and re-launch the
+    shell. The seed runs once per fresh `$HOME` — after first boot Noctalia
+    owns those files and the settings UI writes back to them normally.
+12. **Polkit auth agent swap.** This flake disables niri-flake's bundled
+    `polkit-kde-agent` (`systemd.user.services.niri-flake-polkit.enable =
+    lib.mkForce false`) in favour of Noctalia's `polkit-agent` plugin, which
+    is enabled in the seeded `plugins.json`. Two agents on the PolicyKit1
+    bus would race; the Noctalia plugin docs explicitly require the other to
+    be disabled. The plugin is fetched at runtime from
+    [github.com/noctalia-dev/noctalia-plugins](https://github.com/noctalia-dev/noctalia-plugins)
+    on Noctalia's first launch — needs network.
 
 ---
 
@@ -331,15 +357,17 @@ it with `git revert` so the repo and running generation stay in sync.
 
 | File | In repo? | Why |
 |---|---|---|
-| `flake.nix` | Yes | Entry point, declares inputs |
-| `configuration.nix` | Yes | System config — no secrets |
-| `home.nix` | Yes | User config — no secrets |
+| `flake.nix` | Yes | Entry point, declares inputs, auto-discovers `hosts/` |
+| `configuration.nix` | Yes | Shared system config — no secrets, host-agnostic |
+| `home.nix` | Yes | Shared user config — no secrets |
+| `hosts/<name>/default.nix` | Yes | Per-host: hostname, `nixos-hardware` module, swap/resume |
+| `hosts/<name>/hardware-configuration.nix` | Yes | Per-host disk UUIDs + filesystems (UUIDs are identifiers, not secrets) |
+| `scripts/new-host.sh` | Yes | Scaffolds a new host on a fresh machine |
 | `flake.lock` | Yes (after first install) | Pins inputs for reproducibility |
 | `secure-boot.md` | Yes | Post-install lanzaboote runbook |
 | `INSTALL.md` | Yes | This file |
 | `README.md` | Yes | Orientation and day-to-day commands |
 | `CLAUDE.md` | Yes | Context for AI coding agents working in this repo |
-| `hardware-configuration.nix` | **No** | Machine-specific disk UUIDs + LUKS device |
 
 ---
 
@@ -354,9 +382,10 @@ option in Step 1 gives you that on the default flow.
 The trade-off is no built-in rollback safety net during install — if it
 goes wrong, you're recovering from the live ISO.
 
-You'll also need to **uncomment** `boot.resumeDevice = "/dev/vg/swap"` at
-the bottom of the `boot.resumeDevice` block in `configuration.nix`
-before the rebuild in Step 3, so the kernel resumes from the LVM swap LV.
+You'll also need to set `boot.resumeDevice = "/dev/vg/swap"` in this host's
+module (`hosts/sjr-fw13/default.nix`) — replacing the by-UUID swap unlock the
+Calamares path uses — before the rebuild in Step 3, so the kernel resumes
+from the LVM swap LV.
 
 Boot the live ISO (minimal or graphical), connect Wi-Fi, then:
 
@@ -406,21 +435,26 @@ grep -A3 swapDevices /mnt/etc/nixos/hardware-configuration.nix
 # must list /dev/disk/by-uuid/... pointing at the swap LV
 ```
 
-Then clone this repo, copy the flake files in, and run `nixos-install`:
+Then clone this repo, drop the generated hardware config into the host
+directory, and run `nixos-install` straight from the clone (the whole flake
+tree — `hosts/`, `scripts/`, etc. — needs to be present, so install from the
+repo rather than copying individual files):
 
 ```bash
 # Minimal ISO needs nix-shell -p git; graphical ISO has git pre-installed
 nix-shell -p git --run "git clone https://github.com/sroberts/nixos-setup.git /tmp/cfg"
 
-rm /mnt/etc/nixos/configuration.nix          # drop the auto-generated stub
-for f in flake.nix flake.lock configuration.nix home.nix; do
-  [ -f /tmp/cfg/$f ] && cp /tmp/cfg/$f /mnt/etc/nixos/
-done
+# Use the hardware config nixos-generate-config just wrote for THIS disk
+cp /mnt/etc/nixos/hardware-configuration.nix /tmp/cfg/hosts/sjr-fw13/hardware-configuration.nix
 
-# IMPORTANT: uncomment boot.resumeDevice before installing
-sed -i 's|^  # boot.resumeDevice = "/dev/vg/swap";|  boot.resumeDevice = "/dev/vg/swap";|' /mnt/etc/nixos/configuration.nix
+# IMPORTANT (LVM path): edit /tmp/cfg/hosts/sjr-fw13/default.nix and replace
+# the hibernation swap block with a single line — the swap LV lives inside
+# the same LUKS container as root, so it's already unlocked; you only need
+# to point resume at it:
+#     boot.resumeDevice = "/dev/vg/swap";
+# (delete the boot.initrd.luks.devices."luks-..." swap line.)
 
-nixos-install --flake /mnt/etc/nixos#sjr-fw13 \
+nixos-install --flake /tmp/cfg#sjr-fw13 \
   --option experimental-features 'nix-command flakes'
 # Set the root password when prompted — DO NOT skip
 reboot

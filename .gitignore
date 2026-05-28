@@ -1,7 +1,6 @@
-# Machine-specific — encodes this host's LUKS UUIDs. Stays on disk only.
-# Re-staged with `git add -f` after a fresh clone so flake builds can see it,
-# but never committed.
-hardware-configuration.nix
+# Per-host hardware-configuration.nix files (hosts/<name>/) are committed —
+# flakes only see git-tracked files, and the LUKS UUIDs they carry are
+# identifiers, not secrets. See hosts/README.md.
 
 # nix build output symlinks
 result
