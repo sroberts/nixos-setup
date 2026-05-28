@@ -447,6 +447,24 @@
     '';
   };
 
+  # User avatar at ~/.face (the conventional path login managers, greeters,
+  # and AccountsService read). Pulled from GitHub; download to a temp file
+  # and move into place so a failed fetch never leaves a truncated ~/.face.
+  home.activation.faceIcon = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      if [ ! -e "$HOME/.face" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        if ${pkgs.curl}/bin/curl -fsSL -o "$TMP" "https://avatars.githubusercontent.com/u/44774?v=4"; then
+          ${pkgs.coreutils}/bin/mv "$TMP" "$HOME/.face"
+        else
+          ${pkgs.coreutils}/bin/rm -f "$TMP"
+        fi
+      fi
+    '';
+  };
+
   # Wallpaper + theme are intentionally not auto-provisioned anymore.
   # Set them once in Noctalia's UI on first run; matugen-derived theming
   # follows from Noctalia's wallpaper-driven palette.
@@ -457,8 +475,11 @@
   # file is missing (Commons/Settings.qml: `shouldOpenSetupWizard = true`
   # on ENOENT). The wizard hides the bar until dismissed — on an
   # unattended fresh boot the user sees a bare wallpaper and assumes the
-  # shell didn't start. An empty stub is enough to skip it; Noctalia
-  # fills in defaults and runs all migrations on next load.
+  # shell didn't start. A stub is enough to skip it; Noctalia fills in
+  # defaults and runs all migrations on next load. We seed only the default
+  # weather location (Greenville, SC, °F) — Noctalia merges the rest and
+  # owns the file thereafter (it hot-reloads external edits via a watched
+  # FileView, so this only ever applies on a fresh $HOME).
   #
   # Why plugins.json: mirrors CachyOS's curated default, enabling the
   # official Noctalia plugin source plus `polkit-agent`. The matching
@@ -477,7 +498,14 @@
       ${pkgs.coreutils}/bin/mkdir -p "$CFG"
 
       if [ ! -e "$CFG/settings.json" ]; then
-        ${pkgs.coreutils}/bin/printf '{}\n' > "$CFG/settings.json"
+        ${pkgs.coreutils}/bin/cat > "$CFG/settings.json" <<'SETTINGS'
+      {
+        "location": {
+          "name": "Greenville, SC",
+          "useFahrenheit": true
+        }
+      }
+      SETTINGS
       fi
 
       if [ ! -e "$CFG/plugins.json" ]; then
