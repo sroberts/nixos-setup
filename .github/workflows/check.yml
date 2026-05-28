@@ -25,37 +25,23 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      # Drop a stub hardware-configuration.nix so the flake evaluates in CI.
-      # The real one is per-machine and gitignored (see CLAUDE.md / INSTALL.md).
-      # The fileSystems / boot options come from this file on the real host;
-      # in CI we only need the flake to *evaluate*, not boot.
-      #
-      # `git add` is required because Nix flakes only see git-tracked files
-      # in a dirty tree — without it, the stub exists on disk but Nix can't
-      # find it via the flake's source root.
-      - name: Stub hardware-configuration.nix
-        run: |
-          cat > hardware-configuration.nix <<'EOF'
-          { lib, modulesPath, ... }:
-          {
-            imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
-            boot.initrd.availableKernelModules = [ ];
-            boot.initrd.kernelModules = [ ];
-            boot.kernelModules = [ ];
-            boot.extraModulePackages = [ ];
-            fileSystems."/" = { device = "/dev/disk/by-label/stub-root"; fsType = "ext4"; };
-            fileSystems."/boot" = { device = "/dev/disk/by-label/stub-boot"; fsType = "vfat"; };
-            nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-            hardware.cpu.amd.updateMicrocode = lib.mkDefault true;
-          }
-          EOF
-          git add -f hardware-configuration.nix
-
+      # Each host's hardware-configuration.nix is committed under hosts/<name>/
+      # (the LUKS UUIDs are identifiers, not secrets), so the flake evaluates
+      # in CI with no stubbing. Device paths in those files are just strings —
+      # evaluation never touches real disks.
       - name: nix flake check
         run: nix flake check --no-build --show-trace
 
-      - name: Evaluate the system closure (drvPath only, no build)
+      # Evaluate every discovered host's system closure (drvPath only, no
+      # build), so adding a host automatically gets it eval-checked here.
+      - name: Evaluate each host's system closure
         run: |
-          nix eval --raw \
-            .#nixosConfigurations.sjr-fw13.config.system.build.toplevel.drvPath \
-            --show-trace
+          hosts=$(nix eval --raw \
+            --apply 'cfgs: builtins.concatStringsSep " " (builtins.attrNames cfgs)' \
+            .#nixosConfigurations)
+          for h in $hosts; do
+            echo "== evaluating $h =="
+            nix eval --raw \
+              ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath" \
+              --show-trace
+          done

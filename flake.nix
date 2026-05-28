@@ -41,40 +41,54 @@
       self,
       nixpkgs,
       home-manager,
-      nixos-hardware,
       niri,
       noctalia,
       claude-code-nix,
       ...
     }@inputs:
+    let
+      lib = nixpkgs.lib;
+
+      # Every directory under ./hosts is a machine. Drop in a new
+      # hosts/<hostname>/ (a default.nix + its hardware-configuration.nix) and
+      # it becomes nixosConfigurations.<hostname> automatically — no edit to
+      # this file. scripts/new-host.sh scaffolds one; see hosts/README.md.
+      hostNames = builtins.attrNames (
+        lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./hosts)
+      );
+
+      # Shared system definition. Only the per-host module (./hosts/<name>)
+      # carries machine-specific state (hardware-configuration.nix, hostname,
+      # the nixos-hardware model module, swap/resume UUIDs); configuration.nix
+      # and home.nix are identical on every host.
+      mkHost =
+        hostname:
+        lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = { inherit inputs; };
+          modules = [
+            ./hosts/${hostname}
+            ./configuration.nix
+
+            niri.nixosModules.niri
+
+            # ── SECURE BOOT ──
+            # Uncomment together with the input in the inputs block and the
+            # block in configuration.nix:
+            # inputs.lanzaboote.nixosModules.lanzaboote
+
+            home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.extraSpecialArgs = { inherit inputs; };
+              home-manager.users.sroberts = import ./home.nix;
+            }
+          ];
+        };
+    in
     {
-      nixosConfigurations.sjr-fw13 = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        specialArgs = { inherit inputs; };
-        modules = [
-          ./configuration.nix
-          ./hardware-configuration.nix
-
-          # Framework 13 AMD Ryzen 7040. Swap for framework-amd-ai-300-series
-          # if you have a Ryzen AI 300.
-          nixos-hardware.nixosModules.framework-13-7040-amd
-
-          niri.nixosModules.niri
-
-          # ── SECURE BOOT ──
-          # Uncomment together with the input above and the block in
-          # configuration.nix:
-          # inputs.lanzaboote.nixosModules.lanzaboote
-
-          home-manager.nixosModules.home-manager
-          {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = { inherit inputs; };
-            home-manager.users.sroberts = import ./home.nix;
-          }
-        ];
-      };
+      nixosConfigurations = lib.genAttrs hostNames mkHost;
 
       # `nix fmt` formats all .nix files in the tree. pkgs.nixfmt is the RFC 166
       # implementation that ships in nixpkgs; running it has not yet been

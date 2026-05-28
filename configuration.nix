@@ -63,19 +63,10 @@
   #
   #   boot.resumeDevice = "/dev/vg/swap";
 
-  # This host (Calamares "Swap with Hibernate" path): the 103 GiB hibernation
-  # swap is its OWN LUKS partition (nvme0n1p3). hardware-configuration.nix
-  # lists it in swapDevices but nixos-generate-config did NOT emit a LUKS
-  # unlock for it (only root's), so it was never decrypted — swap stayed at
-  # 0 B and hibernate was impossible. Unlock it here and point resume at the
-  # decrypted mapper. Kept in this tracked file rather than the regenerated
-  # hardware-configuration.nix so a future `nixos-generate-config` can't drop
-  # it again. (LUKS UUIDs are identifiers, not secrets.) If swap shares root's
-  # passphrase the initrd unlocks both from one prompt; otherwise expect a
-  # second passphrase prompt at boot.
-  boot.initrd.luks.devices."luks-7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea".device =
-    "/dev/disk/by-uuid/7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea";
-  boot.resumeDevice = "/dev/mapper/luks-7cbba5ed-173a-4ba1-8b81-cb129f1ec8ea";
+  # The per-host hibernation swap unlock and boot.resumeDevice are
+  # machine-specific (LUKS UUIDs differ per disk), so they live in the host's
+  # own module: hosts/<hostname>/default.nix. See hosts/README.md for how a
+  # new machine sets them up.
 
   # Idle escalation timing (swayidle in home.nix triggers the actions):
   # lock @ 5 min, then `systemctl suspend-then-hibernate` @ 15 min. That
@@ -135,7 +126,7 @@
   ############################################################
   # Networking, Bluetooth, fingerprint
   ############################################################
-  networking.hostName = "sjr-fw13";
+  # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
