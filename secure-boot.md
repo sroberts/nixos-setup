@@ -133,7 +133,9 @@ lsblk
 sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p2
 ```
 
-Add to `hardware-configuration.nix` on the LUKS device entry:
+Add this to the host module (`hosts/<hostname>/default.nix`) — not the
+generated `hardware-configuration.nix`, which `nixos-generate-config` would
+overwrite. It merges with the existing LUKS device entry by UUID:
 ```nix
 boot.initrd.luks.devices."luks-<uuid>".crypttabExtraOpts = [ "tpm2-device=auto" ];
 ```
