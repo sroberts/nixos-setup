@@ -38,14 +38,23 @@
     # binds at the bottom of this block were previously owned by DMS's
     # `enableKeybinds`; with Noctalia in charge of the shell UI we wire
     # them directly to the underlying utilities (wpctl, playerctl,
-    # brightnessctl, loginctl). Noctalia exposes IPC for its own panels
-    # (settings, clipboard, launcher) — bind those once the IPC surface
-    # is finalised in your local Noctalia config.
+    # brightnessctl, loginctl). Noctalia's own panels are driven over its
+    # IPC surface (`noctalia-shell ipc call <target> <fn>`); Mod+Space
+    # toggles the launcher below. Add settings/clipboard/etc. the same way —
+    # `noctalia-shell ipc show` lists every target and function.
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
       "Mod+T".action.spawn = "ghostty";
       "Mod+Return".action.spawn = "ghostty";
+      # App launcher — Noctalia's, toggled over IPC.
+      "Mod+Space".action.spawn = [
+        "noctalia-shell"
+        "ipc"
+        "call"
+        "launcher"
+        "toggle"
+      ];
       "Mod+D".action.spawn = "fuzzel";
 
       # Window
