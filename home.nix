@@ -457,8 +457,11 @@
   # file is missing (Commons/Settings.qml: `shouldOpenSetupWizard = true`
   # on ENOENT). The wizard hides the bar until dismissed — on an
   # unattended fresh boot the user sees a bare wallpaper and assumes the
-  # shell didn't start. An empty stub is enough to skip it; Noctalia
-  # fills in defaults and runs all migrations on next load.
+  # shell didn't start. A stub is enough to skip it; Noctalia fills in
+  # defaults and runs all migrations on next load. We seed only the default
+  # weather location (Greenville, SC, °F) — Noctalia merges the rest and
+  # owns the file thereafter (it hot-reloads external edits via a watched
+  # FileView, so this only ever applies on a fresh $HOME).
   #
   # Why plugins.json: mirrors CachyOS's curated default, enabling the
   # official Noctalia plugin source plus `polkit-agent`. The matching
@@ -477,7 +480,14 @@
       ${pkgs.coreutils}/bin/mkdir -p "$CFG"
 
       if [ ! -e "$CFG/settings.json" ]; then
-        ${pkgs.coreutils}/bin/printf '{}\n' > "$CFG/settings.json"
+        ${pkgs.coreutils}/bin/cat > "$CFG/settings.json" <<'SETTINGS'
+      {
+        "location": {
+          "name": "Greenville, SC",
+          "useFahrenheit": true
+        }
+      }
+      SETTINGS
       fi
 
       if [ ! -e "$CFG/plugins.json" ]; then
