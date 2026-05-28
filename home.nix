@@ -284,12 +284,9 @@
         command = "systemctl suspend-then-hibernate";
       }
     ];
-    events = [
-      {
-        event = "before-sleep";
-        command = "loginctl lock-session";
-      }
-    ];
+    events = {
+      before-sleep = "loginctl lock-session";
+    };
   };
 
   # Default terminal for tools that consult $TERMINAL (lazygit edit, fzf,

@@ -76,9 +76,9 @@
         ];
       };
 
-      # `nix fmt` formats all .nix files in the tree. nixfmt-rfc-style is the
-      # RFC 166 implementation that ships in nixpkgs; running it has not yet
-      # been applied to existing files, so expect a churn diff on first run.
-      formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
+      # `nix fmt` formats all .nix files in the tree. pkgs.nixfmt is the RFC 166
+      # implementation that ships in nixpkgs; running it has not yet been
+      # applied to existing files, so expect a churn diff on first run.
+      formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
     };
 }
