@@ -83,8 +83,12 @@
   # disk — so hibernate lands at 20 min total idle.
   systemd.sleep.settings.Sleep.HibernateDelaySec = 300;
 
-  # Optional: let the lid / power key hibernate instead of sleep.
-  # services.logind.lidSwitch = "hibernate";
+  # Closing the lid suspends to RAM, then hibernates HibernateDelaySec later —
+  # the same suspend-then-hibernate escalation the idle timeout uses. Applies
+  # on battery and AC (HandleLidSwitchExternalPower defaults to this value);
+  # HandleLidSwitchDocked defaults to "ignore", so an external display keeps
+  # the session alive with the lid shut.
+  services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
 
   ############################################################
   # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md
