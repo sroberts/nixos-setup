@@ -204,11 +204,15 @@
       "Mod+Shift+P".action.power-off-monitors = [ ];
       "Mod+Ctrl+Shift+T".action.toggle-debug-tint = [ ];
 
-      # Lock (logind path — Noctalia listens for loginctl lock-session and
-      # raises its lock screen). Matches the DMS-era default keybind.
+      # Lock. Noctalia does NOT subscribe to logind's Lock signal, so
+      # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
+      # which raises its WlSessionLock directly.
       "Super+Alt+L".action.spawn = [
-        "loginctl"
-        "lock-session"
+        "noctalia-shell"
+        "ipc"
+        "call"
+        "lockScreen"
+        "lock"
       ];
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
@@ -263,29 +267,28 @@
     };
   };
 
-  # Idle management. niri implements the ext-idle-notify protocol, so swayidle
-  # drives the escalation: lock at 5 min, suspend-then-hibernate at 15 min.
-  # suspend-then-hibernate suspends to RAM immediately, then hibernates after
-  # HibernateDelaySec (set to 5 min in configuration.nix) — i.e. hibernate at
-  # 20 min total idle. Lock uses `loginctl lock-session` (Noctalia raises its
-  # lock screen on the logind signal), the same shell-agnostic path as the
-  # Super+Alt+L bind; XDG_SESSION_ID reaches the user systemd manager, so the
-  # session resolves correctly from this service. before-sleep locks ahead of
-  # any suspend/hibernate so the screen is never left unlocked on resume.
+  # The idle escalation is driven entirely by Noctalia's own idle manager,
+  # configured in its settings.json (seeded in home.activation.noctaliaConfigSeed):
+  #
+  #   - LOCK (5 min):  idle.lockTimeout = 300. Locks via WlSessionLock — the
+  #     ONLY path that works, since Noctalia ignores logind's Lock signal, so
+  #     `loginctl lock-session` is a no-op here.
+  #   - SUSPEND-THEN-HIBERNATE (15 min): an idle.customCommands entry running
+  #     `systemctl suspend-then-hibernate`. (Noctalia's built-in idle-suspend
+  #     does a plain `systemctl suspend`, so we use a custom command and leave
+  #     idle.suspendTimeout = 0.) Suspends to RAM, then hibernates after
+  #     HibernateDelaySec (5 min, configuration.nix) — hibernate at 20 min total.
+  #
+  # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
+  # before a sleep Noctalia didn't initiate — namely a lid close (logind's
+  # HandleLidSwitch). Its before-sleep hook holds a logind sleep inhibitor and
+  # raises Noctalia's lock via IPC ahead of ANY suspend/hibernate, so the
+  # screen is never left unlocked on resume. No timeouts here — they live in
+  # Noctalia.
   services.swayidle = {
     enable = true;
-    timeouts = [
-      {
-        timeout = 300;
-        command = "loginctl lock-session";
-      }
-      {
-        timeout = 900;
-        command = "systemctl suspend-then-hibernate";
-      }
-    ];
     events = {
-      before-sleep = "loginctl lock-session";
+      before-sleep = "noctalia-shell ipc call lockScreen lock";
     };
   };
 
@@ -476,10 +479,13 @@
   # on ENOENT). The wizard hides the bar until dismissed — on an
   # unattended fresh boot the user sees a bare wallpaper and assumes the
   # shell didn't start. A stub is enough to skip it; Noctalia fills in
-  # defaults and runs all migrations on next load. We seed only the default
-  # weather location (Greenville, SC, °F) — Noctalia merges the rest and
-  # owns the file thereafter (it hot-reloads external edits via a watched
-  # FileView, so this only ever applies on a fresh $HOME).
+  # defaults and runs all migrations on next load. We seed the default weather
+  # location (Greenville, SC, °F) and Noctalia's idle escalation: a 5-min lock
+  # plus a custom command for suspend-then-hibernate at 15 min (see the
+  # services.swayidle comment for why the hibernate is a custom command and
+  # what swayidle is still doing). Noctalia merges the rest and owns the file
+  # thereafter (it hot-reloads external edits via a watched FileView, so this
+  # only ever applies on a fresh $HOME).
   #
   # Why plugins.json: mirrors CachyOS's curated default, enabling the
   # official Noctalia plugin source plus `polkit-agent`. The matching
@@ -503,6 +509,12 @@
         "location": {
           "name": "Greenville, SC",
           "useFahrenheit": true
+        },
+        "idle": {
+          "enabled": true,
+          "lockTimeout": 300,
+          "suspendTimeout": 0,
+          "customCommands": "[{\"timeout\":900,\"command\":\"systemctl suspend-then-hibernate\"}]"
         }
       }
       SETTINGS
