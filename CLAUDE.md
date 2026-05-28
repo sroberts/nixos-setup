@@ -34,7 +34,7 @@ sudo nixos-rebuild --rollback switch
 nix flake check
 ```
 
-There are no tests, no linter, no build matrix — `nix flake check` + a successful `nixos-rebuild` is the whole CI surface.
+There are no tests and no linter (yet). CI runs `nix flake check --no-build` plus an eval of the system closure on every PR and push to `main` (see `.github/workflows/check.yml`); CI substitutes a stub `hardware-configuration.nix` so the flake evaluates in a hostless environment. Locally, `nix fmt` runs nixfmt-rfc-style — formatting has not yet been applied to existing files, so the first run will produce a churn diff.
 
 ## Architecture
 
