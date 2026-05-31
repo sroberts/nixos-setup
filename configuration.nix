@@ -81,6 +81,28 @@
   # the session alive with the lid shut.
   services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
 
+  # MediaTek MT7925 combo card (WiFi + BT) — two distinct quirks:
+  #
+  # 1. usbcore.autosuspend=-1 prevents the BT-stuck-on-cold-boot bug. The
+  #    chip's WMT firmware handshake wedges with HW/SW Version 0x00000000
+  #    and WM Firmware Version `____000000`, then logs "Bluetooth: hci0:
+  #    Failed to send wmt func ctrl (-22)" and leaves hci0 DOWN with
+  #    BD Address 00:00:00:00:00:00. Once wedged, NO software reset
+  #    recovers it — not modprobe, USB rebind, rfkill, or even warm
+  #    reboot; only a full mainboard power-drain (shutdown, unplug AC,
+  #    hold power 30s, or BIOS "Battery Disconnect"). Root cause per
+  #    Red Hat bugzilla 2372880: USB autosuspend remote-wakeup on this
+  #    device corrupts its internal state machine. Disabling autosuspend
+  #    only at the btusb layer (`options btusb enable_autosuspend=N`) is
+  #    not enough — the racy state lives at usb-core, so we kill it there.
+  # 2. mt7925e.disable_aspm=1 defends against the unrelated WiFi-side
+  #    ASPM coredump/reconnect bug on this chip (well-attested on
+  #    ThinkPad X13 Gen 6 and Framework AMD); cheap to enable preemptively.
+  boot.kernelParams = [ "usbcore.autosuspend=-1" ];
+  boot.extraModprobeConfig = ''
+    options mt7925e disable_aspm=1
+  '';
+
   ############################################################
   # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md
   ############################################################
