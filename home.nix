@@ -482,11 +482,6 @@
   # Activation hooks — the imperative bits Nix can't declare
   ############################################################
 
-  # pipx + its tools are installed manually post-boot — see the comment in
-  # home.packages above. The previous home.activation.pipxTools hook was
-  # removed because pipx itself currently fails to build in nixos-unstable
-  # (test-time deps black/black[extras]/nox flap).
-
   # LazyVim starter — clone once, leave existing config alone
   home.activation.lazyvimStarter = {
     after = [ "writeBoundary" ];
@@ -546,28 +541,24 @@
     '';
   };
 
-  # Default wallpaper. Downloads a minimalist black blend into the
-  # Noctalia-configured wallpaper directory and seeds the wallpaper cache
-  # so it's the active wallpaper on first boot (and the source palette
-  # matugen feeds into noctalia.css → GTK). Idempotent: skips the download
-  # if the file already exists and only seeds the cache if Noctalia hasn't
+  # Default wallpaper. Copies the tracked asset (assets/default-wallpaper.jpg)
+  # into the Noctalia-configured wallpaper directory and seeds the wallpaper
+  # cache so it's the active wallpaper on first boot (and the source palette
+  # matugen feeds into noctalia.css → GTK). Idempotent: skips the copy if
+  # the file already exists and only seeds the cache if Noctalia hasn't
   # already written one. Once Noctalia picks something else via its UI it
-  # rewrites the cache and ownership transfers cleanly.
+  # rewrites the cache and ownership transfers cleanly. The asset lives in
+  # the repo so a fresh install never depends on a third-party URL.
   home.activation.defaultWallpaper = {
     after = [ "writeBoundary" ];
     before = [ ];
     data = ''
       DIR="$HOME/Pictures/Wallpapers"
-      DEST="$DIR/minimalist-black-digital-blend.jpg"
-      URL="https://images.wallpapersden.com/image/download/minimalist-black-digital-blend_a2pnam2UmZqaraWkpJRobWllrWdma2U.jpg"
+      DEST="$DIR/default-wallpaper.jpg"
+      SRC="${./assets/default-wallpaper.jpg}"
       ${pkgs.coreutils}/bin/mkdir -p "$DIR"
       if [ ! -f "$DEST" ]; then
-        TMP=$(${pkgs.coreutils}/bin/mktemp)
-        if ${pkgs.curl}/bin/curl -fsSL -o "$TMP" "$URL"; then
-          ${pkgs.coreutils}/bin/mv "$TMP" "$DEST"
-        else
-          ${pkgs.coreutils}/bin/rm -f "$TMP"
-        fi
+        ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
       fi
 
       CACHE="$HOME/.cache/noctalia"
@@ -601,10 +592,6 @@
       fi
     '';
   };
-
-  # Wallpaper + theme are intentionally not auto-provisioned anymore.
-  # Set them once in Noctalia's UI on first run; matugen-derived theming
-  # follows from Noctalia's wallpaper-driven palette.
 
   # Seed Noctalia's config files on first run.
   #
