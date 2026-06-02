@@ -438,7 +438,11 @@
     settings = {
       user = {
         name = "Scott J Roberts";
-        email = "scott.roberts@gmail.com";
+        # GitHub's "no-reply" form for this account (numeric user ID +
+        # username). Lets the repo go public without putting the real
+        # email in future commits' diffs / Author lines, while still
+        # being correctly attributed on GitHub.
+        email = "44774+sroberts@users.noreply.github.com";
       };
       # Delegate GitHub HTTPS auth to gh so git push uses the token gh stores
       # in the system keyring. Declared here because home-manager renders
