@@ -428,6 +428,23 @@
     '';
   };
 
+  # Materialize mise-managed tools at rebuild time, not lazily on first
+  # shell. `programs.mise.globalConfig.tools` (above) only writes the TOML;
+  # the actual download happens on `mise install` or when a shell with the
+  # activate hook touches a directory whose config references the tool.
+  # That's why `which go` could 404 right after a rebuild even though the
+  # eval line is in ~/.zshrc — go hadn't been installed yet. Running
+  # `mise install` here makes the rebuild authoritative for what's on disk.
+  # `|| true` so a transient network failure during activation doesn't
+  # block the whole rebuild — mise will retry on next switch or shell.
+  home.activation.miseInstall = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      ${pkgs.mise}/bin/mise install --yes 2>&1 || true
+    '';
+  };
+
   # CyberChef — no nixpkgs package; pull the latest release zip
   home.activation.cyberchef = {
     after = [ "writeBoundary" ];
