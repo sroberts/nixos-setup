@@ -451,33 +451,6 @@
 
   programs.home-manager.enable = true;
 
-  # Clean up DankLinux-era GTK theming artifacts that block home-manager's
-  # gtk module from owning gtk.css. The previous Arch+DankLinux setup wired
-  # matugen straight into dank-colors.css; gtk-3.0/gtk.css was a symlink to
-  # it and gtk-4.0/gtk.css was a regular file containing
-  # `@import url("dank-colors.css");`. Both forms count as DankLinux
-  # leftovers and are safe to remove because our gtk module now owns gtk.css
-  # and @imports Noctalia's noctalia.css instead. We don't nuke unknown
-  # gtk.css files — only ones that mention dank-colors.css — so a hand-rolled
-  # gtk.css survives. Runs before checkLinkTargets so the rebuild doesn't
-  # trip on the stale file as a clobber-conflict.
-  home.activation.cleanupDanklinuxGtk = {
-    after = [ ];
-    before = [ "checkLinkTargets" ];
-    data = ''
-      for dir in "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"; do
-        gtkcss="$dir/gtk.css"
-        if [ -L "$gtkcss" ] && [ "$(${pkgs.coreutils}/bin/readlink "$gtkcss")" = "dank-colors.css" ]; then
-          ${pkgs.coreutils}/bin/rm "$gtkcss"
-        elif [ -f "$gtkcss" ] && ${pkgs.gnugrep}/bin/grep -qF 'dank-colors.css' "$gtkcss" 2>/dev/null; then
-          ${pkgs.coreutils}/bin/rm "$gtkcss"
-        fi
-        stale="$dir/dank-colors.css"
-        [ -e "$stale" ] && ${pkgs.coreutils}/bin/rm "$stale"
-      done
-    '';
-  };
-
   ############################################################
   # Activation hooks — the imperative bits Nix can't declare
   ############################################################
