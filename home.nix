@@ -391,9 +391,17 @@
 
   programs.git = {
     enable = true;
-    settings.user = {
-      name = "Scott J Roberts";
-      email = "scott.roberts@gmail.com";
+    settings = {
+      user = {
+        name = "Scott J Roberts";
+        email = "scott.roberts@gmail.com";
+      };
+      # Delegate GitHub HTTPS auth to gh so git push uses the token gh stores
+      # in the system keyring. Declared here because home-manager renders
+      # ~/.config/git/config as a read-only store symlink — `gh auth setup-git`
+      # can't write into it at runtime.
+      credential."https://github.com".helper = "!gh auth git-credential";
+      credential."https://gist.github.com".helper = "!gh auth git-credential";
     };
   };
 
@@ -543,6 +551,162 @@
     '';
   };
 
+  # Default browser. Signal's Electron shell rewrites ~/.config/mimeapps.list
+  # on first launch when no default is set, hijacking http/https/text/html
+  # for itself — so `xdg-open https://...` (e.g. `gh auth refresh`) opens
+  # Signal instead of a browser. home-manager replaces mimeapps.list with a
+  # store-path symlink, which Signal can't clobber.
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications = {
+      "text/html" = "chromium-browser.desktop";
+      "x-scheme-handler/http" = "chromium-browser.desktop";
+      "x-scheme-handler/https" = "chromium-browser.desktop";
+      "x-scheme-handler/about" = "chromium-browser.desktop";
+      "x-scheme-handler/unknown" = "chromium-browser.desktop";
+      # Claude Code's URL handler (claude-cli://...) — preserved from the
+      # runtime mimeapps.list so `claude` URL launches still work.
+      "x-scheme-handler/claude-cli" = "claude-code-url-handler.desktop";
+    };
+  };
+
+  # Typora theme matching Noctalia's monochrome dark palette.
+  # Lives at ~/.config/Typora/themes/noctalia-mono.css; Typora reads themes
+  # but never writes them, so a store-path symlink is fine here (unlike the
+  # Noctalia configs above). Pick it via Themes → Noctalia Mono after first
+  # rebuild — Typora persists the selection in its profile.data.
+  xdg.configFile."Typora/themes/noctalia-mono.css".text = ''
+    @charset "UTF-8";
+
+    /* Noctalia-mono palette
+       mSurface         #111111   mSurfaceVariant  #191919
+       mOutline         #3c3c3c   mOnSurfaceVariant #5d5d5d
+       mOnSurface       #828282   mPrimary         #aaaaaa
+       mTertiary        #cccccc */
+
+    :root {
+      --bg-color:                 #111111;
+      --side-bar-bg-color:        #191919;
+      --control-text-color:       #aaaaaa;
+      --text-color:               #cccccc;
+      --meta-content-color:       #5d5d5d;
+      --primary-color:            #aaaaaa;
+      --active-file-bg-color:     #2a2a2a;
+      --active-file-text-color:   #cccccc;
+      --active-file-border-color: #aaaaaa;
+      --item-hover-bg-color:      #1f1f1f;
+      --item-hover-text-color:    #cccccc;
+      --rawblock-edit-panel-bd:   #3c3c3c;
+      --window-border:            #3c3c3c;
+      --select-text-bg-color:     #3c3c3c;
+      --select-text-font-color:   #ffffff;
+      --md-char-color:            #5d5d5d;
+      --heading-char-color:       #828282;
+      --code-block-bg-color:      #0a0a0a;
+    }
+
+    html, body, content, #write {
+      background: #111111;
+      color:      #cccccc;
+    }
+
+    /* Chrome: title bar, tabs, status bar, footer */
+    header, footer, .typora-quick-open, .megamenu-menu, #top-titlebar,
+    .ty-window-control, .typora-sourceview-buttons, #footer-word-count,
+    #footer-word-count-info, .footer-item, .footer-item-right {
+      background: #191919;
+      color:      #aaaaaa;
+      border-color: #3c3c3c;
+    }
+
+    /* Tab bar */
+    .tab-bar, #file-tabs, .file-tab, .file-tab-name {
+      background: #191919;
+      color:      #aaaaaa;
+      border-color: #3c3c3c;
+    }
+    .file-tab.active {
+      background: #111111;
+      color:      #cccccc;
+    }
+
+    /* Sidebar */
+    #typora-sidebar, .sidebar-content, .sidebar-tabs, .outline-content,
+    .file-tree, .file-list-item, .file-node-content, .info-panel-tab,
+    .sidebar-footer {
+      background: #191919;
+      color:      #aaaaaa;
+      border-color: #3c3c3c;
+    }
+    .file-node-content:hover, .file-list-item:hover, .outline-item:hover {
+      background: #1f1f1f;
+      color:      #cccccc;
+    }
+    .file-node-content.active, .file-list-item.active, .outline-active {
+      background: #2a2a2a;
+      color:      #cccccc;
+    }
+
+    /* Menus (hamburger megamenu + right-click context) */
+    .megamenu-content, .megamenu-menu-panel, .megamenu-menu-list,
+    .megamenu-menu-header, #context-menu, .context-menu, .dropdown-menu,
+    .modal-content {
+      background: #191919;
+      color:      #cccccc;
+      border-color: #3c3c3c;
+    }
+    .megamenu-menu-list li:hover, .context-menu li:hover,
+    .dropdown-menu li:hover, .dropdown-menu a:hover {
+      background: #2a2a2a;
+      color:      #ffffff;
+    }
+    .megamenu-menu-header-title { color: #cccccc; }
+
+    /* Search / find-replace bar */
+    .searchpanel, #typora-search-panel, .search-input, .ty-search-result,
+    .ty-find-target, .typora-search-input {
+      background: #191919;
+      color:      #cccccc;
+      border-color: #3c3c3c;
+    }
+
+    /* Source mode */
+    #typora-source, .CodeMirror, .CodeMirror-gutters {
+      background: #0a0a0a;
+      color:      #cccccc;
+      border-color: #3c3c3c;
+    }
+    .CodeMirror-cursor { border-left-color: #cccccc; }
+
+    /* Headings + inline code */
+    h1, h2, h3, h4, h5, h6 { color: #ffffff; }
+    code, tt {
+      background: #0a0a0a;
+      color:      #cccccc;
+    }
+    pre.md-fences, .md-fences {
+      background:   #0a0a0a;
+      color:        #cccccc;
+      border-color: #3c3c3c;
+    }
+
+    /* Links + blockquotes */
+    a { color: #cccccc; }
+    a:hover { color: #ffffff; }
+    blockquote {
+      border-left-color: #3c3c3c;
+      color: #aaaaaa;
+    }
+
+    /* Tables + hr */
+    table, thead, tbody, tr, th, td {
+      background: #111111;
+      color:      #cccccc;
+      border-color: #3c3c3c;
+    }
+    hr { border-color: #3c3c3c; }
+  '';
+
   # Post-install TODO checklist
   home.activation.todoMd = {
     after = [ "writeBoundary" ];
@@ -558,8 +722,10 @@
       - [ ] Sign into 1Password (desktop + Chromium extension)
       - [ ] Sign into Gmail
       - [ ] Sign into GitHub: `gh auth login`
+      - [ ] Join Tailscale: `sudo tailscale up`
       - [ ] Set up Obsidian Sync + enable Iconize community plugin
       - [ ] Register Typora license
+      - [ ] Pick Typora theme: Themes → Noctalia Mono
       - [ ] Chromium extensions: 1Password, Obsidian Web Clipper, Instapaper
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] Download Playdate Simulator: https://play.date/dev/
