@@ -277,7 +277,7 @@
   #     `systemctl suspend-then-hibernate`. (Noctalia's built-in idle-suspend
   #     does a plain `systemctl suspend`, so we use a custom command and leave
   #     idle.suspendTimeout = 0.) Suspends to RAM, then hibernates after
-  #     HibernateDelaySec (5 min, configuration.nix) — hibernate at 20 min total.
+  #     HibernateDelaySec (3h, configuration.nix) — hibernate at 3h 15m total.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
   # before a sleep Noctalia didn't initiate — namely a lid close (logind's
