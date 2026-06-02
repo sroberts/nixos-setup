@@ -228,11 +228,13 @@
   ############################################################
   # Chromium + auto-installed extensions
   ############################################################
-  # `programs.chromium.extensions` writes a chromium policy file under
-  # /etc/chromium/policies that pre-installs each ID at first launch
-  # (and locks installation, so the user can disable but not remove
-  # without editing this file). One-time sign-in for each extension is
-  # still required and lives in TODO.md.
+  # `programs.chromium` only writes a managed-policy file under
+  # /etc/chromium/policies — it does NOT install chromium. The package
+  # itself still has to be added to environment.systemPackages below.
+  # The policy pre-installs each extension ID at first launch and locks
+  # installation, so the user can disable but not remove without
+  # editing this file. One-time sign-in for each extension is still
+  # required and lives in TODO.md.
   programs.chromium = {
     enable = true;
     extensions = [
@@ -277,6 +279,7 @@
   ############################################################
   environment.systemPackages = with pkgs; [
     _1password-gui
+    chromium
     discord
     localsend
     obsidian
