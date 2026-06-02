@@ -32,6 +32,13 @@ jobs:
       - name: nix flake check
         run: nix flake check --no-build --show-trace
 
+      # Enforce nixfmt formatting on every .nix file. The flake's formatter
+      # output (formatter.x86_64-linux = nixfmt) defines the canonical style;
+      # this just refuses to merge anything that drifts. Run `nix fmt` locally
+      # to fix.
+      - name: nix fmt --check
+        run: find . -name '*.nix' -not -path './.git/*' -print0 | xargs -0 nix fmt -- --check
+
       # Evaluate every discovered host's system closure (drvPath only, no
       # build), so adding a host automatically gets it eval-checked here.
       - name: Evaluate each host's system closure
