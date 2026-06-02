@@ -20,9 +20,10 @@ read `configuration.nix` / `home.nix` directly — they're the source of truth.
 
 Install NixOS unstable (26.05) with an encrypted disk via the Calamares
 graphical installer (with the "Swap with Hibernate" option for
-suspend-to-disk support), sign into the user account it created, then
-point `nixos-rebuild` at this flake. The rebuild replaces GNOME with
-niri + Noctalia and installs everything else.
+suspend-to-disk support and **"No desktop"** as the desktop choice — see
+Step 1), log in at the TTY as the user it created, then point
+`nixos-rebuild` at this flake. The rebuild installs niri + Noctalia and
+everything else.
 
 Three facts drive the sequencing:
 
@@ -117,8 +118,14 @@ Boot the graphical ISO, wait for the GNOME live session to load, then launch
   password and the root password in the GUI. Don't leave root blank — that's
   what causes the locked-emergency-mode dead-end in the manual path.
 - **Locale / timezone:** whatever you want.
-- **Desktop:** leave the default (GNOME). It's what Calamares installs;
-  we'll replace it with niri + Noctalia in Step 3.
+- **Desktop:** select **"No desktop"** (the option may be labeled "None"
+  or "Minimal" on older ISOs — pick whichever skips the desktop
+  install). This gives you a TTY-only base that boots in seconds and
+  uses minimal disk; niri + Noctalia come in via the flake in Step 3.
+  If your ISO genuinely doesn't offer a no-desktop option, picking
+  GNOME also works — the flake's `services.xserver.enable = false`
+  (and friends) tear it out on first rebuild. You just paid ~15 min of
+  install time you didn't need to.
 
 Click through to install. Calamares writes an encrypted ext4 root, an
 unencrypted FAT32 ESP, and (if you picked Swap with Hibernate) a swap
@@ -129,8 +136,9 @@ When it finishes, reboot. Pull the USB out.
 ## Step 2 — First boot
 
 At the LUKS passphrase prompt, type the passphrase you set in Calamares.
-GNOME's GDM should appear; sign in as `sroberts`. You now have a working
-NixOS install — this is the base that the rest of this guide builds on.
+You land at a text-mode login (no display manager because you picked
+"No desktop"); sign in as `sroberts`. You now have a working NixOS
+install — this is the base that the rest of this guide builds on.
 
 If anything goes wrong from here, you can always boot back into this
 generation from the systemd-boot menu (it gets named "default" + the
@@ -138,11 +146,10 @@ date). That's the safety net.
 
 ## Step 3 — Layer this flake on top
 
-Open a GNOME terminal. Make sure NetworkManager has Wi-Fi (use the GNOME
-status menu if needed), then:
+Bring up Wi-Fi via `nmtui` if you're not on Ethernet, then:
 
 ```bash
-# Calamares' default install doesn't include git, and per-user nix
+# Calamares' "No desktop" base doesn't include git, and per-user nix
 # channels may not be set up yet, which makes `nix-shell -p git` flaky.
 # Install git into your user profile via the system-level nixos channel
 # (Calamares configured that one) — works on the first try.
@@ -187,9 +194,9 @@ sudo rm -rf /etc/nixos
 sudo ln -s ~/nixos-setup /etc/nixos
 ```
 
-Now the big rebuild. This replaces GNOME with niri + Noctalia, installs all the
-CLI/GUI packages, sets up shell integrations and activation hooks, and
-generates `~/TODO.md` for the things Nix can't declare.
+Now the big rebuild. This installs niri + Noctalia, all the CLI/GUI
+packages, shell integrations and activation hooks, and generates
+`~/TODO.md` for the things Nix can't declare.
 
 ```bash
 sudo nixos-rebuild switch --flake .#sjr-fw13
@@ -200,13 +207,12 @@ home-manager are all in the closure. The download buffer is bumped to
 256 MiB in `configuration.nix`, so you won't see the "download buffer is
 full" warnings you'd otherwise hit.
 
-Reboot when it finishes (GDM hangs around in the running session even after
-the switch). At the tuigreet prompt on tty1, sign in as `sroberts` and
-you'll land in niri + Noctalia.
+Reboot when it finishes. At the tuigreet prompt on tty1, sign in as
+`sroberts` and you'll land in niri + Noctalia.
 
 **If the rebuild fails or the new session won't start**, this is where the
 Calamares base saves you. From the systemd-boot menu, pick the older
-generation (it'll still boot GNOME with the GDM greeter). Then debug from
+generation (it'll boot back to the bare TTY login). Then debug from
 there, or `sudo nixos-rebuild --rollback switch` to drop back permanently.
 
 ## Step 4 — Lock in the lock file
