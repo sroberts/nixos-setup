@@ -336,6 +336,13 @@
     cava
     xwayland-satellite
 
+    # Needed for Noctalia's GTK theming pipeline:
+    # - python3 runs Scripts/python/src/theming/gtk-refresh.py (postProcess hook)
+    # - glib provides gsettings, which the script calls to push color-scheme
+    #   and gtk-theme into org.gnome.desktop.interface so GTK3/4 apps reload.
+    python3
+    glib
+
     # AI CLIs — Option B (hourly-updated flake). For Option A, delete the next
     # line and add `claude-code` to this list instead.
     inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
@@ -389,6 +396,43 @@
     };
   };
 
+  # GTK theming. adw-gtk3-dark is a libadwaita-style GTK3 port — it's
+  # exactly what Noctalia's gtk-refresh.py expects to switch to (script
+  # hardcodes "adw-gtk3" / "adw-gtk3-dark" as the target via gsettings).
+  # The Noctalia template writes ~/.config/gtk-{3,4}.0/noctalia.css on each
+  # wallpaper change; the @import in our managed gtk.css pulls those
+  # @define-color overrides into every GTK app without us touching gtk.css
+  # ourselves. enableUserTheming stays off — we use only the built-in gtk
+  # template, which is enabled per activeTemplates in noctaliaConfigSeed.
+  gtk = {
+    enable = true;
+    theme = {
+      name = "adw-gtk3-dark";
+      package = pkgs.adw-gtk3;
+    };
+    iconTheme = {
+      name = "Papirus-Dark";
+      package = pkgs.papirus-icon-theme;
+    };
+    cursorTheme = {
+      name = "Adwaita";
+      package = pkgs.adwaita-icon-theme;
+      size = 24;
+    };
+    gtk3 = {
+      extraConfig.gtk-application-prefer-dark-theme = 1;
+      extraCss = ''
+        @import url("noctalia.css");
+      '';
+    };
+    gtk4 = {
+      extraConfig.gtk-application-prefer-dark-theme = 1;
+      extraCss = ''
+        @import url("noctalia.css");
+      '';
+    };
+  };
+
   programs.git = {
     enable = true;
     settings = {
@@ -406,6 +450,33 @@
   };
 
   programs.home-manager.enable = true;
+
+  # Clean up DankLinux-era GTK theming artifacts that block home-manager's
+  # gtk module from owning gtk.css. The previous Arch+DankLinux setup wired
+  # matugen straight into dank-colors.css; gtk-3.0/gtk.css was a symlink to
+  # it and gtk-4.0/gtk.css was a regular file containing
+  # `@import url("dank-colors.css");`. Both forms count as DankLinux
+  # leftovers and are safe to remove because our gtk module now owns gtk.css
+  # and @imports Noctalia's noctalia.css instead. We don't nuke unknown
+  # gtk.css files — only ones that mention dank-colors.css — so a hand-rolled
+  # gtk.css survives. Runs before checkLinkTargets so the rebuild doesn't
+  # trip on the stale file as a clobber-conflict.
+  home.activation.cleanupDanklinuxGtk = {
+    after = [ ];
+    before = [ "checkLinkTargets" ];
+    data = ''
+      for dir in "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"; do
+        gtkcss="$dir/gtk.css"
+        if [ -L "$gtkcss" ] && [ "$(${pkgs.coreutils}/bin/readlink "$gtkcss")" = "dank-colors.css" ]; then
+          ${pkgs.coreutils}/bin/rm "$gtkcss"
+        elif [ -f "$gtkcss" ] && ${pkgs.gnugrep}/bin/grep -qF 'dank-colors.css' "$gtkcss" 2>/dev/null; then
+          ${pkgs.coreutils}/bin/rm "$gtkcss"
+        fi
+        stale="$dir/dank-colors.css"
+        [ -e "$stale" ] && ${pkgs.coreutils}/bin/rm "$stale"
+      done
+    '';
+  };
 
   ############################################################
   # Activation hooks — the imperative bits Nix can't declare
@@ -471,6 +542,44 @@
           }
         fi
         ${pkgs.coreutils}/bin/rm -rf "$TMP"
+      fi
+    '';
+  };
+
+  # Default wallpaper. Downloads a minimalist black blend into the
+  # Noctalia-configured wallpaper directory and seeds the wallpaper cache
+  # so it's the active wallpaper on first boot (and the source palette
+  # matugen feeds into noctalia.css → GTK). Idempotent: skips the download
+  # if the file already exists and only seeds the cache if Noctalia hasn't
+  # already written one. Once Noctalia picks something else via its UI it
+  # rewrites the cache and ownership transfers cleanly.
+  home.activation.defaultWallpaper = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DIR="$HOME/Pictures/Wallpapers"
+      DEST="$DIR/minimalist-black-digital-blend.jpg"
+      URL="https://images.wallpapersden.com/image/download/minimalist-black-digital-blend_a2pnam2UmZqaraWkpJRobWllrWdma2U.jpg"
+      ${pkgs.coreutils}/bin/mkdir -p "$DIR"
+      if [ ! -f "$DEST" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        if ${pkgs.curl}/bin/curl -fsSL -o "$TMP" "$URL"; then
+          ${pkgs.coreutils}/bin/mv "$TMP" "$DEST"
+        else
+          ${pkgs.coreutils}/bin/rm -f "$TMP"
+        fi
+      fi
+
+      CACHE="$HOME/.cache/noctalia"
+      ${pkgs.coreutils}/bin/mkdir -p "$CACHE"
+      if [ ! -f "$CACHE/wallpapers.json" ] && [ -f "$DEST" ]; then
+        ${pkgs.coreutils}/bin/cat > "$CACHE/wallpapers.json" <<JSON
+      {
+        "wallpapers": {},
+        "defaultWallpaper": "$DEST",
+        "usedRandomWallpapers": {}
+      }
+      JSON
       fi
     '';
   };
@@ -543,6 +652,11 @@
         },
         "general": {
           "allowPasswordWithFprintd": true
+        },
+        "templates": {
+          "activeTemplates": [
+            { "id": "gtk", "enabled": true }
+          ]
         }
       }
       SETTINGS
@@ -564,6 +678,24 @@
         TMP=$(${pkgs.coreutils}/bin/mktemp)
         ${pkgs.jq}/bin/jq '.general.allowPasswordWithFprintd = true' \
           "$CFG/settings.json" > "$TMP" \
+          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
+      fi
+
+      # Ensure Noctalia's `gtk` template is active so wallpaper changes
+      # regenerate ~/.config/gtk-{3,4}.0/noctalia.css. The managed gtk.css
+      # in our gtk module @imports that file, so this is what wires
+      # matugen output through to every GTK app on the system. Idempotent:
+      # set if missing, force enabled=true if present, no duplicates.
+      if [ -e "$CFG/settings.json" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        ${pkgs.jq}/bin/jq '
+          .templates = (.templates // {}) |
+          .templates.activeTemplates = (
+            (.templates.activeTemplates // [])
+            | map(select(.id != "gtk"))
+            | . + [{"id": "gtk", "enabled": true}]
+          )
+        ' "$CFG/settings.json" > "$TMP" \
           && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
       fi
 
@@ -773,7 +905,7 @@
       - [ ] Install JFryy/qq: `go install github.com/JFryy/qq@latest`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
-      - [ ] Set wallpaper in Noctalia (right-click bar → Settings → Wallpaper)
+      - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
             fi
