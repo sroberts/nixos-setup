@@ -651,7 +651,8 @@
           "customCommands": "[{\"timeout\":900,\"command\":\"systemctl suspend-then-hibernate\"}]"
         },
         "general": {
-          "allowPasswordWithFprintd": true
+          "allowPasswordWithFprintd": true,
+          "autoStartAuth": true
         },
         "templates": {
           "activeTemplates": [
@@ -664,20 +665,32 @@
 
       # Lock-screen fingerprint-or-password fix. Noctalia auto-detects its
       # PAM service as /etc/pam.d/login (LockContext.qml:22), which we've
-      # enabled fprintAuth on for TTY login (configuration.nix). Without
-      # allowPasswordWithFprintd=true, PAM's pam_fprintd competes with
-      # Noctalia's text input: typing a password leaves the fingerprint
-      # path hanging, so the unlock UX is "password THEN fingerprint" —
-      # the worst of both worlds. With this flag on, Noctalia spawns
-      # fprintd-verify the moment the user touches the keyboard, occupying
-      # the sensor so pam_fprintd can't grab it; the password path runs
-      # alone. Touching the reader without typing still unlocks via PAM's
-      # fprintd. Asserted every activation because Noctalia owns this file
-      # after the initial seed.
+      # enabled fprintAuth on for TTY login (configuration.nix). Two flags
+      # are needed to make both unlock paths work:
+      #
+      # autoStartAuth=true: LockContext only calls pam.start() automatically
+      # when this is set (LockContext.qml:60-62). Without it, PAM is dormant
+      # until Enter is pressed via tryUnlock(), so pam_fprintd is never
+      # listening for the sensor — touching the reader does nothing. With it
+      # on, PAM runs at lock time, pam_fprintd (first "sufficient" rule in
+      # /etc/pam.d/login) waits for a finger, and a single touch unlocks.
+      #
+      # allowPasswordWithFprintd=true: handles the "user types instead of
+      # touching the sensor" path. On first keypress, LockContext aborts
+      # PAM and spawns fprintd-verify to occupy the sensor; the next
+      # pam.start() (on Enter) finds pam_fprintd blocked from claiming
+      # the device, falls through to pam_unix, and the password path
+      # runs alone. Without this flag, pam_fprintd would still race for
+      # the sensor and the unlock UX becomes "password THEN fingerprint".
+      #
+      # Asserted every activation because Noctalia owns this file after
+      # the initial seed.
       if [ -e "$CFG/settings.json" ]; then
         TMP=$(${pkgs.coreutils}/bin/mktemp)
-        ${pkgs.jq}/bin/jq '.general.allowPasswordWithFprintd = true' \
-          "$CFG/settings.json" > "$TMP" \
+        ${pkgs.jq}/bin/jq '
+          .general.allowPasswordWithFprintd = true |
+          .general.autoStartAuth = true
+        ' "$CFG/settings.json" > "$TMP" \
           && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
       fi
 
