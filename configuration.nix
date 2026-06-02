@@ -141,12 +141,12 @@
     su.fprintAuth = true; # su to another user
     polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
     greetd.fprintAuth = true; # tuigreet at the login screen
-    # Noctalia's lock screen runs its own PAM context; we don't add fprintAuth
-    # there. Wayland lock-screen PAM stacks tend to omit the `unix-early`
-    # password reader that login/greetd have, so layering pam_fprintd on top
-    # breaks the password fallback (fprintd blocks the conversation while the
-    # user is typing). Lock-screen fingerprint, if wanted, should be wired
-    # through Noctalia's own settings, not this PAM map.
+    # Noctalia's lock screen auto-detects PAM service: it falls through to
+    # /etc/pam.d/login (LockContext.qml:22), so login.fprintAuth above is
+    # what lights up the lock screen's fingerprint path. The "competing
+    # readers" problem this would otherwise cause (pam_fprintd vs Noctalia's
+    # text input) is avoided by Noctalia's `allowPasswordWithFprintd=true`
+    # setting, asserted by home.activation.noctaliaConfigSeed.
   };
 
   ############################################################
