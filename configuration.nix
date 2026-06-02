@@ -128,6 +128,7 @@
   ############################################################
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
+  services.tailscale.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
   # Goodix fingerprint reader. fprintd runs the daemon; the PAM hooks
