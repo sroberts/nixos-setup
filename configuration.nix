@@ -226,6 +226,23 @@
   };
 
   ############################################################
+  # Chromium + auto-installed extensions
+  ############################################################
+  # `programs.chromium.extensions` writes a chromium policy file under
+  # /etc/chromium/policies that pre-installs each ID at first launch
+  # (and locks installation, so the user can disable but not remove
+  # without editing this file). One-time sign-in for each extension is
+  # still required and lives in TODO.md.
+  programs.chromium = {
+    enable = true;
+    extensions = [
+      "aeblfdkhhhdcdjpifhhbdiojplfjncoa" # 1Password
+      "cnjifjpddelmedmihgijeibhnjfabmlf" # Obsidian Web Clipper
+      "ldjkgaaoikpmhmkelcgkgacicjfbofhh" # Instapaper
+    ];
+  };
+
+  ############################################################
   # Containers + local LLM serving
   ############################################################
   virtualisation.docker = {
@@ -260,7 +277,6 @@
   ############################################################
   environment.systemPackages = with pkgs; [
     _1password-gui
-    chromium
     discord
     localsend
     obsidian

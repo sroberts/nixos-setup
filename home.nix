@@ -897,7 +897,7 @@
       - [ ] Set up Obsidian Sync + enable Iconize community plugin
       - [ ] Register Typora license
       - [ ] Pick Typora theme: Themes → Noctalia Mono
-      - [ ] Chromium extensions: 1Password, Obsidian Web Clipper, Instapaper
+      - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Pull Ollama models: `ollama pull llama3.2`
