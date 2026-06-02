@@ -1,0 +1,51 @@
+profile: default
+
+thresholds:
+  pass: 0.7
+
+# Signals disabled below don't apply to this repo. It's a personal NixOS
+# flake — no application code, no test suite, no users beyond the owner,
+# no telemetry pipeline. Disabling here is the documented escape hatch
+# (`plumbline help config`), not a workaround for plumbline limitations.
+# Each disable carries a one-line "why."
+#
+# NOTE: the current dev build of plumbline does not yet honor this file
+# at runtime — `--exclude-signal` is the working mechanism today (used
+# by hand or in CI). This config documents intent and will take effect
+# once the upstream wiring lands. Keep both in sync.
+signals:
+  l3.build-lint-gate:
+    # We have it in spirit (.github/workflows/check.yml runs `nix flake
+    # check` + `nix fmt --check`), but plumbline's regex is keyed on
+    # ecosystem-specific tokens (go build, golangci-lint, npm run lint)
+    # and doesn't recognize nix tooling. Disabling rather than cargo-
+    # culting a `go build` step that would fail in CI.
+    enabled: false
+
+  l3.coverage-gate:
+    # No application code, no test suite. Nothing to gate coverage on.
+    enabled: false
+
+  l3.coverage-suite:
+    # Same: no tests to schedule.
+    enabled: false
+
+  l3.flaky-analysis:
+    # Same: no tests to be flaky.
+    enabled: false
+
+  l3.error-monitoring:
+    # Sentry / OpenTelemetry / Bugsnag are runtime-error SDKs for
+    # applications. This repo describes a NixOS host configuration —
+    # there is no application surface to instrument.
+    enabled: false
+
+  l3.user-feedback:
+    # Single-user repo. No users to survey.
+    enabled: false
+
+  l3.acceptance-tracking:
+    # No AI agent volume to classify. The PRs in this repo are written
+    # by either the owner or an AI pair, but the dataset is too small
+    # to make acceptance-rate JSON meaningful.
+    enabled: false

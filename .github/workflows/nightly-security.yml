@@ -1,0 +1,66 @@
+name: nightly security
+
+# Nightly compliance check. Fails the workflow (and creates a GitHub
+# issue, via the standard failure notification path) when any flake
+# input has been frozen for more than INPUT_AGE_DAYS_MAX. This catches
+# the case where the weekly flake-update.yml has been opening PRs but
+# they aren't getting merged — silent staleness is a real security
+# risk (e.g. an outdated nixpkgs pin misses CVE backports).
+
+on:
+  schedule:
+    # 04:00 UTC daily (~midnight ET). Off-peak; no overlap with the
+    # Monday-morning flake update.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  INPUT_AGE_DAYS_MAX: "60"
+
+jobs:
+  input-staleness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Check flake input ages
+        run: |
+          set -euo pipefail
+          # nix flake metadata --json gives lastModified (unix seconds) per
+          # input. We only check TOP-LEVEL inputs (the keys in
+          # .locks.nodes.root.inputs) — transitive inputs like `systems`
+          # or `flake-utils` are intentionally pinned to ancient revs and
+          # don't need updating. Fail if any top-level input has been
+          # frozen longer than the threshold.
+          nix flake metadata --json > metadata.json
+          now=$(date +%s)
+          max_days=${INPUT_AGE_DAYS_MAX}
+          max_seconds=$((max_days * 86400))
+          stale=$(jq -r --argjson now "$now" --argjson max "$max_seconds" '
+            .locks.nodes.root.inputs as $top
+            | .locks.nodes
+            | to_entries[]
+            | select(.key as $k | $top | to_entries | map(.value) | index($k))
+            | select(.value.locked.lastModified != null)
+            | select(($now - .value.locked.lastModified) > $max)
+            | "\(.key) \(((($now - .value.locked.lastModified) / 86400) | floor))d \(.value.locked.rev // .value.locked.narHash // "?")"
+          ' metadata.json)
+          if [ -n "$stale" ]; then
+            echo "::error::Top-level flake inputs older than ${max_days}d:"
+            echo "$stale" | sed 's/^/  /'
+            echo
+            echo "Either merge the open flake-update PR or trigger one manually:"
+            echo "  gh workflow run flake-update.yml"
+            exit 1
+          fi
+          echo "All top-level flake inputs updated within the last ${max_days} days."
