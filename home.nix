@@ -523,9 +523,31 @@
           "lockTimeout": 300,
           "suspendTimeout": 0,
           "customCommands": "[{\"timeout\":900,\"command\":\"systemctl suspend-then-hibernate\"}]"
+        },
+        "general": {
+          "allowPasswordWithFprintd": true
         }
       }
       SETTINGS
+      fi
+
+      # Lock-screen fingerprint-or-password fix. Noctalia auto-detects its
+      # PAM service as /etc/pam.d/login (LockContext.qml:22), which we've
+      # enabled fprintAuth on for TTY login (configuration.nix). Without
+      # allowPasswordWithFprintd=true, PAM's pam_fprintd competes with
+      # Noctalia's text input: typing a password leaves the fingerprint
+      # path hanging, so the unlock UX is "password THEN fingerprint" —
+      # the worst of both worlds. With this flag on, Noctalia spawns
+      # fprintd-verify the moment the user touches the keyboard, occupying
+      # the sensor so pam_fprintd can't grab it; the password path runs
+      # alone. Touching the reader without typing still unlocks via PAM's
+      # fprintd. Asserted every activation because Noctalia owns this file
+      # after the initial seed.
+      if [ -e "$CFG/settings.json" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        ${pkgs.jq}/bin/jq '.general.allowPasswordWithFprintd = true' \
+          "$CFG/settings.json" > "$TMP" \
+          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
       fi
 
       if [ ! -e "$CFG/plugins.json" ]; then
