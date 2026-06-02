@@ -1,14 +1,14 @@
 # nixos-setup
 
-NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + DankMaterialShell on encrypted LVM-on-LUKS with hibernation-capable swap. The only host today is `sjr-fw13`, but the layout is multi-host: each machine is a directory under `hosts/` that `flake.nix` discovers automatically. See `hosts/README.md` to add one.
+NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + Noctalia (Quickshell) on an encrypted disk with hibernation-capable swap. The only host today is `sjr-fw13`, but the layout is multi-host: each machine is a directory under `hosts/` that `flake.nix` discovers automatically. See `hosts/README.md` to add one.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, niri, DMS, lanzaboote, claude-code-nix) and auto-discovers every host under `hosts/` (no host hardcoded). |
+| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, nixos-hardware, niri, noctalia, claude-code-nix; lanzaboote is commented out — opt in via `secure-boot.md`) and auto-discovers every host under `hosts/` (no host hardcoded). |
 | `configuration.nix` | Shared system-level config: bootloader, services, system packages, the `sroberts` user. Host-agnostic. |
-| `home.nix` | User-level (home-manager): CLI tools, shell, DMS config, niri input, activation hooks. Shared across hosts. |
+| `home.nix` | User-level (home-manager): CLI tools, shell, Noctalia config, niri input + binds, activation hooks. Shared across hosts. |
 | `hosts/<name>/` | Per-machine: `default.nix` (hostname, `nixos-hardware` model module, swap/resume) + the committed `hardware-configuration.nix` (LUKS UUID, filesystems). See `hosts/README.md`. |
 | `scripts/new-host.sh` | Scaffolds a new `hosts/<name>/` on a fresh machine. |
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |
@@ -43,7 +43,7 @@ sudo nixos-rebuild boot --flake .#sjr-fw13
 nix flake update
 
 # Update one input (Nix 2.19+)
-nix flake update dms
+nix flake update noctalia
 
 # Roll back the last activation
 sudo nixos-rebuild --rollback switch

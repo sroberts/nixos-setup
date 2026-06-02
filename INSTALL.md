@@ -1,4 +1,4 @@
-# Installing NixOS + DankMaterialShell on a Framework 13 AMD
+# Installing NixOS + Noctalia on a Framework 13 AMD
 
 Single canonical runbook for installing this flake onto a fresh Framework 13
 AMD (Ryzen 7040). Top-to-bottom; you should not need to switch docs while
@@ -22,7 +22,7 @@ Install NixOS unstable (26.05) with an encrypted disk via the Calamares
 graphical installer (with the "Swap with Hibernate" option for
 suspend-to-disk support), sign into the user account it created, then
 point `nixos-rebuild` at this flake. The rebuild replaces GNOME with
-niri + DMS and installs everything else.
+niri + Noctalia and installs everything else.
 
 Three facts drive the sequencing:
 
@@ -45,13 +45,13 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Distro | NixOS unstable (26.05) | Required for `programs.dank-material-shell` and `services.displayManager.dms-greeter` |
-| Channel mgmt | Flakes + home-manager | Reproducible; pins DMS/niri independently |
+| Distro | NixOS unstable (26.05) | Tracks the Quickshell / niri-unstable ecosystem Noctalia builds on |
+| Channel mgmt | Flakes + home-manager | Reproducible; pins Noctalia / niri independently |
 | Hardware module | `nixos-hardware.nixosModules.framework-13-7040-amd` | Maintained quirks (lid wake, sensors, GPU) |
 | Power | `power-profiles-daemon` | Framework's official recommendation for Ryzen 7040; do NOT use TLP |
-| Compositor | niri via `niri-flake` (sodiboo) | DMS-compatible; declarative |
-| Shell/UI | DankMaterialShell flake + home-manager module | Faster updates than nixpkgs; `niri.enableKeybinds` shortcut |
-| Greeter | `dms-greeter` (unstable nixpkgs) | Theme-synced with DMS |
+| Compositor | niri via `niri-flake` (sodiboo), pinned to `niri-unstable` | Quickshell-based shells (Noctalia, etc.) track niri's latest |
+| Shell/UI | Noctalia (Quickshell) via the `noctalia-shell` flake + home-manager module | Faster updates than nixpkgs; spawned by niri via `spawn-at-startup` |
+| Greeter | `tuigreet` on tty1, launching `niri-session` | Minimal, works without a GUI display manager |
 | Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
 | Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Same encryption + hibernation, with LVM for multi-volume management |
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
@@ -118,7 +118,7 @@ Boot the graphical ISO, wait for the GNOME live session to load, then launch
   what causes the locked-emergency-mode dead-end in the manual path.
 - **Locale / timezone:** whatever you want.
 - **Desktop:** leave the default (GNOME). It's what Calamares installs;
-  we'll replace it with niri + DMS in Step 3.
+  we'll replace it with niri + Noctalia in Step 3.
 
 Click through to install. Calamares writes an encrypted ext4 root, an
 unencrypted FAT32 ESP, and (if you picked Swap with Hibernate) a swap
@@ -187,7 +187,7 @@ sudo rm -rf /etc/nixos
 sudo ln -s ~/nixos-setup /etc/nixos
 ```
 
-Now the big rebuild. This replaces GNOME with niri + DMS, installs all the
+Now the big rebuild. This replaces GNOME with niri + Noctalia, installs all the
 CLI/GUI packages, sets up shell integrations and activation hooks, and
 generates `~/TODO.md` for the things Nix can't declare.
 
@@ -195,13 +195,14 @@ generates `~/TODO.md` for the things Nix can't declare.
 sudo nixos-rebuild switch --flake .#sjr-fw13
 ```
 
-Expect 15–40 minutes depending on bandwidth — niri, DMS, Claude Code, and
+Expect 15–40 minutes depending on bandwidth — niri, Noctalia, Claude Code, and
 home-manager are all in the closure. The download buffer is bumped to
 256 MiB in `configuration.nix`, so you won't see the "download buffer is
 full" warnings you'd otherwise hit.
 
-When it finishes, log out of GNOME (or just reboot). At the dms-greeter,
-sign in as `sroberts` and you'll land in niri + DMS.
+Reboot when it finishes (GDM hangs around in the running session even after
+the switch). At the tuigreet prompt on tty1, sign in as `sroberts` and
+you'll land in niri + Noctalia.
 
 **If the rebuild fails or the new session won't start**, this is where the
 Calamares base saves you. From the systemd-boot menu, pick the older
@@ -243,8 +244,8 @@ uname -r
 fwupdmgr get-devices
 sudo fwupdmgr update
 
-# DMS health
-dms doctor -v
+# Noctalia is running (spawned by niri's spawn-at-startup)
+pgrep -af noctalia-shell
 
 # Docker available without sudo
 docker run --rm hello-world
@@ -264,17 +265,21 @@ credential / sign-in steps Nix can't declare.
 
 ## Migrating from Arch + DankLinux (optional)
 
-Two configs carry over cleanly from the previous install, if relevant:
+One thing carries over cleanly from the previous install, if relevant:
 
-- **DMS settings.** Copy `~/.config/DankMaterialShell/settings.json` and
-  `dms-colors.json` from Arch. Drop them in the same path on NixOS; the
-  greeter's `configFiles` will sync them.
-- **niri config.** Copy `~/.config/niri/config.kdl`. With
-  `enableKeybinds = true`, DMS overwrites the bind section — back up first if
-  you had custom binds.
+- **niri config (custom binds only).** This flake declares the niri binds
+  in `home.nix`, so you don't copy `~/.config/niri/config.kdl`. If you
+  had personal-only binds layered on top of the DMS defaults that aren't
+  represented in `home.nix`, grab those individually and add them to the
+  `programs.niri.settings.binds` block in `home.nix`.
 
-What doesn't carry: any `dankinstall`-managed system packages. On NixOS
-those live in the flake, not on disk.
+What doesn't carry:
+
+- **DMS / DankMaterialShell config** (`~/.config/DankMaterialShell/`).
+  Noctalia replaces DMS in this flake — its config lives at
+  `~/.config/noctalia/` and is seeded by `home.activation.noctaliaConfigSeed`.
+- **`dankinstall`-managed system packages.** On NixOS those live in the
+  flake (`environment.systemPackages`, `home.packages`), not on disk.
 
 ---
 
@@ -284,7 +289,7 @@ those live in the flake, not on disk.
 cd ~/nixos-setup
 git pull                                      # grab changes from any machine
 nix flake update                              # bump all inputs
-# Or: nix flake update dms                    # bump one input
+# Or: nix flake update noctalia               # bump one input
 sudo nixos-rebuild switch --flake .#sjr-fw13
 
 # commit your edits (per-host hardware configs under hosts/ are tracked too)
@@ -298,51 +303,47 @@ it with `git revert` so the repo and running generation stay in sync.
 
 ## Known gotchas
 
-1. **niri-flake niri-stable is on 25.08 but DMS needs 25.11.** This config
-   pins `programs.niri.package` to `niri-unstable` from the flake (see
-   `configuration.nix`). We also `.overrideAttrs (doCheck = false)` to skip
-   niri's in-build cargo tests, which can SIGABRT in the Nix build sandbox
-   even when the runtime binary is fine. Don't drop the override unless
+1. **niri-flake's `niri-stable` lags niri-unstable.** This config pins
+   `programs.niri.package` to `niri-unstable` from the flake (see
+   `configuration.nix`) because Quickshell-based shells like Noctalia
+   track niri's latest Wayland-protocol surface, and the stable tag
+   trails. We also `.overrideAttrs (doCheck = false)` to skip niri's
+   in-build cargo tests, which can SIGABRT in the Nix build sandbox even
+   when the runtime binary is fine. Don't drop the override unless
    you've verified niri's upstream test suite passes in a sandbox.
-2. **Native module vs flake module for DMS:** nixpkgs-unstable's
-   `programs.dank-material-shell` works; the flake gives DMS git head and
-   `niri.enableKeybinds`. This repo uses the flake.
-3. **Empty `binds.kdl` on flake install** (AvengeMedia/DankMaterialShell
-   #1586): let `niri.enableKeybinds = true` handle it; if binds are still
-   empty, copy DMS's default `binds.kdl` manually.
-4. **Keep a recovery USB.** With an encrypted root, a broken boot chain
+2. **Keep a recovery USB.** With an encrypted root, a broken boot chain
    means recovering from the live ISO: `cryptsetup open` → `mount` →
    `nixos-enter` → roll back. `secure-boot.md` has the exact commands;
    substitute the LVM steps with plain mount if you used the Calamares
    layout.
-5. **lmstudio is unfree** — `nixpkgs.config.allowUnfree = true` is mandatory
+3. **lmstudio is unfree** — `nixpkgs.config.allowUnfree = true` is mandatory
    (already set).
-6. **Ollama ROCm on Radeon 780M** is hit-or-miss. If you see crashes, swap
+4. **Ollama ROCm on Radeon 780M** is hit-or-miss. If you see crashes, swap
    `services.ollama.package` to `pkgs.ollama` (CPU) or `pkgs.ollama-vulkan`.
    The older `services.ollama.acceleration = "rocm"` option was removed
    upstream; the working API is `services.ollama.package = pkgs.ollama-rocm`.
-7. **Claude Code via Nix bundles its own Node** — your project's
+5. **Claude Code via Nix bundles its own Node** — your project's
    `npm`/`node` from mise stays untouched. Intentional; prevents the "wrong
    shell" error that affected earlier Nix packaging.
-8. **Activation hooks run as the user, not root.** Use absolute Nix store
+6. **Activation hooks run as the user, not root.** Use absolute Nix store
    paths for any binary in a hook (the existing hooks do).
-9. **Secure Boot is a separate project.** See `secure-boot.md`. Get the
+7. **Secure Boot is a separate project.** See `secure-boot.md`. Get the
    encrypted system booting reliably first, then enable lanzaboote. Never
    flip Secure Boot ON in BIOS before keys are enrolled.
-10. **Don't reference this repo as a flake input.** It would force a token
-    into `nix.settings.access-tokens` (a committed credential leak), and the
-    `github:` fetch wouldn't include your local `hardware-configuration.nix`.
-    Always build from the local clone.
-11. **Noctalia first-run SetupWizard.** Stock Noctalia opens a modal setup
-    wizard when `~/.config/noctalia/settings.json` doesn't exist. The wizard
-    hides the bar until dismissed — on an unattended fresh boot you see a
-    bare wallpaper. `home.nix` seeds an empty `settings.json` (and a CachyOS-
-    matching `plugins.json`) via `home.activation.noctaliaConfigSeed` so the
-    wizard is skipped and the bar renders immediately. If you ever want the
-    wizard back, `rm ~/.config/noctalia/settings.json` and re-launch the
-    shell. The seed runs once per fresh `$HOME` — after first boot Noctalia
-    owns those files and the settings UI writes back to them normally.
-12. **Polkit auth agent swap.** This flake disables niri-flake's bundled
+8. **Don't reference this repo as a flake input.** It would force a token
+   into `nix.settings.access-tokens` (a committed credential leak), and the
+   `github:` fetch wouldn't include your local `hardware-configuration.nix`.
+   Always build from the local clone.
+9. **Noctalia first-run SetupWizard.** Stock Noctalia opens a modal setup
+   wizard when `~/.config/noctalia/settings.json` doesn't exist. The wizard
+   hides the bar until dismissed — on an unattended fresh boot you see a
+   bare wallpaper. `home.nix` seeds a stub `settings.json` (and a CachyOS-
+   matching `plugins.json`) via `home.activation.noctaliaConfigSeed` so the
+   wizard is skipped and the bar renders immediately. If you ever want the
+   wizard back, `rm ~/.config/noctalia/settings.json` and re-launch the
+   shell. The seed runs once per fresh `$HOME` — after first boot Noctalia
+   owns those files and the settings UI writes back to them normally.
+10. **Polkit auth agent swap.** This flake disables niri-flake's bundled
     `polkit-kde-agent` (`systemd.user.services.niri-flake-polkit.enable =
     lib.mkForce false`) in favour of Noctalia's `polkit-agent` plugin, which
     is enabled in the seeded `plugins.json`. Two agents on the PolicyKit1
@@ -487,8 +488,8 @@ Known additional gotchas for this path:
 - [NixOS on the Framework Laptop 13 (Framework Guides)](https://guides.frame.work/Guide/NixOS+on+the+Framework+Laptop+13/400)
 - [NixOS Wiki — Hardware/Framework/Laptop 13](https://wiki.nixos.org/wiki/Hardware/Framework/Laptop_13)
 - [nixos-hardware framework-13-7040-amd module](https://github.com/NixOS/nixos-hardware/tree/master/framework/13-inch/7040-amd)
-- [DankMaterialShell — NixOS Flake install](https://danklinux.com/docs/dankmaterialshell/nixos-flake)
-- [DankGreeter — NixOS install](https://danklinux.com/docs/dankgreeter/nixos)
+- [Noctalia shell (Quickshell-based)](https://github.com/noctalia-dev/noctalia-shell)
+- [tuigreet (greetd greeter)](https://github.com/apognu/tuigreet)
 - [niri-flake (sodiboo)](https://github.com/sodiboo/niri-flake)
 - [niri Getting Started](https://niri-wm.github.io/niri/Getting-Started.html)
 - [lanzaboote (Secure Boot)](https://github.com/nix-community/lanzaboote)
