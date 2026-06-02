@@ -1,0 +1,70 @@
+name: flake update
+
+on:
+  # Weekly on Monday at 07:00 UTC (~03:00 ET). Picks up nixpkgs/niri/noctalia
+  # bumps without manual intervention; the resulting PR rides the existing
+  # check.yml gates (flake check + fmt check) before merge.
+  schedule:
+    - cron: "0 7 * * 1"
+  # Manual trigger for ad-hoc bumps.
+  workflow_dispatch:
+
+# create-pull-request needs to push a branch and open a PR.
+permissions:
+  contents: write
+  pull-requests: write
+
+# A second scheduled run while a PR is open just amends the same branch —
+# don't race ourselves.
+concurrency:
+  group: flake-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      # Capture the human-readable list of "Updated input 'X': old → new"
+      # lines that nix flake update writes to stderr, so the PR body has a
+      # real changelog rather than just a flake.lock diff.
+      - name: nix flake update
+        id: update
+        run: |
+          set -euo pipefail
+          {
+            echo 'log<<EOF'
+            nix flake update 2>&1 | tee /dev/stderr
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ci/flake-update
+          delete-branch: true
+          commit-message: "chore: nix flake update"
+          title: "chore: nix flake update"
+          body: |
+            Weekly automated `nix flake update`. Merging applies whatever
+            nixpkgs / niri / noctalia / etc. bumps landed upstream.
+
+            ## Inputs updated
+
+            ```
+            ${{ steps.update.outputs.log }}
+            ```
+
+            CI (`check.yml`) gates this PR the same as any human change:
+            `nix flake check` evaluates the full system closure for every
+            host, and `nix fmt --check` enforces formatting. Merge once
+            green; if anything looks suspect, close and let next week
+            try again.
