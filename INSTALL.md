@@ -1,10 +1,16 @@
 # Installing NixOS + Noctalia on a Framework 13 AMD
 
 Single canonical runbook for installing this flake onto a fresh Framework 13
-AMD (Ryzen 7040). Top-to-bottom; you should not need to switch docs while
-installing. For Secure Boot, work through this guide first, then see
-`secure-boot.md` as a follow-up. For the *why* behind specific Nix options,
-read `configuration.nix` / `home.nix` directly — they're the source of truth.
+AMD (Ryzen 7040). This is the install guide for the `sjr-fw13` host
+specifically; for any other machine, the shape is the same — base install →
+`scripts/new-host.sh` → `nixos-rebuild` — but the hardware-specific bits
+(BIOS prep, `nixos-hardware` module, kernel floor, power daemon, hibernation
+sizing) change per box. Use this file as the template, and substitute the
+right values for your hardware. Top-to-bottom; you should not need to switch
+docs while installing. For Secure Boot, work through this guide first, then
+see `secure-boot.md` as a follow-up. For the *why* behind specific Nix
+options, read `configuration.nix` / `home.nix` directly — they're the source
+of truth.
 
 > **Two install paths.** The default path uses the Calamares graphical
 > installer to get an encrypted base (with optional hibernation-sized
@@ -58,7 +64,12 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
 
 If you have a Ryzen AI 300 (not 7040), swap the hardware module to
-`framework-amd-ai-300-series` in `flake.nix`.
+`framework-amd-ai-300-series` in this host's `default.nix`. For
+non-Framework hardware (a workstation, NUC, ThinkPad, …), find the matching
+entry in [nixos-hardware](https://github.com/NixOS/nixos-hardware) and use
+that module instead; the rest of the flake is hardware-agnostic. Power on a
+non-Ryzen-7040 machine may also want a different default — TLP is the
+common choice outside the 7040 line.
 
 ---
 
@@ -296,7 +307,7 @@ cd ~/nixos-setup
 git pull                                      # grab changes from any machine
 nix flake update                              # bump all inputs
 # Or: nix flake update noctalia               # bump one input
-sudo nixos-rebuild switch --flake .#sjr-fw13
+sudo nixos-rebuild switch --flake .#<host>    # <host> is the hostname / hosts/<dir>
 
 # commit your edits (per-host hardware configs under hosts/ are tracked too)
 git add -A && git commit -m "..." && git push
