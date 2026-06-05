@@ -1,5 +1,5 @@
 # User-level configuration: packages, shell, dotfiles, Noctalia.
-{ inputs, pkgs, ... }:
+{ inputs, pkgs, config, ... }:
 
 {
   home.username = "sroberts";
@@ -285,10 +285,16 @@
   # raises Noctalia's lock via IPC ahead of ANY suspend/hibernate, so the
   # screen is never left unlocked on resume. No timeouts here — they live in
   # Noctalia.
+  #
+  # The before-sleep command resolves noctalia-shell by absolute store path:
+  # swayidle.service runs under user@.service's app.slice with a minimal PATH
+  # that does NOT inherit the niri/login-shell PATH where `programs.noctalia-
+  # shell` puts the binary. Bare `noctalia-shell` would fail with `command not
+  # found`, which is exactly what lid close did before this fix.
   services.swayidle = {
     enable = true;
     events = {
-      before-sleep = "noctalia-shell ipc call lockScreen lock";
+      before-sleep = "${config.programs.noctalia-shell.package}/bin/noctalia-shell ipc call lockScreen lock";
     };
   };
 
