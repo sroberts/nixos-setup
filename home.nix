@@ -1,5 +1,10 @@
 # User-level configuration: packages, shell, dotfiles, Noctalia.
-{ inputs, pkgs, config, ... }:
+{
+  inputs,
+  pkgs,
+  config,
+  ...
+}:
 
 {
   home.username = "sroberts";
