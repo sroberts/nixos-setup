@@ -314,6 +314,7 @@
     fastfetch
     jq
     fd
+    mosh
     # pipx is intentionally NOT installed via Nix: its build-time deps in
     # current nixos-unstable (black, black[extras], nox) cycle through
     # transient failures. Install pipx + the two tools we want manually
