@@ -4,23 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A NixOS flake configuration for a Framework 13 AMD (Ryzen 7040) laptop running niri + Noctalia (Quickshell) on an encrypted LVM-on-LUKS disk with hibernation-capable encrypted swap. It is the **source of truth** for the system — the running machine is a function of these files. The only host today is `sjr-fw13`, but the layout is multi-host: each machine is a directory under `hosts/`, and `flake.nix` discovers them automatically.
+A personal NixOS flake managing every machine the owner runs. It is the **source of truth** for each system — the running machine is a function of these files. The layout is multi-host: each machine is a directory under `hosts/`, and `flake.nix` discovers them automatically.
+
+The first (and currently only) host is `sjr-fw13`, a Framework 13 AMD (Ryzen 7040) laptop running niri + Noctalia (Quickshell) on an encrypted disk with hibernation-capable swap. Most of the shared `configuration.nix` / `home.nix` is hardware-agnostic; a future workstation or NUC would slot in as a new `hosts/<name>/` without touching shared files. (When a non-laptop host actually lands, expect to revisit laptop-specific bits — lid-switch handling, hibernation timing, fingerprint, `power-profiles-daemon` — and move what doesn't apply into per-host modules.)
 
 The repo is built to be cloned onto a fresh machine from the NixOS live ISO and installed against. Each host's `hardware-configuration.nix` (generated per-machine by `nixos-generate-config`) is **committed** under `hosts/<hostname>/` — flakes only evaluate git-tracked files, and the LUKS UUIDs it carries are identifiers, not secrets. To stand up a new machine, run `scripts/new-host.sh` on it; see `hosts/README.md`.
 
 ## Commands
 
-All builds go through the flake. The host attribute is `sjr-fw13`.
+All builds go through the flake. Substitute `<host>` for the directory name under `hosts/` (currently `sjr-fw13` — `nix flake show` lists every host the flake exposes).
 
 ```bash
 # Rebuild and switch (the default verb after any edit)
-sudo nixos-rebuild switch --flake .#sjr-fw13
+sudo nixos-rebuild switch --flake .#<host>
 
 # Test a change without making it the default boot generation
-sudo nixos-rebuild test --flake .#sjr-fw13
+sudo nixos-rebuild test --flake .#<host>
 
 # Build only, don't activate
-sudo nixos-rebuild build --flake .#sjr-fw13
+sudo nixos-rebuild build --flake .#<host>
 
 # Bump nixpkgs / niri / noctalia / claude-code-nix
 nix flake update
@@ -70,9 +72,9 @@ The lock screen is Noctalia's own (its own PAM context, raised via `WlSessionLoc
 
 Idle is driven by **Noctalia's own idle manager** (seeded in `home.activation.noctaliaConfigSeed`): a 5-min lock (`idle.lockTimeout`) plus an `idle.customCommands` entry running `systemctl suspend-then-hibernate` at 15 min. Noctalia's *built-in* idle-suspend is left disabled (`idle.suspendTimeout = 0`) because it only does a plain `systemctl suspend`; the custom command is a separate monitor that just runs the command, so it does the hibernate escalation cleanly. **swayidle** (in `home.nix`) is kept for one job only: its `before-sleep` hook locks (via Noctalia's IPC) ahead of a sleep Noctalia didn't initiate — i.e. a lid close — since Noctalia has no lock-on-external-suspend hook.
 
-### Power on Ryzen 7040
+### Power (Framework 13 / Ryzen 7040)
 
-`power-profiles-daemon` is enabled; `tlp` is **explicitly disabled**. This is Framework's recommendation for Ryzen 7040 — TLP misbehaves on this platform. Don't swap them without a reason.
+`power-profiles-daemon` is enabled in shared `configuration.nix`; `tlp` is **explicitly disabled**. This is Framework's recommendation for Ryzen 7040 — TLP misbehaves on this platform. Don't swap them without a reason on `sjr-fw13`. When a non-Framework / non-7040 host lands, this is one of the things to move out of shared config and into that host's `default.nix` (or override there): TLP is the more common pick on other hardware, and a headless box may want neither.
 
 ## Editing patterns
 
@@ -95,6 +97,6 @@ Listed in `home.activation.todoMd` (the generated `~/TODO.md`): authenticating C
 
 ## Reference docs in this repo
 
-- **`INSTALL.md`** — Single canonical install runbook for a fresh Framework 13 AMD: partition → encrypt → install → set up the working copy → verify. Includes the auth model (token for the clone, then build from the local path so Nix never sees the token), the "Stack at a glance" rationale table, known gotchas, and Arch+DankLinux migration notes.
+- **`INSTALL.md`** — Single canonical install runbook for the Framework 13 AMD host (`sjr-fw13`): partition → encrypt → install → set up the working copy → verify. Other machines follow the same shape (Calamares base → `scripts/new-host.sh` → `nixos-rebuild`) with different hardware-specific values; `INSTALL.md` is the template. Includes the auth model (token for the clone, then build from the local path so Nix never sees the token), the "Stack at a glance" rationale table, known gotchas, and Arch+DankLinux migration notes.
 - **`hosts/README.md`** — The per-host layout and the runbook for standing up a new machine with `scripts/new-host.sh` (deterministic config across different hardware).
-- **`secure-boot.md`** — lanzaboote enrollment runbook, including optional TPM2 LUKS auto-unlock and recovery from a bricked boot.
+- **`secure-boot.md`** — lanzaboote enrollment runbook (hardware-agnostic for the `sbctl` steps; Framework-specific BIOS quirks flagged inline), including optional TPM2 LUKS auto-unlock and recovery from a bricked boot.

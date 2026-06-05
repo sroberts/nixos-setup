@@ -1,4 +1,4 @@
-# Secure Boot Runbook — Framework 13 AMD (lanzaboote)
+# Secure Boot Runbook (lanzaboote)
 
 ## Bottom Line
 
@@ -13,13 +13,23 @@ Order is non-negotiable: **encrypt at install → boot → lanzaboote → enroll
 enable in BIOS.** Optionally, bind the LUKS key to the TPM at the end so the disk
 auto-unlocks only when the signed boot chain is intact.
 
+The lanzaboote/`sbctl` steps below are hardware-agnostic — they apply to any
+host built from this flake. The Framework-specific bits (BIOS navigation,
+the Setup-Mode entry quirk, and the firmware-builtin key flag) are flagged
+inline; for other firmware, the equivalent menus differ but the workflow is
+the same.
+
 ---
 
 ## Prerequisites
 
-- System installed with the encrypted LVM-on-LUKS layout and booting normally.
-- BIOS 3.05+ with a UEFI admin password set.
+- System installed with an encrypted root (either the default Calamares
+  ext4-on-LUKS layout or the manual LVM-on-LUKS appendix path from
+  `INSTALL.md`) and booting normally.
+- A UEFI admin password set in firmware.
 - Secure Boot currently **disabled** in BIOS (it was, for the install).
+- On Framework 13 specifically: BIOS 3.05+ (older firmware has the standby
+  drain bug, unrelated to Secure Boot but worth fixing first).
 
 ---
 
@@ -54,7 +64,7 @@ This generates your platform keys in `/var/lib/sbctl`.
 ## Step 3 — Rebuild (signs the boot chain, still in Secure Boot OFF)
 
 ```bash
-sudo nixos-rebuild switch --flake ~/nixos-config#sjr-fw13
+sudo nixos-rebuild switch --flake ~/nixos-setup#<host>
 ```
 
 lanzaboote replaces systemd-boot and signs the kernel + initrd as a unified image.
@@ -74,24 +84,30 @@ anything is unsigned, stop and fix it before touching BIOS.
 sudo sbctl enroll-keys --microsoft --firmware-builtin
 ```
 
-Two flags, both load-bearing on Framework:
+Two flags:
 
 - `--microsoft` enrolls Microsoft's OEM certificates alongside yours, so
   Option ROMs signed by Microsoft (which some hardware presents during boot)
-  still validate.
+  still validate. Wanted on almost any consumer hardware.
 - `--firmware-builtin` keeps the keys that came pre-provisioned with the
-  Framework firmware. This is what allows `fwupd` BIOS/EC updates to keep
-  validating after Secure Boot is on. Upstream lanzaboote docs call this out
-  specifically for Framework.
+  device firmware. This is what allows `fwupd` BIOS/EC updates to keep
+  validating after Secure Boot is on. Upstream lanzaboote docs call this
+  out specifically for Framework, and the same logic applies to any vendor
+  whose firmware updater is itself signed (Dell, Lenovo, …).
 
 Without **both**, you risk locking out legitimate firmware updates.
 
-### Entering Setup Mode (Framework-specific)
+### Entering Setup Mode
 
-The firmware must be in Setup Mode for `enroll-keys` to install new keys. On
-Framework, do **NOT** use "Erase all Secure Boot Settings" — the firmware is
-bugged and that path doesn't reliably enter Setup Mode (see the [Framework
-forum thread](https://community.frame.work/t/cant-enable-secure-boot-setup-mode/57683/5)).
+The firmware must be in Setup Mode for `enroll-keys` to install new keys.
+The general path on most UEFI firmware is: BIOS → Secure Boot menu →
+"Clear all Secure Boot keys" (or equivalent) → save and exit. The exact
+labels differ per vendor; the goal is an empty PK so the next
+`enroll-keys` run is what populates it.
+
+**Framework 13 quirk.** Do **NOT** use Framework's "Erase all Secure Boot
+Settings" option — the firmware is bugged and that path doesn't reliably
+enter Setup Mode (see the [Framework forum thread](https://community.frame.work/t/cant-enable-secure-boot-setup-mode/57683/5)).
 Instead, in the BIOS:
 
 1. Select **Administer Secure Boot**.
@@ -100,6 +116,10 @@ Instead, in the BIOS:
    - For each entry inside, press Enter and confirm **Delete this signature**.
 3. Press F10 to save and exit, reboot back into NixOS, then re-run the
    `sbctl enroll-keys` command above.
+
+On other firmware, look up the vendor's documented Setup Mode entry path
+before clearing keys — getting this wrong is the most common way to land
+in an unbootable state.
 
 ## Step 6 — Enable Secure Boot in BIOS
 
@@ -123,7 +143,9 @@ and `Secure Boot:	✓ Enabled`.
 
 With Secure Boot measuring the boot chain, you can enroll the LUKS passphrase into
 the TPM2 so the disk unlocks automatically **only when the boot chain is intact**;
-the passphrase remains a fallback. The 7040 Framework has a TPM2.
+the passphrase remains a fallback. Any host with a working TPM2 (the Framework
+13 7040, most modern laptops, most modern desktops with discrete or fTPM) can
+do this; check with `systemd-cryptenroll --tpm2-device=list` before enrolling.
 
 ```bash
 # Find the LUKS partition (the cryptsystem container, e.g. /dev/nvme0n1p2)
@@ -149,13 +171,23 @@ passphrase and re-enroll. This is expected behavior, not a failure.
 ## If it breaks (recovery)
 
 1. Boot the NixOS live USB.
-2. Unlock + mount the encrypted system:
+2. Unlock + mount the encrypted system. The exact commands depend on the
+   disk layout you installed with:
    ```bash
+   # Default Calamares layout (LUKS-encrypted ext4 root, no LVM):
+   cryptsetup open /dev/nvme0n1p2 cryptroot
+   mount /dev/mapper/cryptroot /mnt
+   mount /dev/nvme0n1p1 /mnt/boot
+
+   # Manual LVM-on-LUKS appendix layout:
    cryptsetup open /dev/nvme0n1p2 cryptsystem
    vgchange -ay
    mount /dev/vg/root /mnt
    mount /dev/nvme0n1p1 /mnt/boot
    ```
+   The container name (`cryptroot` vs `cryptsystem`) is whatever the
+   installer named it; `lsblk` on the live USB will show the partition
+   names. Substitute `nvme0n1` if your disk is named differently.
 3. In BIOS, disable Secure Boot (and/or clear keys) to get back to a bootable
    state, or `nixos-enter` and roll back the generation.
 
