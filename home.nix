@@ -383,10 +383,13 @@
     # the Nix-managed claude-code from the flake input still wins on PATH;
     # ~/.local/bin/claude exists but is shadowed, which silences `claude
     # update`'s PATH warning without changing which binary actually runs.
-    # In profileExtra (login-shell .zprofile) so it runs once per session,
-    # not on every subshell.
-    profileExtra = ''
-      PATH="$PATH:$HOME/.local/bin"
+    # In initExtra (interactive-shell .zshrc) because Ghostty (and most
+    # terminal emulators) launch zsh as a non-login interactive shell, so
+    # .zprofile never sources; .zshrc does. `typeset -U path` dedupes if a
+    # parent shell already appended it.
+    initExtra = ''
+      typeset -U path
+      path+=("$HOME/.local/bin")
     '';
   };
 
