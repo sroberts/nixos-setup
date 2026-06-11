@@ -376,6 +376,18 @@
       tree = "eza --tree";
       cat = "bat";
     };
+    # Append ~/.local/bin to PATH for imperatively-installed user binaries:
+    # pipx drops console scripts here (see pipx note in home.packages above),
+    # and `claude update` maintains its own native install at
+    # ~/.local/bin/claude. Appended (not prepended via home.sessionPath) so
+    # the Nix-managed claude-code from the flake input still wins on PATH;
+    # ~/.local/bin/claude exists but is shadowed, which silences `claude
+    # update`'s PATH warning without changing which binary actually runs.
+    # In profileExtra (login-shell .zprofile) so it runs once per session,
+    # not on every subshell.
+    profileExtra = ''
+      PATH="$PATH:$HOME/.local/bin"
+    '';
   };
 
   programs.zoxide = {
