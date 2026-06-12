@@ -151,6 +151,90 @@
     # setting, asserted by home.activation.noctaliaConfigSeed.
   };
 
+  # pam_fprintd's default `timeout=30` returns PAM_AUTH_ERR after 30s of no
+  # touch, at which point Noctalia's lock screen sees PAM completed and drops
+  # the fingerprint affordance from its UI — there's no re-arm hook. (The only
+  # re-arm path Noctalia has is the keypress one driven by
+  # `allowPasswordWithFprintd`, which is for switching to the password input,
+  # not for restarting fingerprint listening.) `timeout=-1` per man pam_fprintd
+  # disables the deadline entirely, so Verify stays open until either a finger
+  # matches or Noctalia cancels PAM itself (which it does on keypress / Enter).
+  # max-tries=-1 removes the analogous cap on wrong-touch retries; default 3
+  # would otherwise put a hard cap of 3 bad reads.
+  #
+  # Scoped to `login` only: that's the PAM service Noctalia uses. sudo / su /
+  # polkit dialogs keep the 30s default — short authentication prompts are
+  # supposed to time out.
+  security.pam.services.login.rules.auth.fprintd.args = [
+    "timeout=-1"
+    "max-tries=-1"
+  ];
+
+  # Goodix MOC fingerprint sensor (USB 27c6:609c) — keep USB runtime-PM off.
+  # The kernel default is `power/control=auto` with a 2s autosuspend delay, so
+  # the sensor goes to `runtime_status=suspended` ~2s after the last touch.
+  # On this Goodix MOC variant the USB resume path is unreliable: a touch on
+  # a suspended sensor is dropped silently, the lock screen falls back to
+  # password, and from the user's perspective "fingerprint works for a few
+  # minutes then dies." Pinning `power/control=on` keeps the device awake; the
+  # idle power cost is sub-milliwatt and never showed up on the laptop's
+  # battery telemetry. Match is by VID+PID so the rule is a no-op on hosts
+  # without this exact reader (i.e. it can live in shared config).
+  #
+  # `add|change` (not just `add`) so the activation script below can re-fire
+  # the rule on already-attached devices via `udevadm trigger --action=change`.
+  # Without that, nixos-rebuild reloads the ruleset but never applies the new
+  # power setting to the running sensor — which is exactly what bit us first.
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="27c6", ATTR{idProduct}=="609c", ATTR{power/control}="on"
+  '';
+
+  # Force the rule onto the already-attached Goodix device on every rebuild.
+  # `services.udev.extraRules` writes the rule and nixos-rebuild reloads the
+  # ruleset, but neither re-runs the rule against existing devices — so a
+  # fresh `power/control=on` setting would otherwise wait for the next
+  # unplug/replug (i.e. a reboot) to actually land on the sensor.
+  system.activationScripts.goodixFingerprintPM = {
+    text = ''
+      ${pkgs.systemd}/bin/udevadm trigger --action=change \
+        --attr-match=idVendor=27c6 --attr-match=idProduct=609c 2>/dev/null || true
+    '';
+    deps = [ ];
+  };
+
+  # Bounce fprintd on every resume. When the lid closes, swayidle's
+  # before-sleep raises Noctalia's lock screen, pam_fprintd starts a
+  # long-lived Verify call, and fprintd grabs a handle to the Goodix sensor.
+  # Userspace freezes mid-Verify; on wake the USB tree re-enumerates and
+  # fprintd's old sensor handle is dead. The wedged Verify never returns, so
+  # pam_fprintd's max-tries=-1 retry loop never gets a chance to fire — the
+  # lock screen comes back password-only.
+  #
+  # Restarting fprintd here kills the dead Verify, fprintd comes back up
+  # clean and re-claims the freshly enumerated sensor, and pam_fprintd's
+  # next retry hits a working daemon. powerManagement.resumeCommands is
+  # NixOS's wrapper around the systemd-sleep post-resume hook directory.
+  powerManagement.resumeCommands = ''
+    ${pkgs.systemd}/bin/systemctl restart fprintd.service || true
+  '';
+
+  # Keep fprintd hot. Upstream packages it as a dbus-activated service with a
+  # 30s idle-exit, so the unit is `inactive (dead)` most of the time. When the
+  # lock screen calls pam.start() under Noctalia's autoStartAuth=true, pam_fprintd
+  # has to wake fprintd via dbus *and* claim the sensor before Noctalia decides
+  # whether to render the "touch finger or type password" UI or fall back to
+  # password-only. That activation latency is the second half of the Goodix
+  # problem (the udev rule above handles USB autosuspend; this handles the
+  # daemon side). wantedBy starts fprintd at boot; Restart=always brings it back
+  # within RestartSec of the idle-exit, so it's effectively continuously running.
+  systemd.services.fprintd = {
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 1;
+    };
+  };
+
   ############################################################
   # niri + greetd (tuigreet) login
   ############################################################
