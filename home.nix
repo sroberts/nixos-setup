@@ -566,9 +566,15 @@ in
       gui = {
         nerdFontsVersion = "3";
         theme = {
-          activeBorderColor = [ "#cccccc" "bold" ];
+          activeBorderColor = [
+            "#cccccc"
+            "bold"
+          ];
           inactiveBorderColor = [ "#3c3c3c" ];
-          searchingActiveBorderColor = [ "#dddddd" "bold" ];
+          searchingActiveBorderColor = [
+            "#dddddd"
+            "bold"
+          ];
           selectedLineBgColor = [ "#191919" ];
           optionsTextColor = [ "#aaaaaa" ];
           cherryPickedCommitBgColor = [ "#3c3c3c" ];
