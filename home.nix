@@ -689,13 +689,35 @@ in
   };
 
   # mise for per-project runtime pins (python/node/go)
+  #
+  # nix-ld (in configuration.nix) is what makes mise's pre-built binaries
+  # runnable on NixOS at all — without it the linker path under /lib64
+  # 404s and nothing launches. The settings below tune *which* pre-built
+  # binaries mise reaches for.
+  #
+  # python.compile / node.compile = false force mise to use the precompiled
+  # binaries (python-build-standalone for python; nodejs.org tarballs for
+  # node) rather than building from source via python-build / node-build.
+  # Compiling needs a full build toolchain on PATH (gcc, make, openssl-dev,
+  # bzip2-dev, readline-dev, sqlite-dev, …) — exactly the FHS-shaped pile of
+  # dev libs NixOS doesn't make convenient. Both also default to "try
+  # precompiled, fall back to compile" and the fallback path is silent;
+  # pinning to `false` turns it into a loud failure instead of a 5-minute
+  # source build that ends in `make: command not found`. go is precompiled
+  # only — no equivalent knob — and nix-ld alone covers it at runtime.
   programs.mise = {
     enable = true;
     enableZshIntegration = true;
-    globalConfig.tools = {
-      python = "latest";
-      node = "lts";
-      go = "latest";
+    globalConfig = {
+      tools = {
+        python = "latest";
+        node = "lts";
+        go = "latest";
+      };
+      settings = {
+        python.compile = false;
+        node.compile = false;
+      };
     };
   };
 
