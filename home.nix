@@ -335,7 +335,6 @@ in
     crush # charmbracelet/crush
     glow
     gh
-    lazygit
     lazydocker
     btop
     fastfetch
@@ -360,8 +359,6 @@ in
     playerctl
     alacritty
     foot
-    ghostty
-    fuzzel
     matugen
     cava
     xwayland-satellite
@@ -405,7 +402,7 @@ in
     # terminal emulators) launch zsh as a non-login interactive shell, so
     # .zprofile never sources; .zshrc does. `typeset -U path` dedupes if a
     # parent shell already appended it.
-    initExtra = ''
+    initContent = ''
       typeset -U path
       path+=("$HOME/.local/bin")
     '';
@@ -519,11 +516,9 @@ in
   };
 
   # ghostty — primary terminal (see niri binds + home.sessionVariables.TERMINAL).
-  # Stays in home.packages above per [[feedback-nixos-programs-module-install]]:
-  # don't trust the programs.X module to install on its own until rebuild +
-  # `which ghostty` confirms. The mono ANSI palette is a deliberate choice —
-  # matches zellij/nvim aesthetics. Colored programs (git status, ls --color)
-  # will surface differences via brightness/bold rather than hue.
+  # The mono ANSI palette is a deliberate choice — matches zellij/nvim
+  # aesthetics. Colored programs (git status, ls --color) surface differences
+  # via brightness/bold rather than hue.
   programs.ghostty = {
     enable = true;
     settings = {
