@@ -932,6 +932,175 @@ in
     hr { border-color: #3c3c3c; }
   '';
 
+  # Neovim / LazyVim — Noctalia-mono colorscheme. Two files:
+  #   colors/noctalia-mono.lua      — highlight definitions; nvim picks it up
+  #                                   automatically via the runtime path so
+  #                                   `:colorscheme noctalia-mono` works.
+  #   lua/plugins/colorscheme.lua   — LazyVim spec that sets it as the default.
+  # The LazyVim starter clone (home.activation.lazyvimStarter) creates the
+  # parent dirs but never these specific files, so the home-manager symlinks
+  # land without conflict. Palette mirrors ~/.config/noctalia/colors.json
+  # (mSurface / mPrimary / mTertiary / mOutline); statically pinned in the
+  # same way as the zellij and Typora themes.
+  xdg.configFile."nvim/colors/noctalia-mono.lua".text = ''
+    -- Noctalia-mono. Mirrors ~/.config/noctalia/colors.json.
+    vim.cmd("highlight clear")
+    if vim.fn.exists("syntax_on") == 1 then
+      vim.cmd("syntax reset")
+    end
+    vim.g.colors_name = "noctalia-mono"
+    vim.o.background = "dark"
+    vim.o.termguicolors = true
+
+    local p = {
+      bg       = "#111111", -- mSurface
+      bg_alt   = "#191919", -- mSurfaceVariant
+      bg_float = "#1a1a1a",
+      fg       = "#aaaaaa", -- mPrimary
+      fg_dim   = "#828282", -- mOnSurface
+      fg_faint = "#5d5d5d", -- mOnSurfaceVariant
+      border   = "#3c3c3c", -- mOutline
+      accent   = "#cccccc", -- mTertiary / mHover
+      bright   = "#dddddd", -- mError (brightest)
+    }
+
+    local function hi(g, o) vim.api.nvim_set_hl(0, g, o) end
+
+    -- Editor core
+    hi("Normal",         { fg = p.fg, bg = p.bg })
+    hi("NormalFloat",    { fg = p.fg, bg = p.bg_float })
+    hi("FloatBorder",    { fg = p.border, bg = p.bg_float })
+    hi("FloatTitle",     { fg = p.accent, bg = p.bg_float, bold = true })
+    hi("ColorColumn",    { bg = p.bg_alt })
+    hi("Cursor",         { fg = p.bg, bg = p.fg })
+    hi("CursorLine",     { bg = p.bg_alt })
+    hi("CursorLineNr",   { fg = p.accent, bold = true })
+    hi("LineNr",         { fg = p.fg_faint })
+    hi("SignColumn",     { fg = p.fg_faint, bg = p.bg })
+    hi("FoldColumn",     { fg = p.fg_faint, bg = p.bg })
+    hi("Folded",         { fg = p.fg_dim, bg = p.bg_alt })
+    hi("EndOfBuffer",    { fg = p.bg })
+    hi("NonText",        { fg = p.fg_faint })
+    hi("Whitespace",     { fg = p.border })
+    hi("MatchParen",     { fg = p.bright, bold = true, underline = true })
+    hi("Search",         { fg = p.bg, bg = p.accent })
+    hi("IncSearch",      { fg = p.bg, bg = p.bright, bold = true })
+    hi("CurSearch",      { fg = p.bg, bg = p.bright, bold = true })
+    hi("Visual",         { bg = p.border })
+    hi("StatusLine",     { fg = p.fg, bg = p.bg_alt })
+    hi("StatusLineNC",   { fg = p.fg_dim, bg = p.bg_alt })
+    hi("WinSeparator",   { fg = p.border })
+    hi("TabLine",        { fg = p.fg_dim, bg = p.bg_alt })
+    hi("TabLineFill",    { bg = p.bg })
+    hi("TabLineSel",     { fg = p.bg, bg = p.accent, bold = true })
+    hi("Title",          { fg = p.accent, bold = true })
+    hi("Directory",      { fg = p.accent })
+    hi("ModeMsg",        { fg = p.fg, bold = true })
+    hi("MoreMsg",        { fg = p.accent })
+    hi("Question",       { fg = p.accent })
+    hi("WarningMsg",     { fg = p.bright })
+    hi("ErrorMsg",       { fg = p.bright, bold = true })
+    hi("Pmenu",          { fg = p.fg, bg = p.bg_alt })
+    hi("PmenuSel",       { fg = p.bg, bg = p.accent, bold = true })
+    hi("PmenuSbar",      { bg = p.bg_alt })
+    hi("PmenuThumb",     { bg = p.border })
+
+    -- Syntax
+    hi("Comment",        { fg = p.fg_faint, italic = true })
+    hi("Constant",       { fg = p.fg, bold = true })
+    hi("String",         { fg = p.fg_dim })
+    hi("Character",      { fg = p.fg_dim })
+    hi("Number",         { fg = p.accent })
+    hi("Boolean",        { fg = p.accent, bold = true })
+    hi("Float",          { fg = p.accent })
+    hi("Identifier",     { fg = p.fg })
+    hi("Function",       { fg = p.bright, bold = true })
+    hi("Statement",      { fg = p.fg, bold = true })
+    hi("Keyword",        { fg = p.fg, bold = true })
+    hi("Operator",       { fg = p.accent })
+    hi("PreProc",        { fg = p.fg_dim })
+    hi("Type",           { fg = p.accent })
+    hi("Special",        { fg = p.accent })
+    hi("Underlined",     { fg = p.accent, underline = true })
+    hi("Todo",           { fg = p.bg, bg = p.bright, bold = true })
+
+    -- Treesitter
+    hi("@variable",                { fg = p.fg })
+    hi("@property",                { fg = p.fg })
+    hi("@field",                   { fg = p.fg })
+    hi("@punctuation.delimiter",   { fg = p.fg_dim })
+    hi("@punctuation.bracket",     { fg = p.fg_dim })
+
+    -- Diagnostics
+    hi("DiagnosticError",          { fg = p.bright, bold = true })
+    hi("DiagnosticWarn",           { fg = p.accent })
+    hi("DiagnosticInfo",           { fg = p.fg_dim })
+    hi("DiagnosticHint",           { fg = p.fg_faint })
+    hi("DiagnosticUnderlineError", { sp = p.bright, undercurl = true })
+    hi("DiagnosticUnderlineWarn",  { sp = p.accent, undercurl = true })
+    hi("DiagnosticUnderlineInfo",  { sp = p.fg_dim, undercurl = true })
+    hi("DiagnosticUnderlineHint",  { sp = p.fg_faint, undercurl = true })
+
+    -- Diff
+    hi("DiffAdd",    { bg = p.bg_alt })
+    hi("DiffChange", { bg = p.bg_alt })
+    hi("DiffDelete", { fg = p.fg_faint, bg = p.bg_alt })
+    hi("DiffText",   { fg = p.bright, bg = p.bg_alt, bold = true })
+
+    -- Telescope
+    hi("TelescopeNormal",        { fg = p.fg, bg = p.bg_float })
+    hi("TelescopeBorder",        { fg = p.border, bg = p.bg_float })
+    hi("TelescopePromptNormal",  { fg = p.fg, bg = p.bg_alt })
+    hi("TelescopePromptBorder",  { fg = p.border, bg = p.bg_alt })
+    hi("TelescopePromptTitle",   { fg = p.bg, bg = p.accent, bold = true })
+    hi("TelescopePreviewTitle",  { fg = p.bg, bg = p.accent, bold = true })
+    hi("TelescopeResultsTitle",  { fg = p.fg_dim, bg = p.bg_float })
+    hi("TelescopeSelection",     { fg = p.accent, bg = p.bg_alt, bold = true })
+    hi("TelescopeMatching",      { fg = p.bright, bold = true })
+
+    -- Neo-tree
+    hi("NeoTreeNormal",         { fg = p.fg, bg = p.bg })
+    hi("NeoTreeNormalNC",       { fg = p.fg, bg = p.bg })
+    hi("NeoTreeRootName",       { fg = p.accent, bold = true })
+    hi("NeoTreeFileName",       { fg = p.fg })
+    hi("NeoTreeDirectoryIcon",  { fg = p.fg_dim })
+    hi("NeoTreeDirectoryName",  { fg = p.fg })
+    hi("NeoTreeFloatBorder",    { fg = p.border, bg = p.bg_float })
+    hi("NeoTreeTitleBar",       { fg = p.bg, bg = p.accent, bold = true })
+
+    -- Which-key
+    hi("WhichKey",          { fg = p.accent, bold = true })
+    hi("WhichKeyGroup",     { fg = p.fg })
+    hi("WhichKeyDesc",      { fg = p.fg_dim })
+    hi("WhichKeySeparator", { fg = p.border })
+    hi("WhichKeyFloat",     { bg = p.bg_float })
+    hi("WhichKeyBorder",    { fg = p.border, bg = p.bg_float })
+
+    -- Noice
+    hi("NoiceCmdline",       { fg = p.fg, bg = p.bg_alt })
+    hi("NoiceCmdlineIcon",   { fg = p.accent })
+    hi("NoicePopup",         { fg = p.fg, bg = p.bg_float })
+    hi("NoicePopupBorder",   { fg = p.border, bg = p.bg_float })
+
+    -- Gitsigns
+    hi("GitSignsAdd",    { fg = p.fg })
+    hi("GitSignsChange", { fg = p.accent })
+    hi("GitSignsDelete", { fg = p.fg_faint })
+  '';
+
+  xdg.configFile."nvim/lua/plugins/colorscheme.lua".text = ''
+    -- Hooks LazyVim into the noctalia-mono colorscheme defined in
+    -- ~/.config/nvim/colors/noctalia-mono.lua.
+    return {
+      {
+        "LazyVim/LazyVim",
+        opts = {
+          colorscheme = "noctalia-mono",
+        },
+      },
+    }
+  '';
+
   # Post-install TODO checklist
   home.activation.todoMd = {
     after = [ "writeBoundary" ];
