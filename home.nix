@@ -662,10 +662,19 @@ in
   programs.mise = {
     enable = true;
     enableZshIntegration = true;
-    globalConfig.tools = {
-      python = "latest";
-      node = "lts";
-      go = "latest";
+    globalConfig = {
+      # node_compile = false makes mise pull prebuilt node binaries instead
+      # of source-building from the node tarball. The source build invokes
+      # node's `./configure`, which on line 9 needs `python` on PATH —
+      # which mise hasn't installed yet at activation time (chicken/egg
+      # with the python tool in this same config). Prebuilt skips that
+      # whole chain and is significantly faster besides.
+      settings.node_compile = false;
+      tools = {
+        python = "latest";
+        node = "lts";
+        go = "latest";
+      };
     };
   };
 
@@ -758,6 +767,32 @@ in
     before = [ ];
     data = ''
       ${pkgs.mise}/bin/mise install --yes 2>&1 || true
+    '';
+  };
+
+  # fizzy-cli — basecamp/fizzy-cli. Not in nixpkgs; pulled via `go install`
+  # at activation time using pkgs.go (Nix-managed, deterministic) rather
+  # than mise's go. mise exec drags in the whole tool set (node/python/go)
+  # before running, which hung the activation hook in practice; pkgs.go
+  # is a closure-only build dep and never collides with mise on user PATH.
+  # gcc is on PATH because fizzy transitively pulls in runtime/cgo, and
+  # `go install` needs a C compiler to build it — the activation hook
+  # runs in a stripped environment that doesn't inherit home.packages'
+  # gcc on PATH. GOBIN is pinned to ~/.local/bin so the binary lands on
+  # the existing zsh PATH append. Guarded by an existence check so reruns
+  # are idempotent; `rm ~/.local/bin/fizzy && nixos-rebuild switch` to
+  # refresh, or run `go install ...@latest` manually.
+  # `fizzy setup` is interactive (auth/config) — it's in TODO.md.
+  home.activation.fizzyCli = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      if [ ! -x "$HOME/.local/bin/fizzy" ]; then
+        ${pkgs.coreutils}/bin/mkdir -p "$HOME/.local/bin"
+        PATH="${pkgs.gcc}/bin:$PATH" \
+        GOBIN="$HOME/.local/bin" \
+          ${pkgs.go}/bin/go install github.com/basecamp/fizzy-cli/cmd/fizzy@latest 2>&1 || true
+      fi
     '';
   };
 
@@ -1322,6 +1357,7 @@ in
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
+      - [ ] Run `fizzy setup` (auth + config; activation hook installs the binary)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
