@@ -427,8 +427,196 @@ in
     enableZshIntegration = true;
   };
 
-  programs.bat.enable = true;
-  programs.starship.enable = true;
+  # bat — syntax-highlighted `cat` (see shellAliases above). Ships a
+  # Noctalia-mono tmTheme inline; scopes lean on the same brightness/bold
+  # gradations the nvim colorscheme uses so highlighted code reads
+  # consistently across both renderers.
+  programs.bat = {
+    enable = true;
+    config.theme = "Noctalia-Mono";
+    themes."Noctalia-Mono" = {
+      src = pkgs.writeTextDir "Noctalia-Mono.tmTheme" ''
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>name</key><string>Noctalia Mono</string>
+          <key>settings</key>
+          <array>
+            <dict><key>settings</key><dict>
+              <key>background</key><string>#111111</string>
+              <key>foreground</key><string>#aaaaaa</string>
+              <key>caret</key><string>#cccccc</string>
+              <key>lineHighlight</key><string>#191919</string>
+              <key>selection</key><string>#3c3c3c</string>
+            </dict></dict>
+            <dict><key>scope</key><string>comment</string><key>settings</key><dict>
+              <key>foreground</key><string>#5d5d5d</string>
+              <key>fontStyle</key><string>italic</string>
+            </dict></dict>
+            <dict><key>scope</key><string>string</string><key>settings</key><dict>
+              <key>foreground</key><string>#828282</string>
+            </dict></dict>
+            <dict><key>scope</key><string>constant.numeric, constant.language</string><key>settings</key><dict>
+              <key>foreground</key><string>#cccccc</string>
+            </dict></dict>
+            <dict><key>scope</key><string>keyword, storage, storage.type</string><key>settings</key><dict>
+              <key>foreground</key><string>#aaaaaa</string>
+              <key>fontStyle</key><string>bold</string>
+            </dict></dict>
+            <dict><key>scope</key><string>entity.name.function, support.function</string><key>settings</key><dict>
+              <key>foreground</key><string>#dddddd</string>
+              <key>fontStyle</key><string>bold</string>
+            </dict></dict>
+            <dict><key>scope</key><string>entity.name.type, entity.name.class, support.type</string><key>settings</key><dict>
+              <key>foreground</key><string>#cccccc</string>
+            </dict></dict>
+            <dict><key>scope</key><string>variable</string><key>settings</key><dict>
+              <key>foreground</key><string>#aaaaaa</string>
+            </dict></dict>
+            <dict><key>scope</key><string>keyword.operator, punctuation</string><key>settings</key><dict>
+              <key>foreground</key><string>#828282</string>
+            </dict></dict>
+          </array>
+          <key>uuid</key><string>00000000-noctalia-mono-bat</string>
+        </dict>
+        </plist>
+      '';
+      file = "Noctalia-Mono.tmTheme";
+    };
+  };
+
+  # starship — Noctalia-mono palette + module styles. The palette names
+  # below (bg/fg/dim/faint/accent/bright/border) match the nvim/zellij
+  # palettes so all themed surfaces use the same color vocabulary.
+  programs.starship = {
+    enable = true;
+    settings = {
+      add_newline = false;
+      palette = "noctalia-mono";
+      palettes.noctalia-mono = {
+        bg = "#111111";
+        fg = "#aaaaaa";
+        dim = "#828282";
+        faint = "#5d5d5d";
+        accent = "#cccccc";
+        bright = "#dddddd";
+        border = "#3c3c3c";
+      };
+      character = {
+        success_symbol = "[➜](bold accent)";
+        error_symbol = "[➜](bold bright)";
+      };
+      directory.style = "fg bold";
+      git_branch.style = "dim";
+      git_status.style = "accent";
+      cmd_duration.style = "faint";
+      hostname.style = "dim";
+      # username uses style_user/style_root (not `style` like the others).
+      username.style_user = "dim";
+      username.style_root = "bright bold";
+    };
+  };
+
+  # ghostty — primary terminal (see niri binds + home.sessionVariables.TERMINAL).
+  # Stays in home.packages above per [[feedback-nixos-programs-module-install]]:
+  # don't trust the programs.X module to install on its own until rebuild +
+  # `which ghostty` confirms. The mono ANSI palette is a deliberate choice —
+  # matches zellij/nvim aesthetics. Colored programs (git status, ls --color)
+  # will surface differences via brightness/bold rather than hue.
+  programs.ghostty = {
+    enable = true;
+    settings = {
+      theme = "noctalia-mono";
+      font-family = "JetBrainsMono Nerd Font";
+      font-size = 11;
+    };
+    themes.noctalia-mono = {
+      background = "#111111";
+      foreground = "#aaaaaa";
+      cursor-color = "#cccccc";
+      cursor-text = "#111111";
+      selection-background = "#3c3c3c";
+      selection-foreground = "#cccccc";
+      palette = [
+        "0=#111111"
+        "1=#dddddd"
+        "2=#aaaaaa"
+        "3=#cccccc"
+        "4=#a7a7a7"
+        "5=#828282"
+        "6=#cccccc"
+        "7=#cccccc"
+        "8=#3c3c3c"
+        "9=#dddddd"
+        "10=#aaaaaa"
+        "11=#cccccc"
+        "12=#a7a7a7"
+        "13=#828282"
+        "14=#cccccc"
+        "15=#dddddd"
+      ];
+    };
+  };
+
+  # lazygit — git TUI. Colors take YAML list form: [hex, "bold"] etc.
+  # nerdFontsVersion = "3" to match the JetBrainsMono Nerd Font shipped
+  # in configuration.nix.
+  programs.lazygit = {
+    enable = true;
+    settings = {
+      gui = {
+        nerdFontsVersion = "3";
+        theme = {
+          activeBorderColor = [
+            "#cccccc"
+            "bold"
+          ];
+          inactiveBorderColor = [ "#3c3c3c" ];
+          searchingActiveBorderColor = [
+            "#dddddd"
+            "bold"
+          ];
+          selectedLineBgColor = [ "#191919" ];
+          optionsTextColor = [ "#aaaaaa" ];
+          cherryPickedCommitBgColor = [ "#3c3c3c" ];
+          cherryPickedCommitFgColor = [ "#cccccc" ];
+          markedBaseCommitBgColor = [ "#3c3c3c" ];
+          markedBaseCommitFgColor = [ "#cccccc" ];
+          unstagedChangesColor = [ "#dddddd" ];
+          defaultFgColor = [ "#aaaaaa" ];
+        };
+      };
+    };
+  };
+
+  # fuzzel — Mod+D launcher. Colors take aRRGGBB hex (alpha-first). Border
+  # gets a thin Noctalia outline; main.terminal points at ghostty so any
+  # exec entries respect the system terminal.
+  programs.fuzzel = {
+    enable = true;
+    settings = {
+      main = {
+        font = "JetBrainsMono Nerd Font:size=12";
+        terminal = "ghostty";
+        icon-theme = "Papirus-Dark";
+        width = 50;
+      };
+      border = {
+        width = 1;
+        radius = 4;
+      };
+      colors = {
+        background = "111111ff";
+        text = "aaaaaaff";
+        match = "ddddddff";
+        selection = "3c3c3cff";
+        selection-text = "ccccccff";
+        selection-match = "ddddddff";
+        border = "3c3c3cff";
+      };
+    };
+  };
 
   # zellij — terminal multiplexer. Shipped with a "noctalia-mono" theme
   # that mirrors the stock Noctalia palette from ~/.config/noctalia/colors.json
