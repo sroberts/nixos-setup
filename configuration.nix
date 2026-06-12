@@ -340,6 +340,13 @@
   services.ollama = {
     enable = true;
     package = pkgs.ollama-rocm; # Radeon 780M iGPU; switch to pkgs.ollama (cpu) or pkgs.ollama-vulkan if rocm crashes
+    # Pulled on first start by ollama-model-loader.service.
+    loadModels = [
+      "llama3.2"
+      "gemma4:latest"
+      "gpt-oss:20b"
+      "lfm2.5-thinking"
+    ];
   };
 
   ############################################################
