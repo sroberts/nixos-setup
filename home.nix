@@ -342,10 +342,12 @@ in
     fd
     mosh
 
-    # Compiler. `pkgs.gcc` resolves to the current nixpkgs default
-    # (gcc-wrapper around gcc 14.x at time of writing); pin to e.g.
-    # `gcc13`/`gcc14` if a project needs a specific ABI.
+    # C/C++ toolchain basics. `pkgs.gcc` resolves to the current nixpkgs
+    # default (gcc-wrapper around gcc 14.x at time of writing); pin to
+    # e.g. `gcc13`/`gcc14` if a project needs a specific ABI. `gnumake`
+    # is the canonical `make` — most upstream Makefiles assume it.
     gcc
+    gnumake
 
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
     # via pipx. JFryy/qq is built from source in the `let` above.
