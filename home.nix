@@ -361,6 +361,15 @@ in
 
     # Wayland / niri ergonomics
     wl-clipboard
+    # macOS-style aliases for wl-copy / wl-paste so muscle memory works:
+    # `echo foo | pbcopy`, `pbpaste`. Symlinks rather than shell wrappers —
+    # pbcopy IS wl-copy, just under a different name, so flag forwarding and
+    # exit codes are transparent.
+    (runCommandLocal "pbcopy-pbpaste" { } ''
+      mkdir -p $out/bin
+      ln -s ${wl-clipboard}/bin/wl-copy $out/bin/pbcopy
+      ln -s ${wl-clipboard}/bin/wl-paste $out/bin/pbpaste
+    '')
     brightnessctl
     playerctl
     alacritty
