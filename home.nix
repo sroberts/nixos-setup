@@ -341,6 +341,12 @@ in
     jq
     fd
     mosh
+
+    # Compiler. `pkgs.gcc` resolves to the current nixpkgs default
+    # (gcc-wrapper around gcc 14.x at time of writing); pin to e.g.
+    # `gcc13`/`gcc14` if a project needs a specific ABI.
+    gcc
+
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
     # via pipx. JFryy/qq is built from source in the `let` above.
     q-text-as-data
