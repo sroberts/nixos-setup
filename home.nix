@@ -512,7 +512,9 @@ in
       git_status.style = "accent";
       cmd_duration.style = "faint";
       hostname.style = "dim";
-      username.style = "dim";
+      # username uses style_user/style_root (not `style` like the others).
+      username.style_user = "dim";
+      username.style_root = "bright bold";
     };
   };
 
