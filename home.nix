@@ -6,6 +6,22 @@
   ...
 }:
 
+let
+  # JFryy/qq — jq-like CLI with interchangeable format transcodings. Not in
+  # nixpkgs; packaged inline so it survives reinstalls instead of needing a
+  # post-boot `go install`.
+  qq = pkgs.buildGoModule rec {
+    pname = "qq";
+    version = "0.3.4";
+    src = pkgs.fetchFromGitHub {
+      owner = "JFryy";
+      repo = "qq";
+      rev = "v${version}";
+      hash = "sha256-GLZKDKJEtZIsOMj9V7q2Po7DDelhl1tg1DOyihOw2bk=";
+    };
+    vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
+  };
+in
 {
   home.username = "sroberts";
   home.homeDirectory = "/home/sroberts";
@@ -326,15 +342,17 @@
     jq
     fd
     mosh
-    # pipx is intentionally NOT installed via Nix: its build-time deps in
-    # current nixos-unstable (black, black[extras], nox) cycle through
-    # transient failures. Install pipx + the two tools we want manually
-    # post-boot (mise provides python):
+    # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
+    # via pipx. JFryy/qq is built from source in the `let` above.
+    q-text-as-data
+    qq
+    # pipx itself is still NOT installed via Nix: build-time deps in current
+    # nixos-unstable (black, black[extras], nox) cycle through transient
+    # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
+    # (mise provides python):
     #   pip install --user pipx
     #   pipx ensurepath
-    #   pipx install q-text-as-data jsongrep
-    # JFryy/qq also isn't in nixpkgs; `go install github.com/JFryy/qq@latest`
-    # picks it up via mise's Go toolchain.
+    #   pipx install jsongrep
 
     # Wayland / niri ergonomics
     wl-clipboard
@@ -904,9 +922,7 @@
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] Download Playdate Simulator: https://play.date/dev/
-      - [ ] Pull Ollama models: `ollama pull llama3.2`
-      - [ ] Install pipx + tools: `pip install --user pipx && pipx ensurepath && pipx install q-text-as-data jsongrep`
-      - [ ] Install JFryy/qq: `go install github.com/JFryy/qq@latest`
+      - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
