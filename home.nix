@@ -21,6 +21,34 @@ let
     };
     vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
   };
+
+  # basecamp/fizzy-cli — packaged from the prebuilt linux-amd64 release
+  # binary because `go install` can't reach v3.x.x for this repo: their
+  # go.mod still declares `module github.com/basecamp/fizzy-cli` with no
+  # `/v3` suffix, and Go's semantic import versioning won't resolve v2+
+  # tags without the major-version path. So `@latest` falls back to a
+  # pseudo-version of master, which fizzy itself flags as out-of-date.
+  # autoPatchelfHook fixes the ELF interpreter path; stdenv.cc.cc.lib
+  # covers libstdc++/libgcc_s that the cgo binary links against.
+  fizzy-cli = pkgs.stdenvNoCC.mkDerivation rec {
+    pname = "fizzy-cli";
+    version = "3.0.3";
+    src = pkgs.fetchurl {
+      url = "https://github.com/basecamp/fizzy-cli/releases/download/v${version}/fizzy-linux-amd64";
+      hash = "sha256-r1vNVFkRaRkxo81nhpE0X8MiHsiE2M7px0ZMxfKPgVQ=";
+    };
+    dontUnpack = true;
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+    installPhase = ''
+      install -Dm755 $src $out/bin/fizzy
+    '';
+    meta = {
+      description = "Fizzy CLI and Agent Skills";
+      homepage = "https://github.com/basecamp/fizzy-cli";
+      platforms = [ "x86_64-linux" ];
+    };
+  };
 in
 {
   home.username = "sroberts";
@@ -348,9 +376,11 @@ in
     gcc
 
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
-    # via pipx. JFryy/qq is built from source in the `let` above.
+    # via pipx. JFryy/qq is built from source in the `let` above;
+    # basecamp/fizzy-cli is the prebuilt v3.0.3 binary, also from `let`.
     q-text-as-data
     qq
+    fizzy-cli
     # pipx itself is still NOT installed via Nix: build-time deps in current
     # nixos-unstable (black, black[extras], nox) cycle through transient
     # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
@@ -1322,6 +1352,7 @@ in
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
+      - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
