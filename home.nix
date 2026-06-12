@@ -430,6 +430,38 @@ in
   programs.bat.enable = true;
   programs.starship.enable = true;
 
+  # zellij — terminal multiplexer. Shipped with a "noctalia-mono" theme
+  # that mirrors the stock Noctalia palette from ~/.config/noctalia/colors.json
+  # (mSurface / mPrimary / mTertiary). It's statically pinned: if the
+  # Noctalia wallpaper changes and the palette shifts off mono, zellij
+  # won't follow until you regenerate this block. enableZshIntegration is
+  # intentionally OFF — upstream's hook auto-attaches on every new shell,
+  # which is too invasive. Invoke `zellij` manually.
+  programs.zellij = {
+    enable = true;
+    settings = {
+      theme = "noctalia-mono";
+      default_layout = "compact";
+    };
+    themes.noctalia-mono = ''
+      themes {
+          noctalia-mono {
+              fg "#aaaaaa"
+              bg "#111111"
+              black "#111111"
+              red "#dddddd"
+              green "#aaaaaa"
+              yellow "#cccccc"
+              blue "#a7a7a7"
+              magenta "#828282"
+              cyan "#cccccc"
+              white "#cccccc"
+              orange "#cccccc"
+          }
+      }
+    '';
+  };
+
   # mise for per-project runtime pins (python/node/go)
   programs.mise = {
     enable = true;
