@@ -410,6 +410,7 @@
     slack
     signal-desktop
     typora
+    zed-editor
     zoom-us
 
     git
