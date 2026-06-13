@@ -712,6 +712,7 @@ in
       tools = {
         python = "latest";
         node = "lts";
+        pnpm = "latest";
         go = "latest";
       };
       settings = {
@@ -1371,6 +1372,7 @@ in
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] Download Playdate Simulator: https://play.date/dev/
+      - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, re-run `mise install` (the rebuild hook's `|| true` swallows transient network failures)
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
