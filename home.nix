@@ -76,6 +76,23 @@ in
       natural-scroll = true;
       dwt = true;
     };
+    # Monitor layout. Outputs are matched by "make model serial" (more
+    # stable than connector names — surviving dock swaps / different DP
+    # ports). The Dell sits at the origin; the laptop panel is placed to
+    # its right at x=2560 (Dell's logical width at scale 1) and bottom-
+    # aligned at y=480 (Dell 1440 − laptop 960) so crossing the boundary
+    # matches the physical arrangement — laptop on the desk, Dell rising
+    # above it. Discover identifier strings with `niri msg outputs`.
+    outputs = {
+      "Dell Inc. DELL P3221D C57ZQ83".position = {
+        x = 0;
+        y = 0;
+      };
+      "BOE NE135A1M-NY1 Unknown".position = {
+        x = 2560;
+        y = 480;
+      };
+    };
     # Auto-start Noctalia with niri. Noctalia's home-module writes the
     # config files; the compositor is responsible for launching the
     # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
