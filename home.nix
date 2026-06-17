@@ -132,11 +132,16 @@ in
       "Mod+H".action.focus-column-left = [ ];
       "Mod+L".action.focus-column-right = [ ];
 
-      # Window focus within column
+      # Window focus within column (arrows). Vim J/K is reassigned below
+      # to workspace switching — niri's workspaces only run vertically,
+      # so J/K is the natural fit for them.
       "Mod+Down".action.focus-window-down = [ ];
       "Mod+Up".action.focus-window-up = [ ];
-      "Mod+J".action.focus-window-down = [ ];
-      "Mod+K".action.focus-window-up = [ ];
+
+      # Vim-style workspace focus. Mod+U/I below still works as a
+      # secondary binding (niri upstream default).
+      "Mod+J".action.focus-workspace-down = [ ];
+      "Mod+K".action.focus-workspace-up = [ ];
 
       # Column / window move (Ctrl = move)
       "Mod+Ctrl+Left".action.move-column-left = [ ];
