@@ -78,19 +78,31 @@ in
     };
     # Monitor layout. Outputs are matched by "make model serial" (more
     # stable than connector names — surviving dock swaps / different DP
-    # ports). The Dell sits at the origin; the laptop panel is placed to
-    # its right at x=2560 (Dell's logical width at scale 1) and bottom-
-    # aligned at y=480 (Dell 1440 − laptop 960) so crossing the boundary
-    # matches the physical arrangement — laptop on the desk, Dell rising
-    # above it. Discover identifier strings with `niri msg outputs`.
+    # ports). Scales are set explicitly: declaring an output without a
+    # scale makes niri default to 1.0 rather than its DPI-based auto
+    # pick, which renders the HiDPI laptop panel at native pixels and
+    # makes UI uncomfortably small. The Dell (2560×1440 native, ~93 DPI)
+    # runs at scale 1 → logical 2560×1440, anchored at the origin. The
+    # BOE laptop panel (2880×1920 native, ~252 DPI) runs at scale 2 →
+    # logical 1440×960, placed to the Dell's right at x=2560 (Dell's
+    # logical width) and bottom-aligned at y=480 (1440 − 960) so crossing
+    # the boundary matches the physical arrangement — laptop on the desk,
+    # Dell rising above it. Discover identifier strings with
+    # `niri msg outputs`.
     outputs = {
-      "Dell Inc. DELL P3221D C57ZQ83".position = {
-        x = 0;
-        y = 0;
+      "Dell Inc. DELL P3221D C57ZQ83" = {
+        scale = 1.0;
+        position = {
+          x = 0;
+          y = 0;
+        };
       };
-      "BOE NE135A1M-NY1 Unknown".position = {
-        x = 2560;
-        y = 480;
+      "BOE NE135A1M-NY1 Unknown" = {
+        scale = 2.0;
+        position = {
+          x = 2560;
+          y = 480;
+        };
       };
     };
     # Auto-start Noctalia with niri. Noctalia's home-module writes the
