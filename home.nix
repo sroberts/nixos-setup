@@ -143,15 +143,18 @@ in
       "Mod+J".action.focus-workspace-down = [ ];
       "Mod+K".action.focus-workspace-up = [ ];
 
-      # Column / window move (Ctrl = move)
+      # Column / window move (Ctrl = move). Vim Ctrl+J/K mirrors the
+      # focus binding above and moves the current column to the
+      # workspace below/above. Arrow Ctrl+Down/Up keeps within-column
+      # window movement so that primitive isn't lost.
       "Mod+Ctrl+Left".action.move-column-left = [ ];
       "Mod+Ctrl+Right".action.move-column-right = [ ];
       "Mod+Ctrl+H".action.move-column-left = [ ];
       "Mod+Ctrl+L".action.move-column-right = [ ];
       "Mod+Ctrl+Down".action.move-window-down = [ ];
       "Mod+Ctrl+Up".action.move-window-up = [ ];
-      "Mod+Ctrl+J".action.move-window-down = [ ];
-      "Mod+Ctrl+K".action.move-window-up = [ ];
+      "Mod+Ctrl+J".action.move-column-to-workspace-down = [ ];
+      "Mod+Ctrl+K".action.move-column-to-workspace-up = [ ];
 
       # First / last column
       "Mod+Home".action.focus-column-first = [ ];
