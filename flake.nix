@@ -26,6 +26,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Terminal workspace manager for AI coding agents (panes, sessions
+    # that survive detach). Upstream maintains a flake; bump with
+    # `nix flake update herdr`.
+    herdr = {
+      url = "github:ogulcancelik/herdr/v0.7.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # ── SECURE BOOT ────────────────────────────────────────────────
     # Uncomment to enable lanzaboote. Do this ONLY after the system is
     # installed and booting (see secure-boot.md). Enabling it before
@@ -44,6 +52,7 @@
       niri,
       noctalia,
       claude-code-nix,
+      herdr,
       ...
     }@inputs:
     let

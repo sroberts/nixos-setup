@@ -434,6 +434,11 @@ in
     # line and add `claude-code` to this list instead.
     inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
     gemini-cli
+
+    # ogulcancelik/herdr — terminal workspace manager for AI coding agents
+    # (panes, sessions that survive detach). Upstream flake input; bump with
+    # `nix flake update herdr`.
+    inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 
   ############################################################
