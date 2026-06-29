@@ -57,7 +57,7 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Hardware module | `nixos-hardware.nixosModules.framework-13-7040-amd` | Maintained quirks (lid wake, sensors, GPU) |
 | Power | `power-profiles-daemon` | Framework's official recommendation for Ryzen 7040; do NOT use TLP |
 | Compositor | niri via `niri-flake` (sodiboo), pinned to `niri-unstable` | Quickshell-based shells (Noctalia, etc.) track niri's latest |
-| Shell/UI | Noctalia (Quickshell) via the `noctalia-shell` flake + home-manager module | Faster updates than nixpkgs; spawned by niri via `spawn-at-startup` |
+| Shell/UI | Noctalia (Quickshell) via the upstream flake + `programs.noctalia` home-manager module | Faster updates than nixpkgs; spawned by niri via `spawn-at-startup` |
 | Greeter | `tuigreet` on tty1, launching `niri-session` | Minimal, works without a GUI display manager |
 | Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
 | Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Same encryption + hibernation, with LVM for multi-volume management |
@@ -262,7 +262,7 @@ fwupdmgr get-devices
 sudo fwupdmgr update
 
 # Noctalia is running (spawned by niri's spawn-at-startup)
-pgrep -af noctalia-shell
+pgrep -af noctalia
 
 # Docker available without sudo
 docker run --rm hello-world
