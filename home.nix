@@ -98,6 +98,9 @@ in
     # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
     spawn-at-startup = [
       { command = [ "noctalia-shell" ]; }
+      # hyprwhspr-rs daemon — `record toggle` (bound to Super+Alt+D
+      # below) only works while this is running.
+      { command = [ "hyprwhspr-rs" ]; }
     ];
     # niri upstream default keybinds, verbatim, with the terminal binary
     # swapped from alacritty to ghostty. The session/media/lock/brightness
@@ -287,6 +290,14 @@ in
         "call"
         "lockScreen"
         "lock"
+      ];
+
+      # Dictation toggle (hyprwhspr-rs). Daemon launches from
+      # spawn-at-startup above; this binds the upstream default hotkey.
+      "Super+Alt+R".action.spawn = [
+        "hyprwhspr-rs"
+        "record"
+        "toggle"
       ];
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
@@ -874,6 +885,30 @@ in
     '';
   };
 
+  # hyprwhspr-rs whisper model. The package ships only the binary; the
+  # daemon refuses to start without a model in its search dir. Default
+  # config has `model: "base"`, which the resolver maps to ggml-base.en.bin
+  # first (then ggml-base.bin) — base.en is ~141MB and lower-WER for
+  # English. Swap to a different size by dropping another ggml-*.bin into
+  # the same directory and updating the model field in
+  # ~/.config/hyprwhspr-rs/config.jsonc.
+  home.activation.hyprwhsprModel = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DIR="$HOME/.local/share/hyprwhspr-rs/models"
+      DEST="$DIR/ggml-base.en.bin"
+      if [ ! -f "$DEST" ]; then
+        ${pkgs.coreutils}/bin/mkdir -p "$DIR"
+        ${pkgs.curl}/bin/curl -fsSL \
+          -o "$DEST.tmp" \
+          https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin \
+          && ${pkgs.coreutils}/bin/mv "$DEST.tmp" "$DEST" \
+          || ${pkgs.coreutils}/bin/rm -f "$DEST.tmp"
+      fi
+    '';
+  };
+
   # Default wallpaper. Copies the tracked asset (assets/default-wallpaper.jpg)
   # into the Noctalia-configured wallpaper directory and seeds the wallpaper
   # cache so it's the active wallpaper on first boot (and the source palette
@@ -1407,6 +1442,7 @@ in
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
+      - [ ] Verify hyprwhspr-rs: `Super+Alt+R` toggles dictation. Model `ggml-base.en.bin` is auto-downloaded to `~/.local/share/hyprwhspr-rs/models/`; swap by dropping another `ggml-*.bin` there and editing `model` in `~/.config/hyprwhspr-rs/config.jsonc`
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
