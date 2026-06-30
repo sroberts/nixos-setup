@@ -1,0 +1,20 @@
+{
+  "id": "hyprwhspr-status",
+  "name": "Hyprwhspr Status",
+  "version": "1.0.0",
+  "minNoctaliaVersion": "4.6.6",
+  "author": "Scott J Roberts",
+  "license": "MIT",
+  "description": "Shows hyprwhspr-rs dictation state (idle / recording / processing) in the bar by watching ~/.cache/hyprwhspr-rs/status.json.",
+  "tags": ["Bar", "Indicator"],
+  "entryPoints": {
+    "main": "Main.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "dependencies": {
+    "plugins": []
+  },
+  "metadata": {
+    "defaultSettings": {}
+  }
+}

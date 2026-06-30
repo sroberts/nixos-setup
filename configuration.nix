@@ -413,6 +413,10 @@
     zed-editor
     zoom-us
 
+    # Speech-to-text dictation. Daemon is spawned from niri's
+    # spawn-at-startup (see home.nix); `Super+Alt+D` toggles record.
+    hyprwhspr-rs
+
     git
     curl
     wget
