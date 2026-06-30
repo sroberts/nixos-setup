@@ -62,7 +62,7 @@ in
     inputs.noctalia.homeModules.default
   ];
 
-  programs.noctalia = {
+  programs.noctalia-shell = {
     enable = true;
     # systemd.enable is upstream-deprecated — Noctalia is intended to be
     # spawned by the compositor (see spawn-at-startup below). Leaving it off.
@@ -95,9 +95,9 @@ in
     };
     # Auto-start Noctalia with niri. Noctalia's home-module writes the
     # config files; the compositor is responsible for launching the
-    # process. `noctalia` is on PATH via programs.noctalia.
+    # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
     spawn-at-startup = [
-      { command = [ "noctalia" ]; }
+      { command = [ "noctalia-shell" ]; }
     ];
     # niri upstream default keybinds, verbatim, with the terminal binary
     # swapped from alacritty to ghostty. The session/media/lock/brightness
@@ -105,9 +105,9 @@ in
     # `enableKeybinds`; with Noctalia in charge of the shell UI we wire
     # them directly to the underlying utilities (wpctl, playerctl,
     # brightnessctl, loginctl). Noctalia's own panels are driven over its
-    # IPC surface (`noctalia ipc call <target> <fn>`); Mod+Space
+    # IPC surface (`noctalia-shell ipc call <target> <fn>`); Mod+Space
     # toggles the launcher below. Add settings/clipboard/etc. the same way —
-    # `noctalia ipc show` lists every target and function.
+    # `noctalia-shell ipc show` lists every target and function.
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
@@ -115,7 +115,7 @@ in
       "Mod+Return".action.spawn = "ghostty";
       # App launcher — Noctalia's, toggled over IPC.
       "Mod+Space".action.spawn = [
-        "noctalia"
+        "noctalia-shell"
         "ipc"
         "call"
         "launcher"
@@ -282,7 +282,7 @@ in
       # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
       # which raises its WlSessionLock directly.
       "Super+Alt+L".action.spawn = [
-        "noctalia"
+        "noctalia-shell"
         "ipc"
         "call"
         "lockScreen"
@@ -360,15 +360,15 @@ in
   # screen is never left unlocked on resume. No timeouts here — they live in
   # Noctalia.
   #
-  # The before-sleep command resolves noctalia by absolute store path:
+  # The before-sleep command resolves noctalia-shell by absolute store path:
   # swayidle.service runs under user@.service's app.slice with a minimal PATH
-  # that does NOT inherit the niri/login-shell PATH where `programs.noctalia`
-  # puts the binary. Bare `noctalia` would fail with `command not found`,
-  # which is exactly what lid close did before this fix.
+  # that does NOT inherit the niri/login-shell PATH where `programs.noctalia-
+  # shell` puts the binary. Bare `noctalia-shell` would fail with `command not
+  # found`, which is exactly what lid close did before this fix.
   services.swayidle = {
     enable = true;
     events = {
-      before-sleep = "${config.programs.noctalia.package}/bin/noctalia ipc call lockScreen lock";
+      before-sleep = "${config.programs.noctalia-shell.package}/bin/noctalia-shell ipc call lockScreen lock";
     };
   };
 
@@ -946,7 +946,7 @@ in
   # disable for niri-flake's polkit-kde-agent lives in configuration.nix
   # — both would otherwise race on the PolicyKit1 bus name.
   #
-  # Why home.activation and not xdg.configFile / programs.noctalia:
+  # Why home.activation and not xdg.configFile / programs.noctalia-shell:
   # Noctalia writes these files at runtime (settings UI, plugin toggles),
   # and a store-path symlink would silently break those writes. Seeding
   # once + handing ownership to Noctalia keeps the UI functional.
