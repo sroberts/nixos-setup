@@ -98,8 +98,12 @@ in
     # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
     spawn-at-startup = [
       { command = [ "noctalia-shell" ]; }
-      # hyprwhspr-rs daemon — `record toggle` (bound to Super+Alt+D
-      # below) only works while this is running.
+      # hyprwhspr-rs daemon. Owns its own global hotkey via evdev
+      # (`shortcuts.press` in ~/.config/hyprwhspr-rs/config.jsonc, default
+      # SUPER+ALT+R) — works because the user is in the `input` group, so
+      # no niri keybind is needed (and adding one double-toggles: niri's
+      # `record toggle` plus the daemon's own evdev press both fire on the
+      # same keystroke, cancelling out).
       { command = [ "hyprwhspr-rs" ]; }
     ];
     # niri upstream default keybinds, verbatim, with the terminal binary
@@ -292,13 +296,9 @@ in
         "lock"
       ];
 
-      # Dictation toggle (hyprwhspr-rs). Daemon launches from
-      # spawn-at-startup above; this binds the upstream default hotkey.
-      "Super+Alt+R".action.spawn = [
-        "hyprwhspr-rs"
-        "record"
-        "toggle"
-      ];
+      # Dictation toggle: handled by the hyprwhspr-rs daemon's own evdev
+      # listener (SUPER+ALT+R, from its config). Do not add a niri keybind
+      # for it — see the spawn-at-startup comment above for why.
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
       "XF86AudioRaiseVolume".action.spawn = [
@@ -885,6 +885,18 @@ in
     '';
   };
 
+  # Noctalia plugin: dictation status indicator (icon in the bar that
+  # tracks hyprwhspr-rs state idle/recording/processing). Reads the JSON
+  # status file the daemon already writes for its waybar module. The
+  # plugin is wired into ~/.config/noctalia/plugins.json + settings.json
+  # in home.activation.noctaliaConfigSeed below.
+  xdg.configFile."noctalia/plugins/hyprwhspr-status/manifest.json".source =
+    ./noctalia-plugins/hyprwhspr-status/manifest.json;
+  xdg.configFile."noctalia/plugins/hyprwhspr-status/Main.qml".source =
+    ./noctalia-plugins/hyprwhspr-status/Main.qml;
+  xdg.configFile."noctalia/plugins/hyprwhspr-status/BarWidget.qml".source =
+    ./noctalia-plugins/hyprwhspr-status/BarWidget.qml;
+
   # hyprwhspr-rs whisper model. The package ships only the binary; the
   # daemon refuses to start without a model in its search dir. Default
   # config has `model: "base"`, which the resolver maps to ggml-base.en.bin
@@ -1086,6 +1098,37 @@ in
         "version": 2
       }
       PLUGINS
+      fi
+
+      # Enable our local hyprwhspr-status plugin (files deployed via
+      # xdg.configFile above). No sourceUrl since it isn't from a registry;
+      # PluginRegistry.qml scans the plugins dir and accepts a bare
+      # { enabled: true } state. Re-asserted every activation so a Noctalia
+      # UI toggle that disables it gets undone on next rebuild.
+      if [ -e "$CFG/plugins.json" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        ${pkgs.jq}/bin/jq '
+          .states["hyprwhspr-status"] = { "enabled": true }
+        ' "$CFG/plugins.json" > "$TMP" \
+          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/plugins.json"
+      fi
+
+      # Place the plugin's bar widget on the right side of the bar (next
+      # to other status icons like Volume/Battery). Noctalia prefixes
+      # plugin widget ids with "plugin:" — see BarWidgetRegistry.qml:455.
+      # Idempotent: skip if an entry with this id already exists.
+      if [ -e "$CFG/settings.json" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        ${pkgs.jq}/bin/jq '
+          .bar = (.bar // {}) |
+          .bar.widgets = (.bar.widgets // {}) |
+          .bar.widgets.right = (.bar.widgets.right // []) |
+          if any(.bar.widgets.right[]?; .id == "plugin:hyprwhspr-status")
+          then .
+          else .bar.widgets.right += [ { "id": "plugin:hyprwhspr-status" } ]
+          end
+        ' "$CFG/settings.json" > "$TMP" \
+          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
       fi
     '';
   };
@@ -1442,7 +1485,7 @@ in
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
-      - [ ] Verify hyprwhspr-rs: `Super+Alt+R` toggles dictation. Model `ggml-base.en.bin` is auto-downloaded to `~/.local/share/hyprwhspr-rs/models/`; swap by dropping another `ggml-*.bin` there and editing `model` in `~/.config/hyprwhspr-rs/config.jsonc`
+      - [ ] Verify hyprwhspr-rs: `Super+Alt+R` toggles dictation (handled by the daemon's evdev listener — no niri keybind, see home.nix spawn-at-startup note). Mic-icon indicator on the right side of the Noctalia bar (via the local `hyprwhspr-status` plugin) shows idle/recording/processing; click it to toggle from the mouse. Model `ggml-base.en.bin` is auto-downloaded to `~/.local/share/hyprwhspr-rs/models/`; swap by dropping another `ggml-*.bin` there and editing `model` in `~/.config/hyprwhspr-rs/config.jsonc`
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
