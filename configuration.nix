@@ -225,11 +225,27 @@
   # whether to render the "touch finger or type password" UI or fall back to
   # password-only. That activation latency is the second half of the Goodix
   # problem (the udev rule above handles USB autosuspend; this handles the
-  # daemon side). wantedBy starts fprintd at boot; Restart=always brings it back
-  # within RestartSec of the idle-exit, so it's effectively continuously running.
+  # daemon side). wantedBy starts fprintd at boot.
+  #
+  # The mechanism for "hot" is fprintd's own `--no-timeout` flag ("Do not exit
+  # after unused for a while"), NOT a restart loop. The earlier approach of
+  # bare `Restart=always` + `RestartSec=1` fought the 30s idle-exit and turned
+  # into a ~31s flap: idle-exit -> `Deactivated successfully` -> restart ->
+  # idle-exit, forever (observed at 20+ restarts within 30 min). Every restart
+  # tears down the sensor claim and any in-flight Verify, so whenever the lock
+  # screen sat open past ~30s a restart landed on top of its live pam_fprintd
+  # Verify and killed the fingerprint path — the "works at first, then only
+  # password after a few minutes / after resume" symptom. `--no-timeout`
+  # disables the idle-exit entirely, so the boot-started daemon simply stays
+  # resident and never self-exits; Restart=always is now only a crash backstop
+  # (it can no longer fire on a timer because fprintd no longer exits).
   systemd.services.fprintd = {
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
+      ExecStart = [
+        ""
+        "${config.services.fprintd.package}/libexec/fprintd --no-timeout"
+      ];
       Restart = "always";
       RestartSec = 1;
     };
