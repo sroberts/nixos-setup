@@ -445,8 +445,8 @@ in
     gemini-cli
 
     # ogulcancelik/herdr — terminal workspace manager for AI coding agents
-    # (panes, sessions that survive detach). Upstream flake input; bump with
-    # `nix flake update herdr`.
+    # (panes, sessions that survive detach). Tag-pinned in flake.nix to
+    # match the herdr server version; bump by editing the tag there.
     inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 

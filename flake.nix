@@ -27,10 +27,11 @@
     };
 
     # Terminal workspace manager for AI coding agents (panes, sessions
-    # that survive detach). Upstream maintains a flake; bump with
-    # `nix flake update herdr`.
+    # that survive detach). Tag-pinned to keep client + server in lockstep;
+    # bump by editing the `v0.7.x` in the URL below (plain `nix flake
+    # update herdr` won't move a tag-pinned ref).
     herdr = {
-      url = "github:ogulcancelik/herdr/v0.7.0";
+      url = "github:ogulcancelik/herdr/v0.7.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
