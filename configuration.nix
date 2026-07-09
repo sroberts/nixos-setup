@@ -20,7 +20,7 @@
   # (first install, niri/noctalia/claude-code together). 256 MiB silences the
   # "download buffer is full" warnings without meaningful memory cost.
   nix.settings.download-buffer-size = 256 * 1024 * 1024;
-  nixpkgs.config.allowUnfree = true; # lmstudio, typora, 1password
+  nixpkgs.config.allowUnfree = true; # lmstudio, typora, 1password, spotify
   system.stateVersion = "26.05";
 
   ############################################################
@@ -425,6 +425,7 @@
     rpi-imager
     slack
     signal-desktop
+    spotify
     typora
     zed-editor
     zoom-us
