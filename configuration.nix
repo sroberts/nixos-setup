@@ -283,9 +283,9 @@
     };
   };
 
-  # Polkit auth agent: defer to Noctalia's `polkit-agent` plugin (seeded in
-  # home.nix as part of plugins.json) rather than niri-flake's bundled
-  # polkit-kde-agent service. Two agents would race on the
+  # Polkit auth agent: defer to Noctalia's native polkit agent (enabled via
+  # programs.noctalia.settings.shell.polkit_agent in home.nix) rather than
+  # niri-flake's bundled polkit-kde-agent service. Two agents would race on the
   # org.freedesktop.PolicyKit1.AuthenticationAgent bus name; the upstream
   # plugin docs explicitly require the other agent to be disabled. Force
   # the unit off — niri-flake hard-codes `wantedBy = [ "niri.service" ]`
