@@ -93,14 +93,53 @@ in
       theme = {
         mode = "dark";
         source = "wallpaper";
+        # Force a grayscale Material You palette regardless of the wallpaper's
+        # hues. This decouples the derived palette from the image: any wallpaper
+        # now yields a neutral scheme, keeping the GTK/Material You side aligned
+        # with the hardcoded `noctalia-mono` terminal themes (zellij/nvim/
+        # starship/bat) below. Valid schemes: m3-tonal-spot | m3-content |
+        # m3-fruit-salad | m3-rainbow | m3-monochrome | vibrant | faithful |
+        # dysfunctional | muted (only applies while source = "wallpaper").
+        wallpaper_scheme = "m3-monochrome";
         # v5 replaces v4's single `gtk` template with two builtin templates
         # writing ~/.config/gtk-{3,4}.0/noctalia.css (the paths our managed
-        # gtk.css @imports). Opt into them explicitly.
+        # gtk.css @imports). Opt into them explicitly. Discover ids with
+        # `noctalia theme --list-templates` (builtin) or api.noctalia.dev
+        # /templates (community).
         templates = {
           enable_builtin_templates = true;
           builtin_ids = [
             "gtk3"
             "gtk4"
+            # NOTE: each of these writes a `noctalia` theme file AND appends an
+            # include/palette line to the app's MAIN config.
+            #   btop     — plain/writable config, applies cleanly.
+            #   ghostty  — migrated: `theme = noctalia` set declaratively above
+            #              so apply.sh no-ops on the config; only the theme file
+            #              is written. (issue #62)
+            #   starship — migrated: config seeded writable so apply.sh can
+            #              inject the palette (see programs.starship + the
+            #              starshipConfigSeed activation). (issue #62)
+            #   niri     — still pending in #62: apply.sh's `include` append
+            #              can't write our read-only config.kdl, so the
+            #              generated noctalia.kdl is currently unreferenced.
+            "btop"
+            "ghostty"
+            "niri"
+            "starship"
+          ];
+          # Community templates are fetched from api.noctalia.dev/templates at
+          # runtime and cached under ~/.cache/noctalia (a network fetch, not a
+          # Nix-pinned input — offline first-boot won't have them until the
+          # shell can reach the API).
+          enable_community_templates = true;
+          community_ids = [
+            "neovim"
+            "obsidian"
+            "zed"
+            "fuzzel"
+            "discord"
+            "steam"
           ];
         };
       };
@@ -496,8 +535,6 @@ in
     (writeShellScriptBin "pbpaste" ''exec ${wl-clipboard}/bin/wl-paste --no-newline "$@"'')
     brightnessctl
     playerctl
-    alacritty
-    foot
     matugen
     cava
     xwayland-satellite
@@ -627,74 +664,39 @@ in
     };
   };
 
-  # starship — Noctalia-mono palette + module styles. The palette names
-  # below (bg/fg/dim/faint/accent/bright/border) match the nvim/zellij
-  # palettes so all themed surfaces use the same color vocabulary.
-  programs.starship = {
-    enable = true;
-    settings = {
-      add_newline = false;
-      palette = "noctalia-mono";
-      palettes.noctalia-mono = {
-        bg = "#111111";
-        fg = "#aaaaaa";
-        dim = "#828282";
-        faint = "#5d5d5d";
-        accent = "#cccccc";
-        bright = "#dddddd";
-        border = "#3c3c3c";
-      };
-      character = {
-        success_symbol = "[➜](bold accent)";
-        error_symbol = "[➜](bold bright)";
-      };
-      directory.style = "fg bold";
-      git_branch.style = "dim";
-      git_status.style = "accent";
-      cmd_duration.style = "faint";
-      hostname.style = "dim";
-      # username uses style_user/style_root (not `style` like the others).
-      username.style_user = "dim";
-      username.style_root = "bright bold";
-    };
-  };
+  # starship — prompt. Noctalia owns the palette now (issue #62). The
+  # `starship` builtin template writes ~/.cache/noctalia/starship-palette.toml
+  # and its apply.sh injects a `[palettes.noctalia]` block into
+  # ~/.config/starship.toml between markers. That in-place edit REQUIRES a
+  # writable config, so — unlike ghostty — we can't let home-manager own
+  # starship.toml as a read-only store symlink (settings must be empty or HM
+  # writes the file and Noctalia clobbers it). Instead we keep programs.starship
+  # enabled only for the shell init and seed a writable base config in
+  # home.activation.starshipConfigSeed below.
+  #
+  # Module styles reference Noctalia's palette color NAMES, which are
+  # Catppuccin-compatible (text/subtext/overlay/…) — NOT the old
+  # accent/dim/faint/bright/fg. Remap under m3-monochrome (all grayscale):
+  #   accent/git_status → subtext1   bright/root → text
+  #   fg/directory      → text       dim  → overlay1   faint → overlay0
+  # The [palettes.noctalia] table itself is deliberately NOT defined here —
+  # Noctalia injects it; defining it too would make a duplicate TOML table.
+  programs.starship.enable = true;
 
   # ghostty — primary terminal (see niri binds + home.sessionVariables.TERMINAL).
-  # The mono ANSI palette is a deliberate choice — matches zellij/nvim
-  # aesthetics. Colored programs (git status, ls --color) surface differences
-  # via brightness/bold rather than hue.
+  # Noctalia owns the theme now (issue #62): the `ghostty` builtin template
+  # renders the colors to ~/.config/ghostty/themes/noctalia, and its apply.sh
+  # no-ops on THIS config the moment it sees `theme = noctalia` already set —
+  # so our read-only home-manager symlink is never materialized/clobbered
+  # (that clobber is exactly what broke the first v5 rebuild). Under
+  # theme.wallpaper_scheme = "m3-monochrome" the generated palette stays
+  # grayscale, matching the zellij/nvim mono aesthetic. font stays declarative.
   programs.ghostty = {
     enable = true;
     settings = {
-      theme = "noctalia-mono";
+      theme = "noctalia";
       font-family = "JetBrainsMono Nerd Font";
       font-size = 11;
-    };
-    themes.noctalia-mono = {
-      background = "#111111";
-      foreground = "#aaaaaa";
-      cursor-color = "#cccccc";
-      cursor-text = "#111111";
-      selection-background = "#3c3c3c";
-      selection-foreground = "#cccccc";
-      palette = [
-        "0=#111111"
-        "1=#dddddd"
-        "2=#aaaaaa"
-        "3=#cccccc"
-        "4=#a7a7a7"
-        "5=#828282"
-        "6=#cccccc"
-        "7=#cccccc"
-        "8=#3c3c3c"
-        "9=#dddddd"
-        "10=#aaaaaa"
-        "11=#cccccc"
-        "12=#a7a7a7"
-        "13=#828282"
-        "14=#cccccc"
-        "15=#dddddd"
-      ];
     };
   };
 
@@ -999,6 +1001,61 @@ in
       ${pkgs.coreutils}/bin/mkdir -p "$DIR"
       if [ ! -f "$DEST" ]; then
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
+      fi
+    '';
+  };
+
+  # Writable base config for starship (see programs.starship above). Noctalia's
+  # starship template edits ~/.config/starship.toml in place to inject its
+  # palette, so this file cannot be a read-only home-manager symlink. We seed
+  # the declarative base (module styles, palette name — but NOT the palette
+  # table, which Noctalia appends) into a plain writable file. Change-detected
+  # against the store path of the base: on a fresh $HOME or whenever the base
+  # content below changes we (re)write it, otherwise we leave the file alone so
+  # Noctalia's injected [palettes.noctalia] block survives rebuilds. After a
+  # (re)seed the block is briefly absent until Noctalia next applies the theme
+  # (shell start / wallpaper change) — starship just falls back to defaults in
+  # the meantime.
+  home.activation.starshipConfigSeed = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="$HOME/.config/starship.toml"
+      STAMP="$HOME/.cache/noctalia/.starship-base-src"
+      SRC="${pkgs.writeText "starship-base.toml" ''
+        add_newline = false
+        palette = "noctalia"
+
+        [character]
+        success_symbol = "[➜](bold subtext1)"
+        error_symbol = "[➜](bold text)"
+
+        [directory]
+        style = "text bold"
+
+        [git_branch]
+        style = "overlay1"
+
+        [git_status]
+        style = "subtext1"
+
+        [cmd_duration]
+        style = "overlay0"
+
+        [hostname]
+        style = "overlay1"
+
+        [username]
+        style_user = "overlay1"
+        style_root = "text bold"
+      ''}"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
+                                     "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      if [ ! -f "$DEST" ] || \
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+        ${pkgs.coreutils}/bin/rm -f "$DEST"
+        ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
+        printf '%s' "$SRC" > "$STAMP"
       fi
     '';
   };
