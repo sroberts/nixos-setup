@@ -120,12 +120,13 @@ in
             #   starship — migrated: config seeded writable so apply.sh can
             #              inject the palette (see programs.starship + the
             #              starshipConfigSeed activation). (issue #62)
-            #   niri     — still pending in #62: apply.sh's `include` append
-            #              can't write our read-only config.kdl, so the
-            #              generated noctalia.kdl is currently unreferenced.
+            # NOTE: `niri` is deliberately NOT enabled here. Its apply.sh appends
+            # an `include` line to config.kdl, which home-manager owns as a
+            # read-only store symlink — the append fails and the generated
+            # noctalia.kdl is left unreferenced (dead config). Re-add it once
+            # #62 gives us a writable-include path for niri.
             "btop"
             "ghostty"
-            "niri"
             "starship"
           ];
           # Community templates are fetched from api.noctalia.dev/templates at
@@ -1441,6 +1442,7 @@ in
       - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
+      - [ ] Noctalia app themes (discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
             fi

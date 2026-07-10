@@ -143,20 +143,21 @@
     su.fprintAuth = true; # su to another user
     polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
     greetd.fprintAuth = true; # tuigreet at the login screen
-    # Noctalia's lock screen auto-detects PAM service: it falls through to
-    # /etc/pam.d/login (LockContext.qml:22), so login.fprintAuth above is
-    # what lights up the lock screen's fingerprint path. The "competing
-    # readers" problem this would otherwise cause (pam_fprintd vs Noctalia's
-    # text input) is avoided by Noctalia's `allowPasswordWithFprintd=true`
-    # setting, asserted by home.activation.noctaliaConfigSeed.
+    # Noctalia's lock screen uses /etc/pam.d/login, so login.fprintAuth above
+    # is what lights up the lock screen's fingerprint path. In v5 the lock
+    # screen's auth is native (C++): it arms pam_fprintd at lock time and
+    # manages the fingerprint-vs-password handoff itself. The v4 QML flags that
+    # used to gate this (`allowPasswordWithFprintd` / `autoStartAuth`, once
+    # asserted by home.activation.noctaliaConfigSeed) no longer exist and are
+    # not needed. Re-verify the touch-to-unlock path after any Noctalia bump —
+    # this system-side fprintd wiring assumes Noctalia arms the reader for us.
   };
 
   # pam_fprintd's default `timeout=30` returns PAM_AUTH_ERR after 30s of no
   # touch, at which point Noctalia's lock screen sees PAM completed and drops
-  # the fingerprint affordance from its UI — there's no re-arm hook. (The only
-  # re-arm path Noctalia has is the keypress one driven by
-  # `allowPasswordWithFprintd`, which is for switching to the password input,
-  # not for restarting fingerprint listening.) `timeout=-1` per man pam_fprintd
+  # the fingerprint affordance from its UI — there's no re-arm hook. (Noctalia's
+  # only re-arm path is the keypress one that switches to the password input,
+  # not a restart of fingerprint listening.) `timeout=-1` per man pam_fprintd
   # disables the deadline entirely, so Verify stays open until either a finger
   # matches or Noctalia cancels PAM itself (which it does on keypress / Enter).
   # max-tries=-1 removes the analogous cap on wrong-touch retries; default 3
@@ -220,7 +221,7 @@
 
   # Keep fprintd hot. Upstream packages it as a dbus-activated service with a
   # 30s idle-exit, so the unit is `inactive (dead)` most of the time. When the
-  # lock screen calls pam.start() under Noctalia's autoStartAuth=true, pam_fprintd
+  # lock screen calls pam.start() (v5 does this natively at lock time), pam_fprintd
   # has to wake fprintd via dbus *and* claim the sensor before Noctalia decides
   # whether to render the "touch finger or type password" UI or fall back to
   # password-only. That activation latency is the second half of the Goodix
