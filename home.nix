@@ -548,8 +548,35 @@ in
     glib
 
     # AI CLIs — Option B (hourly-updated flake). For Option A, delete the next
-    # line and add `claude-code` to this list instead.
-    inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
+    # binding and add `claude-code` to this list instead.
+    #
+    # Wrapped so a bare `claude` (no args) starts with Remote Control enabled —
+    # this is a PATH-level wrapper, not a shell alias, so it also covers
+    # non-interactive starts (niri/fuzzel spawns, scripts), which an alias
+    # misses. The flag is added ONLY when there are no args: `--remote-control`
+    # takes an optional [name], so prepending it unconditionally would make
+    # `claude update` / `claude -p …` / `claude --resume` misparse their first
+    # arg as the session name. Any invocation with args passes straight through.
+    (
+      let
+        claudePkg =
+          inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
+        claudeWrapper = writeShellScript "claude-remote-control" ''
+          if [ "$#" -eq 0 ]; then
+            exec ${claudePkg}/bin/claude --remote-control
+          fi
+          exec ${claudePkg}/bin/claude "$@"
+        '';
+      in
+      symlinkJoin {
+        name = "claude-code-remote-control";
+        paths = [ claudePkg ];
+        postBuild = ''
+          rm "$out/bin/claude"
+          ln -s ${claudeWrapper} "$out/bin/claude"
+        '';
+      }
+    )
     gemini-cli
 
     # ogulcancelik/herdr — terminal workspace manager for AI coding agents
