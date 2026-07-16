@@ -20,6 +20,13 @@
   # (first install, niri/noctalia/claude-code together). 256 MiB silences the
   # "download buffer is full" warnings without meaningful memory cost.
   nix.settings.download-buffer-size = 256 * 1024 * 1024;
+  # Weekly GC keeps /nix/store bounded; the 30-day window preserves enough
+  # rollback headroom for a bad kernel or flake bump.
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
   nixpkgs.config.allowUnfree = true; # lmstudio, typora, 1password, spotify
   system.stateVersion = "26.05";
 
@@ -27,6 +34,10 @@
   # Boot — systemd-boot now; lanzaboote later (see SECURE BOOT)
   ############################################################
   boot.loader.systemd-boot.enable = true;
+  # Cap /boot entries. The ESP is 1G; each generation writes a kernel + initrd
+  # + entry. 10 entries ≈ 30 days of weekly rebuilds and keeps /boot well under
+  # the fail line where nixos-rebuild switch dies mid-activation.
+  boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelPackages = pkgs.linuxPackages_latest; # 6.12+ floor for Ryzen 7040
 
