@@ -559,8 +559,7 @@ in
     # arg as the session name. Any invocation with args passes straight through.
     (
       let
-        claudePkg =
-          inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
+        claudePkg = inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
         claudeWrapper = writeShellScript "claude-remote-control" ''
           if [ "$#" -eq 0 ]; then
             exec ${claudePkg}/bin/claude --remote-control
