@@ -62,10 +62,121 @@ in
     inputs.noctalia.homeModules.default
   ];
 
-  programs.noctalia-shell = {
+  programs.noctalia = {
     enable = true;
-    # systemd.enable is upstream-deprecated — Noctalia is intended to be
-    # spawned by the compositor (see spawn-at-startup below). Leaving it off.
+    # systemd.enable stays off — Noctalia is spawned by the compositor
+    # (see spawn-at-startup below), not a user service.
+
+    # Declarative base config → ~/.config/noctalia/config.toml (v5's TOML
+    # format; the module runs `noctalia config validate` at build time).
+    #
+    # v5 splits config into two files and this is why we can own config.toml
+    # declaratively where v4 forced a home.activation seed: config.toml is the
+    # read-only BASE the shell never writes, and every runtime change from the
+    # settings UI (including the chosen wallpaper, which drives the Material You
+    # palette) is written to a SEPARATE ~/.config/noctalia/settings.toml
+    # overrides file that Noctalia merges on top. So a store-path symlink here
+    # can't clobber the user's live tweaks — they live in settings.toml, which
+    # home-manager doesn't touch.
+    settings = {
+      # Weather + where-am-I. v5 moved the unit under [weather]; [location]
+      # geocodes `address`.
+      location.address = "Greenville, SC";
+      weather = {
+        enabled = true;
+        unit = "fahrenheit";
+      };
+
+      # Theme derives from the wallpaper (Material You), same as v4's matugen
+      # behavior — this is what feeds the gtk3/gtk4 templates below and, in
+      # turn, our @import'd gtk.css and the zellij/typora palettes.
+      theme = {
+        mode = "dark";
+        source = "wallpaper";
+        # Force a grayscale Material You palette regardless of the wallpaper's
+        # hues. This decouples the derived palette from the image: any wallpaper
+        # now yields a neutral scheme, keeping the GTK/Material You side aligned
+        # with the hardcoded `noctalia-mono` terminal themes (zellij/nvim/
+        # starship/bat) below. Valid schemes: m3-tonal-spot | m3-content |
+        # m3-fruit-salad | m3-rainbow | m3-monochrome | vibrant | faithful |
+        # dysfunctional | muted (only applies while source = "wallpaper").
+        wallpaper_scheme = "m3-monochrome";
+        # v5 replaces v4's single `gtk` template with two builtin templates
+        # writing ~/.config/gtk-{3,4}.0/noctalia.css (the paths our managed
+        # gtk.css @imports). Opt into them explicitly. Discover ids with
+        # `noctalia theme --list-templates` (builtin) or api.noctalia.dev
+        # /templates (community).
+        templates = {
+          enable_builtin_templates = true;
+          builtin_ids = [
+            "gtk3"
+            "gtk4"
+            # NOTE: each of these writes a `noctalia` theme file AND appends an
+            # include/palette line to the app's MAIN config.
+            #   btop     — plain/writable config, applies cleanly.
+            #   ghostty  — migrated: `theme = noctalia` set declaratively above
+            #              so apply.sh no-ops on the config; only the theme file
+            #              is written. (issue #62)
+            #   starship — migrated: config seeded writable so apply.sh can
+            #              inject the palette (see programs.starship + the
+            #              starshipConfigSeed activation). (issue #62)
+            # NOTE: `niri` is deliberately NOT enabled here. Its apply.sh appends
+            # an `include` line to config.kdl, which home-manager owns as a
+            # read-only store symlink — the append fails and the generated
+            # noctalia.kdl is left unreferenced (dead config). Re-add it once
+            # #62 gives us a writable-include path for niri.
+            "btop"
+            "ghostty"
+            "starship"
+          ];
+          # Community templates are fetched from api.noctalia.dev/templates at
+          # runtime and cached under ~/.cache/noctalia (a network fetch, not a
+          # Nix-pinned input — offline first-boot won't have them until the
+          # shell can reach the API).
+          enable_community_templates = true;
+          community_ids = [
+            "neovim"
+            "obsidian"
+            "zed"
+            "fuzzel"
+            "discord"
+            "steam"
+          ];
+        };
+      };
+
+      wallpaper = {
+        enabled = true;
+        directory = "~/Pictures/Wallpapers";
+        # Initial wallpaper on a fresh $HOME (the asset copied in by
+        # home.activation.defaultWallpaper). Once the user picks another in
+        # the UI, that choice lands in settings.toml and wins.
+        default.path = "~/Pictures/Wallpapers/default-wallpaper.jpg";
+      };
+
+      # v5 folds the polkit agent into native config; this replaces v4's
+      # plugins.json `polkit-agent`. niri-flake's polkit-kde-agent stays
+      # force-disabled in configuration.nix so the two don't race.
+      shell.polkit_agent = true;
+
+      # Idle escalation, native to Noctalia's idle manager. Named behaviors
+      # under [idle.behavior.*]: a 5-min lock, then suspend-then-hibernate at
+      # 15 min. `noctalia:session lock` is the internal action; the bare
+      # systemctl command is run as a user command. See services.swayidle
+      # below for the one job (lock-on-lid-close) this can't cover.
+      idle.behavior = {
+        lock = {
+          timeout = 300;
+          command = "noctalia:session lock";
+          enabled = true;
+        };
+        hibernate = {
+          timeout = 900;
+          command = "systemctl suspend-then-hibernate";
+          enabled = true;
+        };
+      };
+    };
   };
 
   # niri input — natural scrolling, tap-to-click, disable-while-typing.
@@ -95,31 +206,32 @@ in
     };
     # Auto-start Noctalia with niri. Noctalia's home-module writes the
     # config files; the compositor is responsible for launching the
-    # process. `noctalia-shell` is on PATH via programs.noctalia-shell.
+    # process. `noctalia` is on PATH via programs.noctalia.
     spawn-at-startup = [
-      { command = [ "noctalia-shell" ]; }
+      { command = [ "noctalia" ]; }
     ];
+    # NOTE: v5 replaced the `noctalia ipc call <target> <fn>` surface with
+    # `noctalia msg <command…>`. Discover commands with `noctalia msg --help`.
     # niri upstream default keybinds, verbatim, with the terminal binary
     # swapped from alacritty to ghostty. The session/media/lock/brightness
     # binds at the bottom of this block were previously owned by DMS's
     # `enableKeybinds`; with Noctalia in charge of the shell UI we wire
     # them directly to the underlying utilities (wpctl, playerctl,
     # brightnessctl, loginctl). Noctalia's own panels are driven over its
-    # IPC surface (`noctalia-shell ipc call <target> <fn>`); Mod+Space
-    # toggles the launcher below. Add settings/clipboard/etc. the same way —
-    # `noctalia-shell ipc show` lists every target and function.
+    # IPC surface (`noctalia msg <command…>`); Mod+Space toggles the
+    # launcher below. Add settings/clipboard/etc. the same way —
+    # `noctalia msg --help` lists every command.
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
       "Mod+T".action.spawn = "ghostty";
       "Mod+Return".action.spawn = "ghostty";
-      # App launcher — Noctalia's, toggled over IPC.
+      # App launcher — Noctalia's, toggled over IPC. v5: `panel-toggle <id>`.
       "Mod+Space".action.spawn = [
-        "noctalia-shell"
-        "ipc"
-        "call"
+        "noctalia"
+        "msg"
+        "panel-toggle"
         "launcher"
-        "toggle"
       ];
       "Mod+D".action.spawn = "fuzzel";
 
@@ -283,10 +395,9 @@ in
       # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
       # which raises its WlSessionLock directly.
       "Super+Alt+L".action.spawn = [
-        "noctalia-shell"
-        "ipc"
-        "call"
-        "lockScreen"
+        "noctalia"
+        "msg"
+        "session"
         "lock"
       ];
 
@@ -343,16 +454,15 @@ in
   };
 
   # The idle escalation is driven entirely by Noctalia's own idle manager,
-  # configured in its settings.json (seeded in home.activation.noctaliaConfigSeed):
+  # configured declaratively via programs.noctalia.settings.idle.behavior above:
   #
-  #   - LOCK (5 min):  idle.lockTimeout = 300. Locks via WlSessionLock — the
-  #     ONLY path that works, since Noctalia ignores logind's Lock signal, so
-  #     `loginctl lock-session` is a no-op here.
-  #   - SUSPEND-THEN-HIBERNATE (15 min): an idle.customCommands entry running
-  #     `systemctl suspend-then-hibernate`. (Noctalia's built-in idle-suspend
-  #     does a plain `systemctl suspend`, so we use a custom command and leave
-  #     idle.suspendTimeout = 0.) Suspends to RAM, then hibernates after
-  #     HibernateDelaySec (3h, configuration.nix) — hibernate at 3h 15m total.
+  #   - LOCK (5 min):  [idle.behavior.lock] timeout=300, `noctalia:session lock`.
+  #     Locks via WlSessionLock — the ONLY path that works, since Noctalia
+  #     ignores logind's Lock signal, so `loginctl lock-session` is a no-op.
+  #   - SUSPEND-THEN-HIBERNATE (15 min): [idle.behavior.hibernate] timeout=900
+  #     running `systemctl suspend-then-hibernate` as a user command. Suspends
+  #     to RAM, then hibernates after HibernateDelaySec (3h, configuration.nix)
+  #     — hibernate at 3h 15m total.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
   # before a sleep Noctalia didn't initiate — namely a lid close (logind's
@@ -361,15 +471,15 @@ in
   # screen is never left unlocked on resume. No timeouts here — they live in
   # Noctalia.
   #
-  # The before-sleep command resolves noctalia-shell by absolute store path:
+  # The before-sleep command resolves noctalia by absolute store path:
   # swayidle.service runs under user@.service's app.slice with a minimal PATH
-  # that does NOT inherit the niri/login-shell PATH where `programs.noctalia-
-  # shell` puts the binary. Bare `noctalia-shell` would fail with `command not
+  # that does NOT inherit the niri/login-shell PATH where `programs.noctalia`
+  # puts the binary. Bare `noctalia` would fail with `command not
   # found`, which is exactly what lid close did before this fix.
   services.swayidle = {
     enable = true;
     events = {
-      before-sleep = "${config.programs.noctalia-shell.package}/bin/noctalia-shell ipc call lockScreen lock";
+      before-sleep = "${config.programs.noctalia.package}/bin/noctalia msg session lock";
     };
   };
 
@@ -426,8 +536,6 @@ in
     (writeShellScriptBin "pbpaste" ''exec ${wl-clipboard}/bin/wl-paste --no-newline "$@"'')
     brightnessctl
     playerctl
-    alacritty
-    foot
     matugen
     cava
     xwayland-satellite
@@ -440,8 +548,34 @@ in
     glib
 
     # AI CLIs — Option B (hourly-updated flake). For Option A, delete the next
-    # line and add `claude-code` to this list instead.
-    inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
+    # binding and add `claude-code` to this list instead.
+    #
+    # Wrapped so a bare `claude` (no args) starts with Remote Control enabled —
+    # this is a PATH-level wrapper, not a shell alias, so it also covers
+    # non-interactive starts (niri/fuzzel spawns, scripts), which an alias
+    # misses. The flag is added ONLY when there are no args: `--remote-control`
+    # takes an optional [name], so prepending it unconditionally would make
+    # `claude update` / `claude -p …` / `claude --resume` misparse their first
+    # arg as the session name. Any invocation with args passes straight through.
+    (
+      let
+        claudePkg = inputs.claude-code-nix.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
+        claudeWrapper = writeShellScript "claude-remote-control" ''
+          if [ "$#" -eq 0 ]; then
+            exec ${claudePkg}/bin/claude --remote-control
+          fi
+          exec ${claudePkg}/bin/claude "$@"
+        '';
+      in
+      symlinkJoin {
+        name = "claude-code-remote-control";
+        paths = [ claudePkg ];
+        postBuild = ''
+          rm "$out/bin/claude"
+          ln -s ${claudeWrapper} "$out/bin/claude"
+        '';
+      }
+    )
     gemini-cli
 
     # ogulcancelik/herdr — terminal workspace manager for AI coding agents
@@ -557,74 +691,39 @@ in
     };
   };
 
-  # starship — Noctalia-mono palette + module styles. The palette names
-  # below (bg/fg/dim/faint/accent/bright/border) match the nvim/zellij
-  # palettes so all themed surfaces use the same color vocabulary.
-  programs.starship = {
-    enable = true;
-    settings = {
-      add_newline = false;
-      palette = "noctalia-mono";
-      palettes.noctalia-mono = {
-        bg = "#111111";
-        fg = "#aaaaaa";
-        dim = "#828282";
-        faint = "#5d5d5d";
-        accent = "#cccccc";
-        bright = "#dddddd";
-        border = "#3c3c3c";
-      };
-      character = {
-        success_symbol = "[➜](bold accent)";
-        error_symbol = "[➜](bold bright)";
-      };
-      directory.style = "fg bold";
-      git_branch.style = "dim";
-      git_status.style = "accent";
-      cmd_duration.style = "faint";
-      hostname.style = "dim";
-      # username uses style_user/style_root (not `style` like the others).
-      username.style_user = "dim";
-      username.style_root = "bright bold";
-    };
-  };
+  # starship — prompt. Noctalia owns the palette now (issue #62). The
+  # `starship` builtin template writes ~/.cache/noctalia/starship-palette.toml
+  # and its apply.sh injects a `[palettes.noctalia]` block into
+  # ~/.config/starship.toml between markers. That in-place edit REQUIRES a
+  # writable config, so — unlike ghostty — we can't let home-manager own
+  # starship.toml as a read-only store symlink (settings must be empty or HM
+  # writes the file and Noctalia clobbers it). Instead we keep programs.starship
+  # enabled only for the shell init and seed a writable base config in
+  # home.activation.starshipConfigSeed below.
+  #
+  # Module styles reference Noctalia's palette color NAMES, which are
+  # Catppuccin-compatible (text/subtext/overlay/…) — NOT the old
+  # accent/dim/faint/bright/fg. Remap under m3-monochrome (all grayscale):
+  #   accent/git_status → subtext1   bright/root → text
+  #   fg/directory      → text       dim  → overlay1   faint → overlay0
+  # The [palettes.noctalia] table itself is deliberately NOT defined here —
+  # Noctalia injects it; defining it too would make a duplicate TOML table.
+  programs.starship.enable = true;
 
   # ghostty — primary terminal (see niri binds + home.sessionVariables.TERMINAL).
-  # The mono ANSI palette is a deliberate choice — matches zellij/nvim
-  # aesthetics. Colored programs (git status, ls --color) surface differences
-  # via brightness/bold rather than hue.
+  # Noctalia owns the theme now (issue #62): the `ghostty` builtin template
+  # renders the colors to ~/.config/ghostty/themes/noctalia, and its apply.sh
+  # no-ops on THIS config the moment it sees `theme = noctalia` already set —
+  # so our read-only home-manager symlink is never materialized/clobbered
+  # (that clobber is exactly what broke the first v5 rebuild). Under
+  # theme.wallpaper_scheme = "m3-monochrome" the generated palette stays
+  # grayscale, matching the zellij/nvim mono aesthetic. font stays declarative.
   programs.ghostty = {
     enable = true;
     settings = {
-      theme = "noctalia-mono";
+      theme = "noctalia";
       font-family = "JetBrainsMono Nerd Font";
       font-size = 11;
-    };
-    themes.noctalia-mono = {
-      background = "#111111";
-      foreground = "#aaaaaa";
-      cursor-color = "#cccccc";
-      cursor-text = "#111111";
-      selection-background = "#3c3c3c";
-      selection-foreground = "#cccccc";
-      palette = [
-        "0=#111111"
-        "1=#dddddd"
-        "2=#aaaaaa"
-        "3=#cccccc"
-        "4=#a7a7a7"
-        "5=#828282"
-        "6=#cccccc"
-        "7=#cccccc"
-        "8=#3c3c3c"
-        "9=#dddddd"
-        "10=#aaaaaa"
-        "11=#cccccc"
-        "12=#a7a7a7"
-        "13=#828282"
-        "14=#cccccc"
-        "15=#dddddd"
-      ];
     };
   };
 
@@ -756,11 +855,11 @@ in
   # GTK theming. adw-gtk3-dark is a libadwaita-style GTK3 port — it's
   # exactly what Noctalia's gtk-refresh.py expects to switch to (script
   # hardcodes "adw-gtk3" / "adw-gtk3-dark" as the target via gsettings).
-  # The Noctalia template writes ~/.config/gtk-{3,4}.0/noctalia.css on each
-  # wallpaper change; the @import in our managed gtk.css pulls those
+  # Noctalia's gtk3/gtk4 templates write ~/.config/gtk-{3,4}.0/noctalia.css on
+  # each wallpaper change; the @import in our managed gtk.css pulls those
   # @define-color overrides into every GTK app without us touching gtk.css
-  # ourselves. enableUserTheming stays off — we use only the built-in gtk
-  # template, which is enabled per activeTemplates in noctaliaConfigSeed.
+  # ourselves. enableUserTheming stays off — we use only the built-in gtk3/gtk4
+  # templates, enabled via programs.noctalia.settings.theme.templates.
   gtk = {
     enable = true;
     theme = {
@@ -911,13 +1010,14 @@ in
   };
 
   # Default wallpaper. Copies the tracked asset (assets/default-wallpaper.jpg)
-  # into the Noctalia-configured wallpaper directory and seeds the wallpaper
-  # cache so it's the active wallpaper on first boot (and the source palette
-  # matugen feeds into noctalia.css → GTK). Idempotent: skips the copy if
-  # the file already exists and only seeds the cache if Noctalia hasn't
-  # already written one. Once Noctalia picks something else via its UI it
-  # rewrites the cache and ownership transfers cleanly. The asset lives in
-  # the repo so a fresh install never depends on a third-party URL.
+  # into the Noctalia-configured wallpaper directory so the file exists on a
+  # fresh $HOME. The actual "use this on first boot" wiring is declarative in
+  # v5 — programs.noctalia.settings.wallpaper.default.path points here, and
+  # Noctalia derives the Material You palette (→ gtk3/gtk4 templates → GTK)
+  # from it. Idempotent: skips the copy if the file already exists. Once the
+  # user picks another wallpaper in the UI, that choice lands in settings.toml
+  # and takes over. The asset lives in the repo so a fresh install never
+  # depends on a third-party URL.
   home.activation.defaultWallpaper = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -929,17 +1029,60 @@ in
       if [ ! -f "$DEST" ]; then
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
       fi
+    '';
+  };
 
-      CACHE="$HOME/.cache/noctalia"
-      ${pkgs.coreutils}/bin/mkdir -p "$CACHE"
-      if [ ! -f "$CACHE/wallpapers.json" ] && [ -f "$DEST" ]; then
-        ${pkgs.coreutils}/bin/cat > "$CACHE/wallpapers.json" <<JSON
-      {
-        "wallpapers": {},
-        "defaultWallpaper": "$DEST",
-        "usedRandomWallpapers": {}
-      }
-      JSON
+  # Writable base config for starship (see programs.starship above). Noctalia's
+  # starship template edits ~/.config/starship.toml in place to inject its
+  # palette, so this file cannot be a read-only home-manager symlink. We seed
+  # the declarative base (module styles, palette name — but NOT the palette
+  # table, which Noctalia appends) into a plain writable file. Change-detected
+  # against the store path of the base: on a fresh $HOME or whenever the base
+  # content below changes we (re)write it, otherwise we leave the file alone so
+  # Noctalia's injected [palettes.noctalia] block survives rebuilds. After a
+  # (re)seed the block is briefly absent until Noctalia next applies the theme
+  # (shell start / wallpaper change) — starship just falls back to defaults in
+  # the meantime.
+  home.activation.starshipConfigSeed = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="$HOME/.config/starship.toml"
+      STAMP="$HOME/.cache/noctalia/.starship-base-src"
+      SRC="${pkgs.writeText "starship-base.toml" ''
+        add_newline = false
+        palette = "noctalia"
+
+        [character]
+        success_symbol = "[➜](bold subtext1)"
+        error_symbol = "[➜](bold text)"
+
+        [directory]
+        style = "text bold"
+
+        [git_branch]
+        style = "overlay1"
+
+        [git_status]
+        style = "subtext1"
+
+        [cmd_duration]
+        style = "overlay0"
+
+        [hostname]
+        style = "overlay1"
+
+        [username]
+        style_user = "overlay1"
+        style_root = "text bold"
+      ''}"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
+                                     "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      if [ ! -f "$DEST" ] || \
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+        ${pkgs.coreutils}/bin/rm -f "$DEST"
+        ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
+        printf '%s' "$SRC" > "$STAMP"
       fi
     '';
   };
@@ -962,134 +1105,15 @@ in
     '';
   };
 
-  # Seed Noctalia's config files on first run.
-  #
-  # Why settings.json: Noctalia opens a modal SetupWizard whenever this
-  # file is missing (Commons/Settings.qml: `shouldOpenSetupWizard = true`
-  # on ENOENT). The wizard hides the bar until dismissed — on an
-  # unattended fresh boot the user sees a bare wallpaper and assumes the
-  # shell didn't start. A stub is enough to skip it; Noctalia fills in
-  # defaults and runs all migrations on next load. We seed the default weather
-  # location (Greenville, SC, °F) and Noctalia's idle escalation: a 5-min lock
-  # plus a custom command for suspend-then-hibernate at 15 min (see the
-  # services.swayidle comment for why the hibernate is a custom command and
-  # what swayidle is still doing). Noctalia merges the rest and owns the file
-  # thereafter (it hot-reloads external edits via a watched FileView, so this
-  # only ever applies on a fresh $HOME).
-  #
-  # Why plugins.json: mirrors CachyOS's curated default, enabling the
-  # official Noctalia plugin source plus `polkit-agent`. The matching
-  # disable for niri-flake's polkit-kde-agent lives in configuration.nix
-  # — both would otherwise race on the PolicyKit1 bus name.
-  #
-  # Why home.activation and not xdg.configFile / programs.noctalia-shell:
-  # Noctalia writes these files at runtime (settings UI, plugin toggles),
-  # and a store-path symlink would silently break those writes. Seeding
-  # once + handing ownership to Noctalia keeps the UI functional.
-  home.activation.noctaliaConfigSeed = {
-    after = [ "writeBoundary" ];
-    before = [ ];
-    data = ''
-      CFG="$HOME/.config/noctalia"
-      ${pkgs.coreutils}/bin/mkdir -p "$CFG"
-
-      if [ ! -e "$CFG/settings.json" ]; then
-        ${pkgs.coreutils}/bin/cat > "$CFG/settings.json" <<'SETTINGS'
-      {
-        "location": {
-          "name": "Greenville, SC",
-          "useFahrenheit": true
-        },
-        "idle": {
-          "enabled": true,
-          "lockTimeout": 300,
-          "suspendTimeout": 0,
-          "customCommands": "[{\"timeout\":900,\"command\":\"systemctl suspend-then-hibernate\"}]"
-        },
-        "general": {
-          "allowPasswordWithFprintd": true,
-          "autoStartAuth": true
-        },
-        "templates": {
-          "activeTemplates": [
-            { "id": "gtk", "enabled": true }
-          ]
-        }
-      }
-      SETTINGS
-      fi
-
-      # Lock-screen fingerprint-or-password fix. Noctalia auto-detects its
-      # PAM service as /etc/pam.d/login (LockContext.qml:22), which we've
-      # enabled fprintAuth on for TTY login (configuration.nix). Two flags
-      # are needed to make both unlock paths work:
-      #
-      # autoStartAuth=true: LockContext only calls pam.start() automatically
-      # when this is set (LockContext.qml:60-62). Without it, PAM is dormant
-      # until Enter is pressed via tryUnlock(), so pam_fprintd is never
-      # listening for the sensor — touching the reader does nothing. With it
-      # on, PAM runs at lock time, pam_fprintd (first "sufficient" rule in
-      # /etc/pam.d/login) waits for a finger, and a single touch unlocks.
-      #
-      # allowPasswordWithFprintd=true: handles the "user types instead of
-      # touching the sensor" path. On first keypress, LockContext aborts
-      # PAM and spawns fprintd-verify to occupy the sensor; the next
-      # pam.start() (on Enter) finds pam_fprintd blocked from claiming
-      # the device, falls through to pam_unix, and the password path
-      # runs alone. Without this flag, pam_fprintd would still race for
-      # the sensor and the unlock UX becomes "password THEN fingerprint".
-      #
-      # Asserted every activation because Noctalia owns this file after
-      # the initial seed.
-      if [ -e "$CFG/settings.json" ]; then
-        TMP=$(${pkgs.coreutils}/bin/mktemp)
-        ${pkgs.jq}/bin/jq '
-          .general.allowPasswordWithFprintd = true |
-          .general.autoStartAuth = true
-        ' "$CFG/settings.json" > "$TMP" \
-          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
-      fi
-
-      # Ensure Noctalia's `gtk` template is active so wallpaper changes
-      # regenerate ~/.config/gtk-{3,4}.0/noctalia.css. The managed gtk.css
-      # in our gtk module @imports that file, so this is what wires
-      # matugen output through to every GTK app on the system. Idempotent:
-      # set if missing, force enabled=true if present, no duplicates.
-      if [ -e "$CFG/settings.json" ]; then
-        TMP=$(${pkgs.coreutils}/bin/mktemp)
-        ${pkgs.jq}/bin/jq '
-          .templates = (.templates // {}) |
-          .templates.activeTemplates = (
-            (.templates.activeTemplates // [])
-            | map(select(.id != "gtk"))
-            | . + [{"id": "gtk", "enabled": true}]
-          )
-        ' "$CFG/settings.json" > "$TMP" \
-          && ${pkgs.coreutils}/bin/mv "$TMP" "$CFG/settings.json"
-      fi
-
-      if [ ! -e "$CFG/plugins.json" ]; then
-        ${pkgs.coreutils}/bin/cat > "$CFG/plugins.json" <<'PLUGINS'
-      {
-        "sources": [
-          {
-            "enabled": true,
-            "name": "Noctalia Plugins",
-            "url": "https://github.com/noctalia-dev/noctalia-plugins"
-          }
-        ],
-        "states": {
-          "polkit-agent": {
-            "enabled": true,
-            "sourceUrl": "https://github.com/noctalia-dev/noctalia-plugins"
-          }
-        },
-        "version": 2
-      }
-      PLUGINS
-      fi
-    '';
-  };
+  # Noctalia config is fully declarative in v5 — see programs.noctalia.settings
+  # above (→ ~/.config/noctalia/config.toml, build-time validated). v4's
+  # home.activation.noctaliaConfigSeed (which hand-wrote settings.json +
+  # plugins.json and jq-asserted the fprintd flags) is gone: v5 renamed and
+  # restructured every one of those keys, moved the polkit agent into
+  # [shell].polkit_agent, and dropped the QML LockContext fingerprint flags
+  # entirely (auth is now native C++). Runtime settings-UI changes are written
+  # to a separate ~/.config/noctalia/settings.toml overrides file, so nothing
+  # here needs to hand a mutable file to Noctalia the way v4 did.
 
   # Default browser. Signal's Electron shell rewrites ~/.config/mimeapps.list
   # on first launch when no default is set, hijacking http/https/text/html
@@ -1444,6 +1468,7 @@ in
       - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
+      - [ ] Noctalia app themes (discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
             fi

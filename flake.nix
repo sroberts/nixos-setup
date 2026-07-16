@@ -17,7 +17,11 @@
     };
 
     noctalia = {
-      url = "github:noctalia-dev/noctalia-shell";
+      # Pinned to the v5.0.0 beta tag (major bump from the v4 line). Beta: expect
+      # schema/module changes vs 4.x — re-verify programs.noctalia options
+      # and the seeded settings.json after bumping. Move to the stable v5.0.0 tag
+      # once it ships.
+      url = "github:noctalia-dev/noctalia-shell/v5.0.0-beta2";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
