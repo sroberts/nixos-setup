@@ -499,6 +499,7 @@ in
     crush # charmbracelet/crush
     glow
     gh
+    railway
     lazydocker
     btop
     fastfetch
