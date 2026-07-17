@@ -25,6 +25,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # noctalia-greeter — greetd greeter that mirrors Noctalia Shell's look.
+    # Tracks main (no tagged releases yet). Bump with `nix flake update
+    # noctalia-greeter`.
+    noctalia-greeter = {
+      url = "github:noctalia-dev/noctalia-greeter";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     claude-code-nix = {
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -56,6 +64,7 @@
       home-manager,
       niri,
       noctalia,
+      noctalia-greeter,
       claude-code-nix,
       herdr,
       ...
@@ -85,6 +94,7 @@
             ./configuration.nix
 
             niri.nixosModules.niri
+            noctalia-greeter.nixosModules.default
 
             # ── SECURE BOOT ──
             # Uncomment together with the input in the inputs block and the

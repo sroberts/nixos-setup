@@ -153,7 +153,7 @@
     login.fprintAuth = true; # TTY login
     su.fprintAuth = true; # su to another user
     polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true; # tuigreet at the login screen
+    greetd.fprintAuth = true; # noctalia-greeter at the login screen
     # Noctalia's lock screen uses /etc/pam.d/login, so login.fprintAuth above
     # is what lights up the lock screen's fingerprint path. In v5 the lock
     # screen's auth is native (C++): it arms pam_fprintd at lock time and
@@ -165,7 +165,7 @@
   };
 
   ############################################################
-  # niri + greetd (tuigreet) login
+  # niri + greetd (noctalia-greeter) login
   ############################################################
   programs.niri.enable = true;
   # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08).
@@ -182,17 +182,21 @@
         doCheck = false;
       });
 
-  # tuigreet on tty1, launching niri (which auto-spawns Noctalia via
-  # spawn-at-startup in home.nix). `--remember` keeps the last username
-  # pre-filled; `--time` shows a clock. The session command is the same
-  # one DankInstaller-style configs use to start niri.
-  services.greetd = {
+  # noctalia-greeter on tty1 — a Quickshell-based login screen that mirrors
+  # Noctalia Shell's palette/wallpaper (imperative sync via Settings → Shell →
+  # Security → Noctalia Greeter → Sync Now — see TODO.md). The greeter's
+  # NixOS module sets services.greetd.enable + default_session.command with
+  # mkDefault, so no explicit greetd block is needed here.
+  #   - allow_empty_password: fprintd's PAM module answers the password
+  #     prompt with an empty reply after a fingerprint match; without this
+  #     the greeter rejects that reply as invalid credentials.
+  #   - keyboard.layout: greeter runs before the session's input config, so
+  #     the layout has to be told explicitly.
+  programs.noctalia-greeter = {
     enable = true;
     settings = {
-      default_session = {
-        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd niri-session";
-        user = "greeter";
-      };
+      auth.allow_empty_password = true;
+      keyboard.layout = "us";
     };
   };
 
