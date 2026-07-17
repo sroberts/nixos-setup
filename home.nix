@@ -64,8 +64,18 @@ in
 
   programs.noctalia = {
     enable = true;
-    # systemd.enable stays off — Noctalia is spawned by the compositor
-    # (see spawn-at-startup below), not a user service.
+    # Run Noctalia as a systemd user unit (PartOf/WantedBy=wayland.systemd.target,
+    # Restart=on-failure) instead of letting the compositor spawn it. Two reasons:
+    #   1. `nixos-rebuild switch` doesn't kill the running noctalia; without
+    #      systemd owning the process, activation leaves the old store-path bar
+    #      alive and next startup adds a second one (dup bars — see PR #51).
+    #   2. In v5, `noctalia msg …` transparently spawns a full bar when it
+    #      can't reach a server (a client/server version mismatch during a
+    #      partial rebuild used to give us a stray extra bar). systemd ensures
+    #      the running server always matches the current generation.
+    # The module wires X-Restart-Triggers to the config.toml source path, so a
+    # settings change alone triggers a clean unit restart — no manual bounce.
+    systemd.enable = true;
 
     # Declarative base config → ~/.config/noctalia/config.toml (v5's TOML
     # format; the module runs `noctalia config validate` at build time).
@@ -204,12 +214,8 @@ in
         y = 480;
       };
     };
-    # Auto-start Noctalia with niri. Noctalia's home-module writes the
-    # config files; the compositor is responsible for launching the
-    # process. `noctalia` is on PATH via programs.noctalia.
-    spawn-at-startup = [
-      { command = [ "noctalia" ]; }
-    ];
+    # Noctalia now runs as a systemd user unit tied to wayland.systemd.target
+    # (see programs.noctalia.systemd.enable above), not a compositor spawn.
     # NOTE: v5 replaced the `noctalia ipc call <target> <fn>` surface with
     # `noctalia msg <command…>`. Discover commands with `noctalia msg --help`.
     # niri upstream default keybinds, verbatim, with the terminal binary
