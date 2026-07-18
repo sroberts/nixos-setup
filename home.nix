@@ -511,6 +511,7 @@ in
     fastfetch
     jq
     fd
+    ripgrep # crush prefers `rg` for greps; unfound falls back to slower search
     mosh
 
     # Compiler. `pkgs.gcc` resolves to the current nixpkgs default
@@ -1141,6 +1142,121 @@ in
     };
   };
 
+  # charmbracelet/crush — global config at ~/.config/crush/crush.json.
+  #
+  # Providers: local Ollama daemon; auto-discovery on empty models list picks
+  # up everything in `ollama list`, so gemma4:latest and gpt-oss:20b (both
+  # seeded via services.ollama.loadModels) become available immediately.
+  #
+  # Top-level `models` binds crush's two agent roles:
+  #   - large (coder agent): gpt-oss:20b — reasoning-first.
+  #   - small (task agent):  gemma4:latest — faster.
+  #
+  # MCP servers — mirror what Claude Code would use where it's portable:
+  #   - context7:      up-to-date library docs; remote HTTP (no auth for
+  #                    the free tier). Set CONTEXT7_API_KEY via headers if
+  #                    you hit rate limits.
+  #   - memory:        knowledge-graph store persisted to
+  #                    ~/.local/share/crush/memory.json — cross-session
+  #                    notes crush can query. Approximates (does not
+  #                    replicate) Claude Code's built-in auto-memory.
+  #   - github:        official remote GitHub MCP. Auth via $(gh auth token)
+  #                    at load time — no PAT lives in the repo, and it
+  #                    rotates whenever `gh auth refresh` runs. If gh isn't
+  #                    authenticated yet, the header resolves empty and gets
+  #                    dropped; the MCP will 401 cleanly.
+  #   - playwright:    browser automation (Microsoft's active replacement
+  #                    for the archived puppeteer reference server).
+  #                    First run downloads Chromium under ~/.cache/ms-playwright.
+  #   - agent-browser: Vercel's browser-automation CLI. Invoked via npx
+  #                    because pkgs.agent-browser is 0.27.0 and the `mcp`
+  #                    subcommand only landed in 0.28.0. First run
+  #                    downloads its bundled Chromium; see TODO.md for the
+  #                    one-time `agent-browser install` step.
+  #
+  # Node is pulled from pkgs.nodejs by absolute store path so crush finds
+  # `npx` even when the invocation happens outside a mise-shim shell.
+  #
+  # NOTE: this is a store-path symlink (read-only). Crush's built-in
+  # `crush-config` skill writes here to persist model swaps — that call
+  # will fail. Change providers/models/mcps by editing this block, not from
+  # inside crush. Project-local `.crush.json` still works for one-off
+  # overrides in a repo.
+  xdg.configFile."crush/crush.json".text = builtins.toJSON {
+    "$schema" = "https://charm.land/crush.json";
+    providers = {
+      ollama = {
+        name = "Ollama";
+        base_url = "http://localhost:11434/v1/";
+        type = "ollama";
+      };
+    };
+    models = {
+      large = {
+        provider = "ollama";
+        model = "gpt-oss:20b";
+      };
+      small = {
+        provider = "ollama";
+        model = "gemma4:latest";
+      };
+    };
+    mcp = {
+      context7 = {
+        type = "http";
+        url = "https://mcp.context7.com/mcp";
+      };
+      memory = {
+        type = "stdio";
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "@modelcontextprotocol/server-memory"
+        ];
+        env = {
+          MEMORY_FILE_PATH = "${config.home.homeDirectory}/.local/share/crush/memory.json";
+        };
+        # First launch cold-downloads the package from npm before stdio is
+        # ready; crush's default 15s init window isn't enough. Subsequent
+        # launches hit npx's cache and start in <1s.
+        timeout = 300;
+      };
+      github = {
+        type = "http";
+        url = "https://api.githubcopilot.com/mcp/";
+        # Reuse the token gh CLI is already holding — no PAT stored anywhere,
+        # rotates whenever `gh auth refresh` runs. Crush expands $(...) at
+        # config load; an empty result drops the header (per crush semantics),
+        # which the GH MCP will answer with 401 → clean failure if gh isn't
+        # authenticated yet.
+        headers.Authorization = "Bearer $(${pkgs.gh}/bin/gh auth token)";
+      };
+      playwright = {
+        type = "stdio";
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "@playwright/mcp"
+        ];
+        timeout = 300;
+      };
+      agent-browser = {
+        type = "stdio";
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "agent-browser"
+          "mcp"
+          "--tools"
+          "core,state,debug,tabs"
+        ];
+        # Longer than the others because agent-browser's postinstall also
+        # unpacks its bundled Chromium (~150 MiB) the first time.
+        timeout = 600;
+      };
+    };
+  };
+
   # Typora theme matching Noctalia's monochrome dark palette.
   # Lives at ~/.config/Typora/themes/noctalia-mono.css; Typora reads themes
   # but never writes them, so a store-path symlink is fine here (unlike the
@@ -1477,6 +1593,10 @@ in
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] Sync noctalia-greeter to the shell's palette + wallpaper: Noctalia → Settings → Shell → Security → Noctalia Greeter → Sync Now (writes /var/lib/noctalia-greeter — needs admin creds, not something Nix owns)
       - [ ] Noctalia app themes (discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
+      - [ ] Crush browser MCPs need Chromium downloaded once:
+            `npx -y agent-browser install` and `npx -y @playwright/mcp install chromium`
+            (both write to their own ~/.cache dirs — no root; skip if you don't use those MCPs).
+      - [ ] Crush's GitHub MCP authenticates via `gh auth token`, so run `gh auth login` (see the GitHub sign-in TODO above) before first launch — otherwise the MCP will 401.
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
       TODO
             fi
