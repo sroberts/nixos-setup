@@ -332,6 +332,16 @@
   ############################################################
   # System-wide GUI applications
   ############################################################
+  # NIXOS_OZONE_WL=1 is the nixpkgs convention for opting Electron /
+  # Chromium-based apps into native Wayland (Ozone) instead of XWayland.
+  # Without it, apps like Discord and Obsidian render at the panel's
+  # native pixel density and ignore the compositor's per-output scale —
+  # on the Framework 13's 2880×1920 panel that means UI a third of the
+  # size of the rest of the desktop. The discord/obsidian/1password
+  # wrappers in nixpkgs check this var and pass the appropriate
+  # `--ozone-platform=wayland` flags only when it's set.
+  environment.sessionVariables.NIXOS_OZONE_WL = "1";
+
   environment.systemPackages = with pkgs; [
     _1password-gui
     chromium
