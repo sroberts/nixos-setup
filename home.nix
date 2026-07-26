@@ -944,13 +944,19 @@ in
   # That's why `which go` could 404 right after a rebuild even though the
   # eval line is in ~/.zshrc — go hadn't been installed yet. Running
   # `mise install` here makes the rebuild authoritative for what's on disk.
-  # `|| true` so a transient network failure during activation doesn't
-  # block the whole rebuild — mise will retry on next switch or shell.
+  #
+  # The pipe to systemd-cat sends both stdout and stderr into the journal
+  # under the `mise-install` identifier — `journalctl -t mise-install`
+  # surfaces any failure that `|| true` would otherwise swallow. Kept
+  # non-fatal so a transient network hiccup can't block the rebuild;
+  # mise will retry on next switch or shell.
   home.activation.miseInstall = {
     after = [ "writeBoundary" ];
     before = [ ];
     data = ''
-      ${pkgs.mise}/bin/mise install --yes 2>&1 || true
+      ${pkgs.mise}/bin/mise install --yes 2>&1 \
+        | ${pkgs.systemd}/bin/systemd-cat -t mise-install -p info \
+        || true
     '';
   };
 
@@ -1587,7 +1593,7 @@ in
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] Download Playdate Simulator: https://play.date/dev/
-      - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, re-run `mise install` (the rebuild hook's `|| true` swallows transient network failures)
+      - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
       - [ ] Authenticate Gemini CLI: `gemini auth`
