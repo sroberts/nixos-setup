@@ -2,6 +2,7 @@
 {
   inputs,
   pkgs,
+  lib,
   config,
   ...
 }:
@@ -130,14 +131,16 @@ in
             #   starship — migrated: config seeded writable so apply.sh can
             #              inject the palette (see programs.starship + the
             #              starshipConfigSeed activation). (issue #62)
-            # NOTE: `niri` is deliberately NOT enabled here. Its apply.sh appends
-            # an `include` line to config.kdl, which home-manager owns as a
-            # read-only store symlink — the append fails and the generated
-            # noctalia.kdl is left unreferenced (dead config). Re-add it once
-            # #62 gives us a writable-include path for niri.
+            #   niri     — migrated: the `include "noctalia.kdl"` line is added
+            #              declaratively via the xdg.configFile.niri-config
+            #              override just below programs.niri.settings, so
+            #              apply.sh's has-include grep short-circuits and only
+            #              noctalia.kdl gets written (as a regular file, not
+            #              through HM). (issue #62)
             "btop"
             "ghostty"
             "starship"
+            "niri"
           ];
           # Community templates are fetched from api.noctalia.dev/templates at
           # runtime and cached under ~/.cache/noctalia (a network fetch, not a
@@ -458,6 +461,31 @@ in
       ];
     };
   };
+
+  # Extend niri's generated config.kdl with an `include "noctalia.kdl"` line
+  # so noctalia's builtin `niri` template's separately-written noctalia.kdl
+  # actually applies. programs.niri.config's `default` is not merge-able (any
+  # override replaces the settings-derived default entirely), so we compose
+  # our own file by reusing programs.niri.finalConfig — the already-rendered
+  # string of settings — and appending the include line.
+  #
+  # `niri validate` (which validated-config-for would run) rejects a config
+  # whose included file doesn't exist. That file is written at runtime by
+  # noctalia, not at build time, so we bypass validated-config-for and use
+  # pkgs.writeText directly — settings themselves are still type-checked at
+  # Nix eval time by niri-flake, so the only unchecked thing is our one-line
+  # include, which is worth the trade.
+  #
+  # apply.sh's grep pattern `^[[:space:]]*include([[:space:]].*)?"([^"]*/)?
+  # noctalia\.kdl"([[:space:]]|$)` matches the line we inject, so noctalia's
+  # apply-time short-circuit fires and it never tries to write into
+  # config.kdl (which is still an HM store-path symlink).
+  xdg.configFile.niri-config.source = lib.mkForce (
+    pkgs.writeText "config.kdl" ''
+      ${config.programs.niri.finalConfig}
+      include "noctalia.kdl"
+    ''
+  );
 
   # The idle escalation is driven entirely by Noctalia's own idle manager,
   # configured declaratively via programs.noctalia.settings.idle.behavior above:
