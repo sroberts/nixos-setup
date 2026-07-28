@@ -42,7 +42,7 @@ There are no tests and no linter (yet). CI runs `nix flake check --no-build` plu
 
 Shared, host-agnostic files in the repo root; per-machine state under `hosts/`:
 
-- **`flake.nix`** — Inputs (nixpkgs unstable, home-manager, nixos-hardware, niri-flake, noctalia, claude-code-nix) and the `nixosConfigurations` output. It does **not** hardcode a host: an `mkHost` helper builds each machine from its `hosts/<name>/` directory plus the shared `configuration.nix` + `home.nix`, and `builtins.readDir ./hosts` auto-discovers every host (so adding a machine never touches `flake.nix`). All inputs `follows = "nixpkgs"` so there is one nixpkgs in the closure. The `lanzaboote` input is **commented out** by design — see *Secure Boot* below.
+- **`flake.nix`** — Inputs (nixpkgs unstable, home-manager, nixos-hardware, niri-flake, noctalia, noctalia-greeter, lanzaboote, claude-code-nix) and the `nixosConfigurations` output. It does **not** hardcode a host: an `mkHost` helper builds each machine from its `hosts/<name>/` directory plus the shared `configuration.nix` + `home.nix`, and `builtins.readDir ./hosts` auto-discovers every host (so adding a machine never touches `flake.nix`). All inputs `follows = "nixpkgs"` so there is one nixpkgs in the closure.
 - **`configuration.nix`** — Shared system-level config: bootloader, PipeWire, networking, niri + greetd/tuigreet, Docker, Ollama (ROCm), the `sroberts` user, and the system-wide GUI apps (`_1password-gui`, `chromium`, `obsidian`, …). Host-agnostic — no hostname, no per-disk UUIDs. The function signature is `{ config, lib, pkgs, inputs, … }`.
 - **`home.nix`** — User-level (home-manager): Noctalia config, niri input + binds, CLI/TUI tooling, zsh + integrations (zoxide, fzf, eza, bat, starship, mise), and `home.activation.*` hooks for the imperative gaps Nix can't declare (LazyVim starter, CyberChef download, post-install TODO.md). Shared across hosts.
 - **`hosts/<hostname>/`** — Everything machine-specific. `default.nix` sets `networking.hostName`, imports the `nixos-hardware` module for that exact model, and carries the hibernation swap LUKS unlock + `boot.resumeDevice`. `hardware-configuration.nix` (committed) encodes the root LUKS UUID, filesystems, and swapDevices. The only host today is `hosts/sjr-fw13/`. See `hosts/README.md` and `scripts/new-host.sh` for adding one.
@@ -87,9 +87,9 @@ Idle is driven by **Noctalia's own idle manager** (seeded in `home.activation.no
 
 ## Secure Boot
 
-Lanzaboote is a deliberate **post-install** step, not part of the initial build. The `lanzaboote` flake input and its module line in `flake.nix`, plus the `boot.lanzaboote` block in `configuration.nix`, are all commented out. Enabling them before keys are enrolled in the firmware will brick the boot. The full runbook is in `secure-boot.md`; touch those commented blocks only when following it.
+Lanzaboote is enabled: the `lanzaboote` flake input, its module, and the `boot.lanzaboote` block in `configuration.nix` (which uses `lib.mkForce` to disable systemd-boot) are all live. `sbctl` ships in `environment.systemPackages` for key management.
 
-The lanzaboote block uses `lib.mkForce` to override systemd-boot; `lib` is already in `configuration.nix`'s function arguments (`{ config, lib, pkgs, inputs, ... }`), so no signature change is needed.
+The enrollment ceremony that makes this actually protect the boot chain (create keys → sign → enter Setup Mode → enroll keys → enable Enforce Secure Boot in BIOS) is a one-time hardware step that must be done per host. Runbook: `secure-boot.md`. On a fresh install, follow that runbook once; on subsequent rebuilds, lanzaboote just re-signs the boot chain automatically.
 
 ## What's *not* declarative (by design)
 

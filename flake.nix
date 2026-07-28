@@ -47,14 +47,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # ── SECURE BOOT ────────────────────────────────────────────────
-    # Uncomment to enable lanzaboote. Do this ONLY after the system is
-    # installed and booting (see secure-boot.md). Enabling it before
-    # enrolling keys will leave you unbootable if you flip Secure Boot on.
-    # lanzaboote = {
-    #   url = "github:nix-community/lanzaboote/v1.0.0";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
+    # Signs the boot chain (kernel + initrd as a UKI). Enrollment ceremony
+    # is a one-time post-install step — see secure-boot.md.
+    lanzaboote = {
+      url = "github:nix-community/lanzaboote/v1.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -95,11 +93,7 @@
 
             niri.nixosModules.niri
             noctalia-greeter.nixosModules.default
-
-            # ── SECURE BOOT ──
-            # Uncomment together with the input in the inputs block and the
-            # block in configuration.nix:
-            # inputs.lanzaboote.nixosModules.lanzaboote
+            inputs.lanzaboote.nixosModules.lanzaboote
 
             home-manager.nixosModules.home-manager
             {
