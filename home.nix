@@ -1620,6 +1620,7 @@ in
       - [ ] Pick Typora theme: Themes → Noctalia Mono
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
+      - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`

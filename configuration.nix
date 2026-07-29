@@ -8,6 +8,47 @@
   ...
 }:
 
+let
+  # Mintplex-Labs/anything-llm — Desktop app packaged from the upstream
+  # AppImage release. Not in nixpkgs (checked: no `anythingllm` / `anythingllm-desktop`
+  # attrs). appimageTools.wrapType2 mounts the AppImage into an FHS-like
+  # runtime so the bundled Chromium + Node stack starts on NixOS.
+  # `--no-sandbox` is what upstream's .desktop ships — Chromium's SUID
+  # sandbox depends on chrome-sandbox owning setuid-root, which AppImage
+  # extraction on NixOS can't guarantee. Trade-off is documented; the
+  # workspace itself still lives under $HOME.
+  # Version bump: change `version`, run
+  #   nix-prefetch-url --type sha256 <url>
+  # and re-encode with `nix hash to-sri --type sha256 <hash>`.
+  anythingllm-desktop =
+    let
+      pname = "anythingllm-desktop";
+      version = "1.15.0";
+      src = pkgs.fetchurl {
+        url = "https://github.com/Mintplex-Labs/anything-llm/releases/download/v${version}/AnythingLLMDesktop.AppImage";
+        hash = "sha256-Dk/FeGzefACiJlyTf+/BVc8ZJryF9Gq8BWxZqXeAacs=";
+      };
+      contents = pkgs.appimageTools.extractType2 { inherit pname version src; };
+    in
+    pkgs.appimageTools.wrapType2 {
+      inherit pname version src;
+      extraInstallCommands = ''
+        install -Dm644 ${contents}/${pname}.desktop \
+          $out/share/applications/${pname}.desktop
+        substituteInPlace $out/share/applications/${pname}.desktop \
+          --replace-fail 'Exec=AppRun' 'Exec=${pname}'
+        install -Dm644 ${contents}/usr/share/icons/hicolor/0x0/apps/${pname}.png \
+          $out/share/icons/hicolor/512x512/apps/${pname}.png
+      '';
+      meta = {
+        description = "AnythingLLM — all-in-one local RAG / agent chat desktop app";
+        homepage = "https://anythingllm.com/";
+        license = lib.licenses.mit;
+        platforms = [ "x86_64-linux" ];
+        mainProgram = "anythingllm-desktop";
+      };
+    };
+in
 {
   ############################################################
   # Nix / nixpkgs
@@ -334,6 +375,7 @@
   ############################################################
   environment.systemPackages = with pkgs; [
     _1password-gui
+    anythingllm-desktop
     chromium
     discord
     localsend
