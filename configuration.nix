@@ -378,6 +378,7 @@ in
     anythingllm-desktop
     chromium
     discord
+    firefox
     localsend
     obsidian
     lmstudio
