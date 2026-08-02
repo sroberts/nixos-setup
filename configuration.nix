@@ -379,6 +379,7 @@ in
     chromium
     discord
     firefox
+    foliate
     localsend
     obsidian
     lmstudio
