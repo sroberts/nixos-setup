@@ -380,6 +380,7 @@ in
     discord
     firefox
     localsend
+    nautilus
     obsidian
     lmstudio
     rpi-imager
