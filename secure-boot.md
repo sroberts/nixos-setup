@@ -33,43 +33,31 @@ the same.
 
 ---
 
-## Step 1 — Add lanzaboote to the flake
+## Step 1 — Create signing keys (before the first rebuild after this PR)
 
-In `flake.nix`, uncomment the `lanzaboote` input and the
-`inputs.lanzaboote.nixosModules.lanzaboote` module line.
-
-In `configuration.nix`:
-1. Add `lib` to the function args: `{ config, pkgs, lib, inputs, ... }:`
-2. Uncomment the SECURE BOOT block:
-   ```nix
-   boot.loader.systemd-boot.enable = lib.mkForce false;
-   boot.lanzaboote = {
-     enable = true;
-     pkiBundle = "/var/lib/sbctl";
-   };
-   ```
-3. Add `sbctl` to `environment.systemPackages` (uncomment the line, or just add
-   `sbctl` to the existing list).
-
-Do **not** rebuild yet.
-
-## Step 2 — Create signing keys
+`boot.lanzaboote.enable = true;` is already in `configuration.nix` and the
+`lanzaboote` flake input + module are wired in `flake.nix`. sbctl ships in
+`environment.systemPackages`. That means the very next `nixos-rebuild switch`
+will try to sign the boot chain using keys under `/var/lib/sbctl`. Provision
+them first — the sbctl binary isn't on PATH yet (it lands with that same
+rebuild), so run it via a one-shot nix run:
 
 ```bash
-sudo sbctl create-keys
+sudo nix run nixpkgs#sbctl -- create-keys
 ```
 
 This generates your platform keys in `/var/lib/sbctl`.
 
-## Step 3 — Rebuild (signs the boot chain, still in Secure Boot OFF)
+## Step 2 — Rebuild (signs the boot chain, still in Secure Boot OFF)
 
 ```bash
 sudo nixos-rebuild switch --flake ~/nixos-setup#<host>
 ```
 
-lanzaboote replaces systemd-boot and signs the kernel + initrd as a unified image.
+lanzaboote replaces systemd-boot and signs the kernel + initrd as a unified
+image. `sbctl` is now on PATH for the remaining steps.
 
-## Step 4 — Verify everything is signed
+## Step 3 — Verify everything is signed
 
 ```bash
 sudo sbctl verify
@@ -78,7 +66,7 @@ sudo sbctl verify
 Every `nixos-generation-*.efi` and the bootloader should report as signed. If
 anything is unsigned, stop and fix it before touching BIOS.
 
-## Step 5 — Enroll keys
+## Step 4 — Enroll keys
 
 ```bash
 sudo sbctl enroll-keys --microsoft --firmware-builtin
@@ -121,12 +109,12 @@ On other firmware, look up the vendor's documented Setup Mode entry path
 before clearing keys — getting this wrong is the most common way to land
 in an unbootable state.
 
-## Step 6 — Enable Secure Boot in BIOS
+## Step 5 — Enable Secure Boot in BIOS
 
 Reboot into BIOS (F2) → **Administer Secure Boot** → enable **Enforce Secure
 Boot**, save and exit (F10).
 
-## Step 7 — Confirm
+## Step 6 — Confirm
 
 ```bash
 sudo sbctl status      # lanzaboote-aware view (Measured UKI flag)

@@ -64,17 +64,27 @@ source of truth: the running machine is fully described by these files.
      ```
      (Drop the block entirely if you don't want hibernation — suspend-to-RAM
      still works.)
-5. **Build it:**
+5. **Create Secure Boot signing keys** *before* the first rebuild — lanzaboote
+   signs the boot chain on activation and the rebuild fails if
+   `/var/lib/sbctl` isn't populated. sbctl only lands on PATH with that same
+   rebuild, so bootstrap it via a one-shot:
+   ```bash
+   sudo nix run nixpkgs#sbctl -- create-keys
+   ```
+6. **Build it:**
    ```bash
    sudo nixos-rebuild switch --flake .#<hostname>
    ```
-6. **Commit** the new host directory (and `flake.lock` if the build generated
+7. **Commit** the new host directory (and `flake.lock` if the build generated
    one):
    ```bash
    git add hosts/<hostname> flake.lock
    git commit -m "hosts: add <hostname>"
    git push
    ```
+8. **Run the Secure Boot enrollment ceremony** (one-time, per host — verify
+   signatures, enroll keys, flip Enforce Secure Boot in BIOS, confirm with
+   `bootctl status`). See [`../secure-boot.md`](../secure-boot.md), steps 3-6.
 
 ## Determinism note
 

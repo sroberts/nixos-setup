@@ -72,12 +72,14 @@ in
   system.stateVersion = "26.05";
 
   ############################################################
-  # Boot — systemd-boot now; lanzaboote later (see SECURE BOOT)
+  # Boot — lanzaboote (signs the boot chain); see SECURE BOOT block below
   ############################################################
-  boot.loader.systemd-boot.enable = true;
-  # Cap /boot entries. The ESP is 1G; each generation writes a kernel + initrd
-  # + entry. 10 entries ≈ 30 days of weekly rebuilds and keeps /boot well under
-  # the fail line where nixos-rebuild switch dies mid-activation.
+  # lanzaboote takes over the bootloader install; systemd-boot must be off
+  # for it to own the ESP. Cap /boot entries via the same option name that
+  # lanzaboote passes through — 10 entries ≈ 30 days of weekly rebuilds and
+  # keeps the 1G ESP well under the fail line where nixos-rebuild dies
+  # mid-activation.
+  boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelPackages = pkgs.linuxPackages_latest; # 6.12+ floor for Ryzen 7040
@@ -136,14 +138,16 @@ in
   services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
 
   ############################################################
-  # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md
+  # SECURE BOOT (lanzaboote) — see secure-boot.md for the enrollment ceremony
   ############################################################
-  # environment.systemPackages = with pkgs; [ sbctl ]; # merge into the list below
-  # boot.loader.systemd-boot.enable = lib.mkForce false;
-  # boot.lanzaboote = {
-  #   enable = true;
-  #   pkiBundle = "/var/lib/sbctl";
-  # };
+  # `boot.loader.systemd-boot.enable = lib.mkForce false;` is set above
+  # (colocated with the other bootloader options) so lanzaboote can own the ESP.
+  # pkiBundle is where `sbctl create-keys` drops the platform key material;
+  # lanzaboote reads it to sign the kernel + initrd as a UKI on every rebuild.
+  boot.lanzaboote = {
+    enable = true;
+    pkiBundle = "/var/lib/sbctl";
+  };
 
   ############################################################
   # Framework 13 AMD power & firmware
@@ -396,6 +400,7 @@ in
     wget
     unzip
     cryptsetup # handy for inspecting/managing the LUKS volume post-install
+    sbctl # secure-boot key management (create-keys, enroll-keys, verify)
   ];
 
   ############################################################
