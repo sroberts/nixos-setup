@@ -100,18 +100,16 @@ in
 
       # Theme derives from the wallpaper (Material You), same as v4's matugen
       # behavior — this is what feeds the gtk3/gtk4 templates below and, in
-      # turn, our @import'd gtk.css and the zellij/typora palettes.
+      # turn, our @import'd gtk.css and downstream per-app templates.
+      #
+      # `wallpaper_scheme` is intentionally unset — the palette follows the
+      # wallpaper's hues via the Noctalia default (m3-tonal-spot). Override
+      # here to pin a neutral look if desired; valid values are m3-tonal-spot,
+      # m3-content, m3-fruit-salad, m3-rainbow, m3-monochrome, vibrant,
+      # faithful, dysfunctional, muted (only applies while source = "wallpaper").
       theme = {
         mode = "dark";
         source = "wallpaper";
-        # Force a grayscale Material You palette regardless of the wallpaper's
-        # hues. This decouples the derived palette from the image: any wallpaper
-        # now yields a neutral scheme, keeping the GTK/Material You side aligned
-        # with the hardcoded `noctalia-mono` terminal themes (zellij/nvim/
-        # starship/bat) below. Valid schemes: m3-tonal-spot | m3-content |
-        # m3-fruit-salad | m3-rainbow | m3-monochrome | vibrant | faithful |
-        # dysfunctional | muted (only applies while source = "wallpaper").
-        wallpaper_scheme = "m3-monochrome";
         # v5 replaces v4's single `gtk` template with two builtin templates
         # writing ~/.config/gtk-{3,4}.0/noctalia.css (the paths our managed
         # gtk.css @imports). Opt into them explicitly. Discover ids with
@@ -148,6 +146,7 @@ in
           # shell can reach the API).
           enable_community_templates = true;
           community_ids = [
+            "bat"
             "neovim"
             "obsidian"
             "zed"
@@ -161,10 +160,10 @@ in
       wallpaper = {
         enabled = true;
         directory = "~/Pictures/Wallpapers";
-        # Initial wallpaper on a fresh $HOME (the asset copied in by
-        # home.activation.defaultWallpaper). Once the user picks another in
-        # the UI, that choice lands in settings.toml and wins.
-        default.path = "~/Pictures/Wallpapers/default-wallpaper.jpg";
+        # Initial wallpaper on a fresh $HOME (the asset seeded by
+        # home.activation.wallpapers). Once the user picks another in the
+        # UI, that choice lands in settings.toml and wins.
+        default.path = "~/Pictures/Wallpapers/noctalia.png";
       };
 
       # v5 folds the polkit agent into native config; this replaces v4's
@@ -670,64 +669,17 @@ in
     enableZshIntegration = true;
   };
 
-  # bat — syntax-highlighted `cat` (see shellAliases above). Ships a
-  # Noctalia-mono tmTheme inline; scopes lean on the same brightness/bold
-  # gradations the nvim colorscheme uses so highlighted code reads
-  # consistently across both renderers.
-  programs.bat = {
-    enable = true;
-    config.theme = "Noctalia-Mono";
-    themes."Noctalia-Mono" = {
-      src = pkgs.writeTextDir "Noctalia-Mono.tmTheme" ''
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>name</key><string>Noctalia Mono</string>
-          <key>settings</key>
-          <array>
-            <dict><key>settings</key><dict>
-              <key>background</key><string>#111111</string>
-              <key>foreground</key><string>#aaaaaa</string>
-              <key>caret</key><string>#cccccc</string>
-              <key>lineHighlight</key><string>#191919</string>
-              <key>selection</key><string>#3c3c3c</string>
-            </dict></dict>
-            <dict><key>scope</key><string>comment</string><key>settings</key><dict>
-              <key>foreground</key><string>#5d5d5d</string>
-              <key>fontStyle</key><string>italic</string>
-            </dict></dict>
-            <dict><key>scope</key><string>string</string><key>settings</key><dict>
-              <key>foreground</key><string>#828282</string>
-            </dict></dict>
-            <dict><key>scope</key><string>constant.numeric, constant.language</string><key>settings</key><dict>
-              <key>foreground</key><string>#cccccc</string>
-            </dict></dict>
-            <dict><key>scope</key><string>keyword, storage, storage.type</string><key>settings</key><dict>
-              <key>foreground</key><string>#aaaaaa</string>
-              <key>fontStyle</key><string>bold</string>
-            </dict></dict>
-            <dict><key>scope</key><string>entity.name.function, support.function</string><key>settings</key><dict>
-              <key>foreground</key><string>#dddddd</string>
-              <key>fontStyle</key><string>bold</string>
-            </dict></dict>
-            <dict><key>scope</key><string>entity.name.type, entity.name.class, support.type</string><key>settings</key><dict>
-              <key>foreground</key><string>#cccccc</string>
-            </dict></dict>
-            <dict><key>scope</key><string>variable</string><key>settings</key><dict>
-              <key>foreground</key><string>#aaaaaa</string>
-            </dict></dict>
-            <dict><key>scope</key><string>keyword.operator, punctuation</string><key>settings</key><dict>
-              <key>foreground</key><string>#828282</string>
-            </dict></dict>
-          </array>
-          <key>uuid</key><string>00000000-noctalia-mono-bat</string>
-        </dict>
-        </plist>
-      '';
-      file = "Noctalia-Mono.tmTheme";
-    };
-  };
+  # bat — syntax-highlighted `cat` (see shellAliases above).
+  #
+  # Noctalia owns the palette via its community `bat` template (enabled in
+  # community_ids above): apply.sh writes ~/.config/bat/themes/noctalia.tmTheme
+  # from the current Material palette and appends `--theme=noctalia` to
+  # ~/.config/bat/config. That in-place edit requires a writable config, so we
+  # deliberately DON'T set `programs.bat.config` here — home-manager would then
+  # own the file as a read-only /nix/store symlink and Noctalia's apply.sh would
+  # fail to append. `programs.bat.enable = true` alone gives us the package
+  # without materializing the config file.
+  programs.bat.enable = true;
 
   # starship — prompt. Noctalia owns the palette now (issue #62). The
   # `starship` builtin template writes ~/.cache/noctalia/starship-palette.toml
@@ -1053,26 +1005,29 @@ in
     '';
   };
 
-  # Default wallpaper. Copies the tracked asset (assets/default-wallpaper.jpg)
-  # into the Noctalia-configured wallpaper directory so the file exists on a
-  # fresh $HOME. The actual "use this on first boot" wiring is declarative in
-  # v5 — programs.noctalia.settings.wallpaper.default.path points here, and
-  # Noctalia derives the Material You palette (→ gtk3/gtk4 templates → GTK)
-  # from it. Idempotent: skips the copy if the file already exists. Once the
-  # user picks another wallpaper in the UI, that choice lands in settings.toml
-  # and takes over. The asset lives in the repo so a fresh install never
-  # depends on a third-party URL.
-  home.activation.defaultWallpaper = {
+  # Wallpaper library — seeds ~/Pictures/Wallpapers with the assets in
+  # ./assets/wallpapers/. Copy-once per file: if a wallpaper already exists
+  # at the destination (user replaced it, deleted-and-recreated it, or picked
+  # up one from a previous rebuild), we leave it alone. The user is free to
+  # delete a shipped wallpaper — it'll reappear on the next rebuild UNLESS
+  # they also remove it from ./assets/wallpapers/. Noctalia scans this
+  # directory at runtime; the file named in `programs.noctalia-shell.settings
+  # .wallpaper.default.path` above becomes the seed selection on a fresh
+  # settings.json.
+  home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];
     data = ''
       DIR="$HOME/Pictures/Wallpapers"
-      DEST="$DIR/default-wallpaper.jpg"
-      SRC="${./assets/default-wallpaper.jpg}"
+      SRC_DIR="${./assets/wallpapers}"
       ${pkgs.coreutils}/bin/mkdir -p "$DIR"
-      if [ ! -f "$DEST" ]; then
-        ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
-      fi
+      for src in "$SRC_DIR"/*; do
+        [ -f "$src" ] || continue
+        dest="$DIR/$(${pkgs.coreutils}/bin/basename "$src")"
+        if [ ! -e "$dest" ]; then
+          ${pkgs.coreutils}/bin/install -m 0644 "$src" "$dest"
+        fi
+      done
     '';
   };
 
@@ -1430,174 +1385,25 @@ in
     hr { border-color: #3c3c3c; }
   '';
 
-  # Neovim / LazyVim — Noctalia-mono colorscheme. Two files:
-  #   colors/noctalia-mono.lua      — highlight definitions; nvim picks it up
-  #                                   automatically via the runtime path so
-  #                                   `:colorscheme noctalia-mono` works.
-  #   lua/plugins/colorscheme.lua   — LazyVim spec that sets it as the default.
-  # The LazyVim starter clone (home.activation.lazyvimStarter) creates the
-  # parent dirs but never these specific files, so the home-manager symlinks
-  # land without conflict. Palette mirrors ~/.config/noctalia/colors.json
-  # (mSurface / mPrimary / mTertiary / mOutline); statically pinned in the
-  # same way as the zellij and Typora themes.
-  xdg.configFile."nvim/colors/noctalia-mono.lua".text = ''
-    -- Noctalia-mono. Mirrors ~/.config/noctalia/colors.json.
-    vim.cmd("highlight clear")
-    if vim.fn.exists("syntax_on") == 1 then
-      vim.cmd("syntax reset")
-    end
-    vim.g.colors_name = "noctalia-mono"
-    vim.o.background = "dark"
-    vim.o.termguicolors = true
-
-    local p = {
-      bg       = "#111111", -- mSurface
-      bg_alt   = "#191919", -- mSurfaceVariant
-      bg_float = "#1a1a1a",
-      fg       = "#aaaaaa", -- mPrimary
-      fg_dim   = "#828282", -- mOnSurface
-      fg_faint = "#5d5d5d", -- mOnSurfaceVariant
-      border   = "#3c3c3c", -- mOutline
-      accent   = "#cccccc", -- mTertiary / mHover
-      bright   = "#dddddd", -- mError (brightest)
-    }
-
-    local function hi(g, o) vim.api.nvim_set_hl(0, g, o) end
-
-    -- Editor core
-    hi("Normal",         { fg = p.fg, bg = p.bg })
-    hi("NormalFloat",    { fg = p.fg, bg = p.bg_float })
-    hi("FloatBorder",    { fg = p.border, bg = p.bg_float })
-    hi("FloatTitle",     { fg = p.accent, bg = p.bg_float, bold = true })
-    hi("ColorColumn",    { bg = p.bg_alt })
-    hi("Cursor",         { fg = p.bg, bg = p.fg })
-    hi("CursorLine",     { bg = p.bg_alt })
-    hi("CursorLineNr",   { fg = p.accent, bold = true })
-    hi("LineNr",         { fg = p.fg_faint })
-    hi("SignColumn",     { fg = p.fg_faint, bg = p.bg })
-    hi("FoldColumn",     { fg = p.fg_faint, bg = p.bg })
-    hi("Folded",         { fg = p.fg_dim, bg = p.bg_alt })
-    hi("EndOfBuffer",    { fg = p.bg })
-    hi("NonText",        { fg = p.fg_faint })
-    hi("Whitespace",     { fg = p.border })
-    hi("MatchParen",     { fg = p.bright, bold = true, underline = true })
-    hi("Search",         { fg = p.bg, bg = p.accent })
-    hi("IncSearch",      { fg = p.bg, bg = p.bright, bold = true })
-    hi("CurSearch",      { fg = p.bg, bg = p.bright, bold = true })
-    hi("Visual",         { bg = p.border })
-    hi("StatusLine",     { fg = p.fg, bg = p.bg_alt })
-    hi("StatusLineNC",   { fg = p.fg_dim, bg = p.bg_alt })
-    hi("WinSeparator",   { fg = p.border })
-    hi("TabLine",        { fg = p.fg_dim, bg = p.bg_alt })
-    hi("TabLineFill",    { bg = p.bg })
-    hi("TabLineSel",     { fg = p.bg, bg = p.accent, bold = true })
-    hi("Title",          { fg = p.accent, bold = true })
-    hi("Directory",      { fg = p.accent })
-    hi("ModeMsg",        { fg = p.fg, bold = true })
-    hi("MoreMsg",        { fg = p.accent })
-    hi("Question",       { fg = p.accent })
-    hi("WarningMsg",     { fg = p.bright })
-    hi("ErrorMsg",       { fg = p.bright, bold = true })
-    hi("Pmenu",          { fg = p.fg, bg = p.bg_alt })
-    hi("PmenuSel",       { fg = p.bg, bg = p.accent, bold = true })
-    hi("PmenuSbar",      { bg = p.bg_alt })
-    hi("PmenuThumb",     { bg = p.border })
-
-    -- Syntax
-    hi("Comment",        { fg = p.fg_faint, italic = true })
-    hi("Constant",       { fg = p.fg, bold = true })
-    hi("String",         { fg = p.fg_dim })
-    hi("Character",      { fg = p.fg_dim })
-    hi("Number",         { fg = p.accent })
-    hi("Boolean",        { fg = p.accent, bold = true })
-    hi("Float",          { fg = p.accent })
-    hi("Identifier",     { fg = p.fg })
-    hi("Function",       { fg = p.bright, bold = true })
-    hi("Statement",      { fg = p.fg, bold = true })
-    hi("Keyword",        { fg = p.fg, bold = true })
-    hi("Operator",       { fg = p.accent })
-    hi("PreProc",        { fg = p.fg_dim })
-    hi("Type",           { fg = p.accent })
-    hi("Special",        { fg = p.accent })
-    hi("Underlined",     { fg = p.accent, underline = true })
-    hi("Todo",           { fg = p.bg, bg = p.bright, bold = true })
-
-    -- Treesitter
-    hi("@variable",                { fg = p.fg })
-    hi("@property",                { fg = p.fg })
-    hi("@field",                   { fg = p.fg })
-    hi("@punctuation.delimiter",   { fg = p.fg_dim })
-    hi("@punctuation.bracket",     { fg = p.fg_dim })
-
-    -- Diagnostics
-    hi("DiagnosticError",          { fg = p.bright, bold = true })
-    hi("DiagnosticWarn",           { fg = p.accent })
-    hi("DiagnosticInfo",           { fg = p.fg_dim })
-    hi("DiagnosticHint",           { fg = p.fg_faint })
-    hi("DiagnosticUnderlineError", { sp = p.bright, undercurl = true })
-    hi("DiagnosticUnderlineWarn",  { sp = p.accent, undercurl = true })
-    hi("DiagnosticUnderlineInfo",  { sp = p.fg_dim, undercurl = true })
-    hi("DiagnosticUnderlineHint",  { sp = p.fg_faint, undercurl = true })
-
-    -- Diff
-    hi("DiffAdd",    { bg = p.bg_alt })
-    hi("DiffChange", { bg = p.bg_alt })
-    hi("DiffDelete", { fg = p.fg_faint, bg = p.bg_alt })
-    hi("DiffText",   { fg = p.bright, bg = p.bg_alt, bold = true })
-
-    -- Telescope
-    hi("TelescopeNormal",        { fg = p.fg, bg = p.bg_float })
-    hi("TelescopeBorder",        { fg = p.border, bg = p.bg_float })
-    hi("TelescopePromptNormal",  { fg = p.fg, bg = p.bg_alt })
-    hi("TelescopePromptBorder",  { fg = p.border, bg = p.bg_alt })
-    hi("TelescopePromptTitle",   { fg = p.bg, bg = p.accent, bold = true })
-    hi("TelescopePreviewTitle",  { fg = p.bg, bg = p.accent, bold = true })
-    hi("TelescopeResultsTitle",  { fg = p.fg_dim, bg = p.bg_float })
-    hi("TelescopeSelection",     { fg = p.accent, bg = p.bg_alt, bold = true })
-    hi("TelescopeMatching",      { fg = p.bright, bold = true })
-
-    -- Neo-tree
-    hi("NeoTreeNormal",         { fg = p.fg, bg = p.bg })
-    hi("NeoTreeNormalNC",       { fg = p.fg, bg = p.bg })
-    hi("NeoTreeRootName",       { fg = p.accent, bold = true })
-    hi("NeoTreeFileName",       { fg = p.fg })
-    hi("NeoTreeDirectoryIcon",  { fg = p.fg_dim })
-    hi("NeoTreeDirectoryName",  { fg = p.fg })
-    hi("NeoTreeFloatBorder",    { fg = p.border, bg = p.bg_float })
-    hi("NeoTreeTitleBar",       { fg = p.bg, bg = p.accent, bold = true })
-
-    -- Which-key
-    hi("WhichKey",          { fg = p.accent, bold = true })
-    hi("WhichKeyGroup",     { fg = p.fg })
-    hi("WhichKeyDesc",      { fg = p.fg_dim })
-    hi("WhichKeySeparator", { fg = p.border })
-    hi("WhichKeyFloat",     { bg = p.bg_float })
-    hi("WhichKeyBorder",    { fg = p.border, bg = p.bg_float })
-
-    -- Noice
-    hi("NoiceCmdline",       { fg = p.fg, bg = p.bg_alt })
-    hi("NoiceCmdlineIcon",   { fg = p.accent })
-    hi("NoicePopup",         { fg = p.fg, bg = p.bg_float })
-    hi("NoicePopupBorder",   { fg = p.border, bg = p.bg_float })
-
-    -- Gitsigns
-    hi("GitSignsAdd",    { fg = p.fg })
-    hi("GitSignsChange", { fg = p.accent })
-    hi("GitSignsDelete", { fg = p.fg_faint })
-  '';
-
-  xdg.configFile."nvim/lua/plugins/colorscheme.lua".text = ''
-    -- Hooks LazyVim into the noctalia-mono colorscheme defined in
-    -- ~/.config/nvim/colors/noctalia-mono.lua.
-    return {
-      {
-        "LazyVim/LazyVim",
-        opts = {
-          colorscheme = "noctalia-mono",
-        },
-      },
-    }
-  '';
+  # Neovim / LazyVim — theming owned by Noctalia's community `neovim`
+  # template (enabled in community_ids above). Its apply.sh writes:
+  #   ~/.config/nvim/lua/matugen.lua           — matugen-templated palette
+  #                                              (base16 slots derived from
+  #                                              Noctalia's Material scheme).
+  #   ~/.config/nvim/lua/plugins/base16.lua    — LazyVim spec that installs
+  #                                              RRethy/base16-nvim and calls
+  #                                              `require('matugen').setup()`.
+  # Wallpaper changes send SIGUSR1 to running nvim so the palette live-reloads
+  # without restarting. Both files land inside the LazyVim starter clone
+  # (home.activation.lazyvimStarter), which is user-writable — home-manager
+  # can't (and shouldn't) manage them. If they're missing after a fresh
+  # install, ensure Noctalia has reached api.noctalia.dev at least once and
+  # nudge the wallpaper to trigger a template re-apply.
+  #
+  # We used to ship a hardcoded `noctalia-mono` colorscheme + LazyVim
+  # colorscheme spec here. That fought the community template (both installed
+  # colorschemes; base16 won at runtime, producing a salmon look while our
+  # hardcoded file was invisible), so both blocks were removed.
 
   # Post-install TODO checklist
   home.activation.todoMd = {
