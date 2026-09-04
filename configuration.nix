@@ -120,8 +120,9 @@ in
   # own module: hosts/<hostname>/default.nix. See hosts/README.md for how a
   # new machine sets them up.
 
-  # Idle escalation timing (Noctalia in home.nix triggers the actions):
-  # lock @ 5 min, then `systemctl suspend-then-hibernate` @ 15 min. That
+  # Idle escalation timing (Noctalia in home.nix triggers the actions, via
+  # programs.noctalia.settings.idle.behavior): lock @ 10 min, then
+  # `systemctl suspend-then-hibernate` @ 15 min. That
   # suspends to RAM and, HibernateDelaySec later, wakes and hibernates to
   # disk — so hibernate lands at 3h 15m total idle. The long delay favors
   # quick lid-open resume for the common short-break case; hibernate still

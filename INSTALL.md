@@ -57,8 +57,8 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Hardware module | `nixos-hardware.nixosModules.framework-13-7040-amd` | Maintained quirks (lid wake, sensors, GPU) |
 | Power | `power-profiles-daemon` | Framework's official recommendation for Ryzen 7040; do NOT use TLP |
 | Compositor | niri via `niri-flake` (sodiboo), pinned to `niri-unstable` | Quickshell-based shells (Noctalia, etc.) track niri's latest |
-| Shell/UI | Noctalia (Quickshell) via the `noctalia-shell` flake + home-manager module | Faster updates than nixpkgs; spawned by niri via `spawn-at-startup` |
-| Greeter | `tuigreet` on tty1, launching `niri-session` | Minimal, works without a GUI display manager |
+| Shell/UI | Noctalia v5 (Quickshell) via the `noctalia` flake + home-manager module | Faster updates than nixpkgs; run as a systemd user unit so `nixos-rebuild switch` restarts it cleanly instead of leaving a stale bar |
+| Greeter | `noctalia-greeter` on tty1 (its module sets up greetd) | Quickshell greeter that mirrors the shell's palette/wallpaper |
 | Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
 | Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Same encryption + hibernation, with LVM for multi-volume management |
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
@@ -218,7 +218,7 @@ home-manager are all in the closure. The download buffer is bumped to
 256 MiB in `configuration.nix`, so you won't see the "download buffer is
 full" warnings you'd otherwise hit.
 
-Reboot when it finishes. At the tuigreet prompt on tty1, sign in as
+Reboot when it finishes. At the noctalia-greeter prompt on tty1, sign in as
 `sroberts` and you'll land in niri + Noctalia.
 
 **If the rebuild fails or the new session won't start**, this is where the
@@ -261,8 +261,9 @@ uname -r
 fwupdmgr get-devices
 sudo fwupdmgr update
 
-# Noctalia is running (spawned by niri's spawn-at-startup)
-pgrep -af noctalia-shell
+# Noctalia is running (systemd user unit, not a niri spawn-at-startup)
+systemctl --user status noctalia
+noctalia msg --help                # v5 IPC surface; `ipc call` is v4 and gone
 
 # Docker available without sudo
 docker run --rm hello-world
@@ -293,8 +294,11 @@ One thing carries over cleanly from the previous install, if relevant:
 What doesn't carry:
 
 - **DMS / DankMaterialShell config** (`~/.config/DankMaterialShell/`).
-  Noctalia replaces DMS in this flake — its config lives at
-  `~/.config/noctalia/` and is seeded by `home.activation.noctaliaConfigSeed`.
+  Noctalia replaces DMS in this flake. Its base config is declarative —
+  `programs.noctalia.settings` in `home.nix` renders
+  `~/.config/noctalia/config.toml` (validated at build time). Runtime tweaks
+  from the settings UI go to a separate `~/.config/noctalia/settings.toml`
+  that home-manager never touches.
 - **`dankinstall`-managed system packages.** On NixOS those live in the
   flake (`environment.systemPackages`, `home.packages`), not on disk.
 
@@ -351,23 +355,29 @@ it with `git revert` so the repo and running generation stay in sync.
    into `nix.settings.access-tokens` (a committed credential leak), and the
    `github:` fetch wouldn't include your local `hardware-configuration.nix`.
    Always build from the local clone.
-9. **Noctalia first-run SetupWizard.** Stock Noctalia opens a modal setup
-   wizard when `~/.config/noctalia/settings.json` doesn't exist. The wizard
-   hides the bar until dismissed — on an unattended fresh boot you see a
-   bare wallpaper. `home.nix` seeds a stub `settings.json` (and a CachyOS-
-   matching `plugins.json`) via `home.activation.noctaliaConfigSeed` so the
-   wizard is skipped and the bar renders immediately. If you ever want the
-   wizard back, `rm ~/.config/noctalia/settings.json` and re-launch the
-   shell. The seed runs once per fresh `$HOME` — after first boot Noctalia
-   owns those files and the settings UI writes back to them normally.
+9. **Noctalia config is declarative (v5).** `programs.noctalia.settings` in
+   `home.nix` renders `~/.config/noctalia/config.toml`, which the module
+   validates at build time and the shell treats as a read-only base — so no
+   first-run SetupWizard and no `home.activation` seed. Every runtime change
+   from the settings UI (including the wallpaper, which drives the Material
+   You palette) is written to a *separate*
+   `~/.config/noctalia/settings.toml` overrides file that Noctalia merges on
+   top, so the store-path base can never clobber your live tweaks. Note the
+   v5 renames: the module is `programs.noctalia` (was
+   `programs.noctalia-shell`) and the IPC surface is `noctalia msg <command…>`
+   (was `noctalia ipc call <target> <fn>`).
 10. **Polkit auth agent swap.** This flake disables niri-flake's bundled
     `polkit-kde-agent` (`systemd.user.services.niri-flake-polkit.enable =
-    lib.mkForce false`) in favour of Noctalia's `polkit-agent` plugin, which
-    is enabled in the seeded `plugins.json`. Two agents on the PolicyKit1
-    bus would race; the Noctalia plugin docs explicitly require the other to
-    be disabled. The plugin is fetched at runtime from
-    [github.com/noctalia-dev/noctalia-plugins](https://github.com/noctalia-dev/noctalia-plugins)
-    on Noctalia's first launch — needs network.
+    lib.mkForce false`) in favour of Noctalia's own polkit agent, enabled
+    declaratively via `programs.noctalia.settings.shell.polkit_agent = true`.
+    Two agents on the PolicyKit1 bus would race; the Noctalia docs explicitly
+    require the other to be disabled. In v5 this is native config — there is
+    no runtime plugin fetch and no network dependency.
+11. **Noctalia runs as a systemd user unit**, not a niri `spawn-at-startup`
+    (`programs.noctalia.systemd.enable = true`). `nixos-rebuild switch`
+    doesn't kill a compositor-spawned shell, so the old spawn approach left
+    the previous store-path bar alive and added a second one on next start.
+    Check it with `systemctl --user status noctalia`.
 
 ---
 
@@ -384,7 +394,9 @@ it with `git revert` so the repo and running generation stay in sync.
 | `flake.lock` | Yes (after first install) | Pins inputs for reproducibility |
 | `secure-boot.md` | Yes | Post-install lanzaboote runbook |
 | `INSTALL.md` | Yes | This file |
+| `hosts/README.md` | Yes | Per-host layout + runbook for standing up a new machine |
 | `README.md` | Yes | Orientation and day-to-day commands |
+| `CONTRIBUTING.md` | Yes | Branch/PR workflow and the per-merge checks |
 | `CLAUDE.md` | Yes | Context for AI coding agents working in this repo |
 
 ---
@@ -506,7 +518,7 @@ Known additional gotchas for this path:
 - [NixOS Wiki — Hardware/Framework/Laptop 13](https://wiki.nixos.org/wiki/Hardware/Framework/Laptop_13)
 - [nixos-hardware framework-13-7040-amd module](https://github.com/NixOS/nixos-hardware/tree/master/framework/13-inch/7040-amd)
 - [Noctalia shell (Quickshell-based)](https://github.com/noctalia-dev/noctalia-shell)
-- [tuigreet (greetd greeter)](https://github.com/apognu/tuigreet)
+- [noctalia-greeter (greetd greeter)](https://github.com/noctalia-dev/noctalia-greeter)
 - [niri-flake (sodiboo)](https://github.com/sodiboo/niri-flake)
 - [niri Getting Started](https://niri-wm.github.io/niri/Getting-Started.html)
 - [lanzaboote (Secure Boot)](https://github.com/nix-community/lanzaboote)
