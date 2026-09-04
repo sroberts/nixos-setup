@@ -8,7 +8,7 @@ The first machine (and currently the only one) is `sjr-fw13`, a Framework 13 AMD
 
 | File | What it is |
 |---|---|
-| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, nixos-hardware, niri, noctalia, claude-code-nix; lanzaboote is commented out — opt in via `secure-boot.md`) and auto-discovers every host under `hosts/` (no host hardcoded). |
+| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, nixos-hardware, niri, noctalia, noctalia-greeter, claude-code-nix, herdr; lanzaboote is commented out — opt in via `secure-boot.md`) and auto-discovers every host under `hosts/` (no host hardcoded). |
 | `configuration.nix` | Shared system-level config: bootloader, services, system packages, the `sroberts` user. Host-agnostic. |
 | `home.nix` | User-level (home-manager): CLI tools, shell, Noctalia config, niri input + binds, activation hooks. Shared across hosts. |
 | `hosts/<name>/` | Per-machine: `default.nix` (hostname, `nixos-hardware` model module, swap/resume) + the committed `hardware-configuration.nix` (LUKS UUID, filesystems). See `hosts/README.md`. |
@@ -16,6 +16,8 @@ The first machine (and currently the only one) is `sjr-fw13`, a Framework 13 AMD
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |
 | `INSTALL.md` | Single canonical install runbook (partition → encrypt → install → verify) plus rationale, gotchas, and migration notes. |
 | `secure-boot.md` | lanzaboote post-install runbook (Framework-specific BIOS bits flagged inline; the `sbctl` flow itself is hardware-agnostic). |
+| `hosts/README.md` | Per-host layout and the runbook for standing up a new machine. |
+| `CONTRIBUTING.md` | Branch/PR workflow, the per-merge checks, and what gets a PR rejected. |
 | `CLAUDE.md` | Context for Claude Code; useful for humans too. |
 
 ## Where to start

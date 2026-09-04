@@ -1011,9 +1011,10 @@ in
   # up one from a previous rebuild), we leave it alone. The user is free to
   # delete a shipped wallpaper — it'll reappear on the next rebuild UNLESS
   # they also remove it from ./assets/wallpapers/. Noctalia scans this
-  # directory at runtime; the file named in `programs.noctalia-shell.settings
-  # .wallpaper.default.path` above becomes the seed selection on a fresh
-  # settings.json.
+  # directory at runtime; the file named in
+  # `programs.noctalia.settings.wallpaper.default.path` above becomes the seed
+  # selection until the user picks another in the UI (which lands in
+  # ~/.config/noctalia/settings.toml and wins).
   home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];

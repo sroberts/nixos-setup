@@ -57,16 +57,15 @@
     # };
   };
 
+  # Only the inputs referenced directly in this file are destructured; the rest
+  # (noctalia, claude-code-nix, herdr, …) are reached as `inputs.<name>` from
+  # configuration.nix / home.nix via specialArgs + extraSpecialArgs below.
   outputs =
     {
-      self,
       nixpkgs,
       home-manager,
       niri,
-      noctalia,
       noctalia-greeter,
-      claude-code-nix,
-      herdr,
       ...
     }@inputs:
     let
@@ -115,8 +114,9 @@
       nixosConfigurations = lib.genAttrs hostNames mkHost;
 
       # `nix fmt` formats all .nix files in the tree. pkgs.nixfmt is the RFC 166
-      # implementation that ships in nixpkgs; running it has not yet been
-      # applied to existing files, so expect a churn diff on first run.
+      # implementation that ships in nixpkgs. The tree is already nixfmt-clean
+      # and CI enforces it (`nix fmt --check` in .github/workflows/check.yml),
+      # so running this is a no-op unless you introduced drift.
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
     };
 }
