@@ -85,7 +85,7 @@ in
     # declaratively where v4 forced a home.activation seed: config.toml is the
     # read-only BASE the shell never writes, and every runtime change from the
     # settings UI (including the chosen wallpaper, which drives the Material You
-    # palette) is written to a SEPARATE ~/.config/noctalia/settings.toml
+    # palette) is written to a SEPARATE ~/.local/state/noctalia/settings.toml
     # overrides file that Noctalia merges on top. So a store-path symlink here
     # can't clobber the user's live tweaks — they live in settings.toml, which
     # home-manager doesn't touch.
@@ -141,16 +141,29 @@ in
             "niri"
           ];
           # Community templates are fetched from api.noctalia.dev/templates at
-          # runtime and cached under ~/.cache/noctalia (a network fetch, not a
+          # runtime and cached under
+          # ~/.local/state/noctalia/community-templates (a network fetch, not a
           # Nix-pinned input — offline first-boot won't have them until the
           # shell can reach the API).
+          #
+          # IMPORTANT: these two id lists are only the BASE. The moment you
+          # touch the template checkboxes in Noctalia's settings UI, it writes
+          # its own `[theme.templates]` block into
+          # ~/.local/state/noctalia/settings.toml, and that block wins over
+          # everything here — permanently, for both builtin_ids and
+          # community_ids. Adding an id below then does nothing at runtime: the
+          # template is never fetched and never applied, with no error anywhere.
+          # (That is exactly how `bat` sat unthemed while being listed here.)
+          # To actually enable one, tick it in the UI, or stop the shell and
+          # remove the stale block from settings.toml. Check what is really in
+          # effect with:
+          #   grep -A3 'theme.templates' ~/.local/state/noctalia/settings.toml
           enable_community_templates = true;
           community_ids = [
             "bat"
             "neovim"
             "obsidian"
             "zed"
-            "fuzzel"
             "discord"
             "steam"
           ];
@@ -241,7 +254,14 @@ in
         "panel-toggle"
         "launcher"
       ];
-      "Mod+D".action.spawn = "fuzzel";
+      # Mod+D is an alias for the same launcher — fuzzel used to live here as
+      # a second, separately-themed launcher; it was dropped as redundant.
+      "Mod+D".action.spawn = [
+        "noctalia"
+        "msg"
+        "panel-toggle"
+        "launcher"
+      ];
 
       # Window
       "Mod+Q".action.close-window = [ ];
@@ -589,7 +609,7 @@ in
     #
     # Wrapped so a bare `claude` (no args) starts with Remote Control enabled —
     # this is a PATH-level wrapper, not a shell alias, so it also covers
-    # non-interactive starts (niri/fuzzel spawns, scripts), which an alias
+    # non-interactive starts (niri/launcher spawns, scripts), which an alias
     # misses. The flag is added ONLY when there are no args: `--remote-control`
     # takes an optional [name], so prepending it unconditionally would make
     # `claude update` / `claude -p …` / `claude --resume` misparse their first
@@ -672,14 +692,28 @@ in
   # bat — syntax-highlighted `cat` (see shellAliases above).
   #
   # Noctalia owns the palette via its community `bat` template (enabled in
-  # community_ids above): apply.sh writes ~/.config/bat/themes/noctalia.tmTheme
-  # from the current Material palette and appends `--theme=noctalia` to
-  # ~/.config/bat/config. That in-place edit requires a writable config, so we
-  # deliberately DON'T set `programs.bat.config` here — home-manager would then
-  # own the file as a read-only /nix/store symlink and Noctalia's apply.sh would
-  # fail to append. `programs.bat.enable = true` alone gives us the package
-  # without materializing the config file.
+  # community_ids above): the template writes
+  # ~/.config/bat/themes/noctalia.tmTheme from the current Material palette,
+  # then apply.sh appends `--theme=noctalia` to ~/.config/bat/config and runs
+  # `bat cache --build` so the theme registers.
+  #
+  # That in-place edit requires a writable config. Not setting
+  # `programs.bat.config` here is NOT sufficient to get one: enabling
+  # programs.ghostty flips its `installBatSyntax` (which defaults to
+  # `package != null`), and that sets `programs.bat.config.map-syntax`
+  # behind our back — home-manager's bat module materializes bat/config
+  # whenever `config != {}`, so the file became a read-only store symlink
+  # anyway. apply.sh opens with `touch "$config_file"` under
+  # `set -euo pipefail`, which fails on it and aborts the whole script.
+  #
+  # So force the option set empty to free the path, and re-add ghostty's
+  # map-syntax line in the writable seed below. mkForce only clears
+  # `config`; `programs.bat.syntaxes.ghostty` still installs
+  # bat/syntaxes/ghostty.sublime-syntax (a separate file, no collision) and
+  # the module's batCache hook still runs, so ghostty-config highlighting is
+  # preserved.
   programs.bat.enable = true;
+  programs.bat.config = lib.mkForce { };
 
   # starship — prompt. Noctalia owns the palette now (issue #62). The
   # `starship` builtin template writes ~/.cache/noctalia/starship-palette.toml
@@ -744,34 +778,6 @@ in
           unstagedChangesColor = [ "#dddddd" ];
           defaultFgColor = [ "#aaaaaa" ];
         };
-      };
-    };
-  };
-
-  # fuzzel — Mod+D launcher. Colors take aRRGGBB hex (alpha-first). Border
-  # gets a thin Noctalia outline; main.terminal points at ghostty so any
-  # exec entries respect the system terminal.
-  programs.fuzzel = {
-    enable = true;
-    settings = {
-      main = {
-        font = "JetBrainsMono Nerd Font:size=12";
-        terminal = "ghostty";
-        icon-theme = "Papirus-Dark";
-        width = 50;
-      };
-      border = {
-        width = 1;
-        radius = 4;
-      };
-      colors = {
-        background = "111111ff";
-        text = "aaaaaaff";
-        match = "ddddddff";
-        selection = "3c3c3cff";
-        selection-text = "ccccccff";
-        selection-match = "ddddddff";
-        border = "3c3c3cff";
       };
     };
   };
@@ -1014,7 +1020,7 @@ in
   # directory at runtime; the file named in
   # `programs.noctalia.settings.wallpaper.default.path` above becomes the seed
   # selection until the user picks another in the UI (which lands in
-  # ~/.config/noctalia/settings.toml and wins).
+  # ~/.local/state/noctalia/settings.toml and wins).
   home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -1087,6 +1093,35 @@ in
     '';
   };
 
+  # bat base config — writable, for the same reason as starship above (see the
+  # long note at programs.bat). Carries the `--map-syntax` line that
+  # home-manager's ghostty module would otherwise inject via
+  # programs.bat.config, which is exactly what used to materialize this path
+  # as a read-only symlink. `--theme=noctalia` is deliberately NOT set here:
+  # Noctalia's apply.sh appends it and strips any pre-existing `--theme=` line,
+  # so declaring it would just be overwritten. Re-seeding on a content change
+  # drops that appended line, but the template re-appends on the next palette
+  # apply (or a `noctalia msg session ...`-triggered re-theme).
+  home.activation.batConfigSeed = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="${config.xdg.configHome}/bat/config"
+      STAMP="$HOME/.cache/noctalia/.bat-base-src"
+      SRC="${pkgs.writeText "bat-base-config" ''
+        --map-syntax='${config.xdg.configHome}/ghostty/config:Ghostty Config'
+      ''}"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
+                                     "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      if [ ! -f "$DEST" ] || \
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+        ${pkgs.coreutils}/bin/rm -f "$DEST"
+        ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
+        printf '%s' "$SRC" > "$STAMP"
+      fi
+    '';
+  };
+
   # User avatar at ~/.face (the conventional path login managers, greeters,
   # and AccountsService read). Pulled from GitHub; download to a temp file
   # and move into place so a failed fetch never leaves a truncated ~/.face.
@@ -1112,7 +1147,7 @@ in
   # restructured every one of those keys, moved the polkit agent into
   # [shell].polkit_agent, and dropped the QML LockContext fingerprint flags
   # entirely (auth is now native C++). Runtime settings-UI changes are written
-  # to a separate ~/.config/noctalia/settings.toml overrides file, so nothing
+  # to a separate ~/.local/state/noctalia/settings.toml overrides file, so nothing
   # here needs to hand a mutable file to Noctalia the way v4 did.
 
   # Default browser. Signal's Electron shell rewrites ~/.config/mimeapps.list
