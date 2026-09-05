@@ -1492,7 +1492,9 @@ in
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] Sync noctalia-greeter to the shell's palette + wallpaper: Noctalia → Settings → Shell → Security → Noctalia Greeter → Sync Now (writes /var/lib/noctalia-greeter — needs admin creds, not something Nix owns)
-      - [ ] Noctalia app themes (discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
+      - [ ] Noctalia app themes (bat/zellij/discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
+      - [ ] Verify the template list actually took effect: `grep -A20 community_ids ~/.local/state/noctalia/settings.toml`. Once the settings UI has written a `[theme.templates]` block there, that list WINS over `community_ids` in home.nix — permanently, and silently. An app listed in the flake but missing from settings.toml is simply never themed, with no error. Fix by ticking it in Noctalia → Settings → Theme → Templates, or by stopping the shell (`systemctl --user stop noctalia`), editing that list, and starting it again.
+      - [ ] Pick a wallpaper if you don't want the shipped default — the Material You palette is derived from it, so this re-colours everything. `noctalia msg wallpaper-set <path>` (the flake's `wallpaper.default.path` only seeds a fresh $HOME; settings.toml wins after that).
       - [ ] Crush browser MCPs need Chromium downloaded once:
             `npx -y agent-browser install` and `npx -y @playwright/mcp install chromium`
             (both write to their own ~/.cache dirs — no root; skip if you don't use those MCPs).
