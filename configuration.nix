@@ -403,6 +403,11 @@ in
     wget
     unzip
     cryptsetup # handy for inspecting/managing the LUKS volume post-install
+    # Framework EC monitor/control TUI: fan curves, battery charge limit,
+    # thermals, keyboard backlight. Talks to the embedded controller directly,
+    # so it needs root — run `sudo framework-tool-tui`. System-wide rather than
+    # in home.packages for that reason.
+    framework-tool-tui
   ];
 
   ############################################################
