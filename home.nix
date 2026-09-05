@@ -1173,12 +1173,12 @@ in
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
   # Providers: local Ollama daemon; auto-discovery on empty models list picks
-  # up everything in `ollama list`, so gemma4:latest and gpt-oss:20b (both
-  # seeded via services.ollama.loadModels) become available immediately.
+  # up everything in `ollama list`, so gpt-oss:20b (seeded via
+  # services.ollama.loadModels) becomes available immediately.
   #
   # Top-level `models` binds crush's two agent roles:
   #   - large (coder agent): gpt-oss:20b — reasoning-first.
-  #   - small (task agent):  gemma4:latest — faster.
+  #   - small (task agent):  gpt-oss:20b — same model; no smaller gpt-oss exists.
   #
   # MCP servers — mirror what Claude Code would use where it's portable:
   #   - context7:      up-to-date library docs; remote HTTP (no auth for
@@ -1226,7 +1226,7 @@ in
       };
       small = {
         provider = "ollama";
-        model = "gemma4:latest";
+        model = "gpt-oss:20b";
       };
     };
     mcp = {
