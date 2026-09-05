@@ -164,6 +164,7 @@ in
             "neovim"
             "obsidian"
             "zed"
+            "zellij"
             "discord"
             "steam"
           ];
@@ -174,9 +175,15 @@ in
         enabled = true;
         directory = "~/Pictures/Wallpapers";
         # Initial wallpaper on a fresh $HOME (the asset seeded by
-        # home.activation.wallpapers). Once the user picks another in the
-        # UI, that choice lands in settings.toml and wins.
-        default.path = "~/Pictures/Wallpapers/noctalia.png";
+        # home.activation.wallpapers). The Material You palette is derived
+        # from this image (theme.source = "wallpaper" above), so changing it
+        # re-colours the whole desktop, not just the background.
+        #
+        # Once the user picks another in the UI, that choice lands in
+        # ~/.local/state/noctalia/settings.toml and wins over this — so
+        # editing this line does NOT change a machine that's already been
+        # set up. Use `noctalia msg wallpaper-set <path>` for that.
+        default.path = "~/Pictures/Wallpapers/wp12390197-dark-blue-aesthetic-laptop-wallpapers.jpg";
       };
 
       # v5 folds the polkit agent into native config; this replaces v4's
@@ -782,36 +789,30 @@ in
     };
   };
 
-  # zellij — terminal multiplexer. Shipped with a "noctalia-mono" theme
-  # that mirrors the stock Noctalia palette from ~/.config/noctalia/colors.json
-  # (mSurface / mPrimary / mTertiary). It's statically pinned: if the
-  # Noctalia wallpaper changes and the palette shifts off mono, zellij
-  # won't follow until you regenerate this block. enableZshIntegration is
-  # intentionally OFF — upstream's hook auto-attaches on every new shell,
-  # which is too invasive. Invoke `zellij` manually.
+  # zellij — terminal multiplexer. Noctalia owns the palette via its community
+  # `zellij` template (enabled in community_ids above), which renders
+  # ~/.config/zellij/themes/noctalia.kdl from the live palette. The theme it
+  # declares inside that file is named `noctalia`, which is what `theme` below
+  # selects.
+  #
+  # This template needs no writable-config workaround (unlike bat/starship):
+  # it only writes a NEW file under themes/, has no apply.sh, and its one
+  # post_hook — `touch config.kdl`, to nudge zellij's auto-reload — is
+  # commented out upstream. So home-manager can keep owning config.kdl as a
+  # read-only store symlink without colliding.
+  #
+  # This replaces a hardcoded `noctalia-mono` theme that was pinned to the
+  # m3-monochrome greys and no longer matched anything once the palette went
+  # back to wallpaper-derived.
+  #
+  # enableZshIntegration is intentionally OFF — upstream's hook auto-attaches
+  # on every new shell, which is too invasive. Invoke `zellij` manually.
   programs.zellij = {
     enable = true;
     settings = {
-      theme = "noctalia-mono";
+      theme = "noctalia";
       default_layout = "compact";
     };
-    themes.noctalia-mono = ''
-      themes {
-          noctalia-mono {
-              fg "#aaaaaa"
-              bg "#111111"
-              black "#111111"
-              red "#dddddd"
-              green "#aaaaaa"
-              yellow "#cccccc"
-              blue "#a7a7a7"
-              magenta "#828282"
-              cyan "#cccccc"
-              white "#cccccc"
-              orange "#cccccc"
-          }
-      }
-    '';
   };
 
   # mise for per-project runtime pins (python/node/go)
@@ -1284,141 +1285,160 @@ in
     };
   };
 
-  # Typora theme matching Noctalia's monochrome dark palette.
-  # Lives at ~/.config/Typora/themes/noctalia-mono.css; Typora reads themes
-  # but never writes them, so a store-path symlink is fine here (unlike the
-  # Noctalia configs above). Pick it via Themes → Noctalia Mono after first
+  # Typora theme. Lives at ~/.config/Typora/themes/noctalia.css; Typora reads
+  # themes but never writes them, so a store-path symlink is fine here (unlike
+  # the bat/starship configs above). Pick it via Themes → Noctalia after a
   # rebuild — Typora persists the selection in its profile.data.
-  xdg.configFile."Typora/themes/noctalia-mono.css".text = ''
+  #
+  # UNLIKE every other themed surface in this file, this one is a STATIC
+  # SNAPSHOT and will drift. Noctalia has no `typora` template (the catalog at
+  # api.noctalia.dev/templates has no entry for it), so nothing regenerates
+  # these values when the wallpaper — and therefore the Material palette —
+  # changes. The colours below were taken from the m3-tonal-spot palette
+  # derived from the dark-blue wallpaper set as the default above.
+  #
+  # To re-snapshot after a wallpaper change, read the live values and remap:
+  #   grep '^@define-color' ~/.config/gtk-3.0/noctalia.css
+  #   cat ~/.cache/noctalia/starship-palette.toml   # named/Catppuccin slots
+  # then substitute by ROLE, not by eye — the ladder below is what keeps the
+  # chrome readable:
+  #   base    #101418  page background        (starship `base`)
+  #   surface #1c2024  sidebar, header, footer, code inline
+  #   hover   #252a30  item hover
+  #   select  #323539  active file, text selection
+  #   outline #42474e  borders, rules         (starship `surface2`)
+  #   muted   #8c9198  meta text, md syntax chars (starship `subtext0`)
+  #   dim     #c2c7cf  heading chars
+  #   accent  #9acbfa  primary/links/active border
+  #   text    #e0e2e8  body copy              (starship `text`)
+  #   sunken  #0a0e12  code block background (one step under base)
+  xdg.configFile."Typora/themes/noctalia.css".text = ''
     @charset "UTF-8";
 
-    /* Noctalia-mono palette
-       mSurface         #111111   mSurfaceVariant  #191919
-       mOutline         #3c3c3c   mOnSurfaceVariant #5d5d5d
-       mOnSurface       #828282   mPrimary         #aaaaaa
-       mTertiary        #cccccc */
+    /* Static snapshot of the Noctalia m3-tonal-spot palette — see the Nix
+       comment above this block for the role ladder and how to refresh it. */
 
     :root {
-      --bg-color:                 #111111;
-      --side-bar-bg-color:        #191919;
-      --control-text-color:       #aaaaaa;
-      --text-color:               #cccccc;
-      --meta-content-color:       #5d5d5d;
-      --primary-color:            #aaaaaa;
-      --active-file-bg-color:     #2a2a2a;
-      --active-file-text-color:   #cccccc;
-      --active-file-border-color: #aaaaaa;
-      --item-hover-bg-color:      #1f1f1f;
-      --item-hover-text-color:    #cccccc;
-      --rawblock-edit-panel-bd:   #3c3c3c;
-      --window-border:            #3c3c3c;
-      --select-text-bg-color:     #3c3c3c;
+      --bg-color:                 #101418;
+      --side-bar-bg-color:        #1c2024;
+      --control-text-color:       #9acbfa;
+      --text-color:               #e0e2e8;
+      --meta-content-color:       #8c9198;
+      --primary-color:            #9acbfa;
+      --active-file-bg-color:     #323539;
+      --active-file-text-color:   #e0e2e8;
+      --active-file-border-color: #9acbfa;
+      --item-hover-bg-color:      #252a30;
+      --item-hover-text-color:    #e0e2e8;
+      --rawblock-edit-panel-bd:   #42474e;
+      --window-border:            #42474e;
+      --select-text-bg-color:     #42474e;
       --select-text-font-color:   #ffffff;
-      --md-char-color:            #5d5d5d;
-      --heading-char-color:       #828282;
-      --code-block-bg-color:      #0a0a0a;
+      --md-char-color:            #8c9198;
+      --heading-char-color:       #c2c7cf;
+      --code-block-bg-color:      #0a0e12;
     }
 
     html, body, content, #write {
-      background: #111111;
-      color:      #cccccc;
+      background: #101418;
+      color:      #e0e2e8;
     }
 
     /* Chrome: title bar, tabs, status bar, footer */
     header, footer, .typora-quick-open, .megamenu-menu, #top-titlebar,
     .ty-window-control, .typora-sourceview-buttons, #footer-word-count,
     #footer-word-count-info, .footer-item, .footer-item-right {
-      background: #191919;
-      color:      #aaaaaa;
-      border-color: #3c3c3c;
+      background: #1c2024;
+      color:      #9acbfa;
+      border-color: #42474e;
     }
 
     /* Tab bar */
     .tab-bar, #file-tabs, .file-tab, .file-tab-name {
-      background: #191919;
-      color:      #aaaaaa;
-      border-color: #3c3c3c;
+      background: #1c2024;
+      color:      #9acbfa;
+      border-color: #42474e;
     }
     .file-tab.active {
-      background: #111111;
-      color:      #cccccc;
+      background: #101418;
+      color:      #e0e2e8;
     }
 
     /* Sidebar */
     #typora-sidebar, .sidebar-content, .sidebar-tabs, .outline-content,
     .file-tree, .file-list-item, .file-node-content, .info-panel-tab,
     .sidebar-footer {
-      background: #191919;
-      color:      #aaaaaa;
-      border-color: #3c3c3c;
+      background: #1c2024;
+      color:      #9acbfa;
+      border-color: #42474e;
     }
     .file-node-content:hover, .file-list-item:hover, .outline-item:hover {
-      background: #1f1f1f;
-      color:      #cccccc;
+      background: #252a30;
+      color:      #e0e2e8;
     }
     .file-node-content.active, .file-list-item.active, .outline-active {
-      background: #2a2a2a;
-      color:      #cccccc;
+      background: #323539;
+      color:      #e0e2e8;
     }
 
     /* Menus (hamburger megamenu + right-click context) */
     .megamenu-content, .megamenu-menu-panel, .megamenu-menu-list,
     .megamenu-menu-header, #context-menu, .context-menu, .dropdown-menu,
     .modal-content {
-      background: #191919;
-      color:      #cccccc;
-      border-color: #3c3c3c;
+      background: #1c2024;
+      color:      #e0e2e8;
+      border-color: #42474e;
     }
     .megamenu-menu-list li:hover, .context-menu li:hover,
     .dropdown-menu li:hover, .dropdown-menu a:hover {
-      background: #2a2a2a;
+      background: #323539;
       color:      #ffffff;
     }
-    .megamenu-menu-header-title { color: #cccccc; }
+    .megamenu-menu-header-title { color: #e0e2e8; }
 
     /* Search / find-replace bar */
     .searchpanel, #typora-search-panel, .search-input, .ty-search-result,
     .ty-find-target, .typora-search-input {
-      background: #191919;
-      color:      #cccccc;
-      border-color: #3c3c3c;
+      background: #1c2024;
+      color:      #e0e2e8;
+      border-color: #42474e;
     }
 
     /* Source mode */
     #typora-source, .CodeMirror, .CodeMirror-gutters {
-      background: #0a0a0a;
-      color:      #cccccc;
-      border-color: #3c3c3c;
+      background: #0a0e12;
+      color:      #e0e2e8;
+      border-color: #42474e;
     }
-    .CodeMirror-cursor { border-left-color: #cccccc; }
+    .CodeMirror-cursor { border-left-color: #e0e2e8; }
 
     /* Headings + inline code */
     h1, h2, h3, h4, h5, h6 { color: #ffffff; }
     code, tt {
-      background: #0a0a0a;
-      color:      #cccccc;
+      background: #0a0e12;
+      color:      #e0e2e8;
     }
     pre.md-fences, .md-fences {
-      background:   #0a0a0a;
-      color:        #cccccc;
-      border-color: #3c3c3c;
+      background:   #0a0e12;
+      color:        #e0e2e8;
+      border-color: #42474e;
     }
 
     /* Links + blockquotes */
-    a { color: #cccccc; }
+    a { color: #e0e2e8; }
     a:hover { color: #ffffff; }
     blockquote {
-      border-left-color: #3c3c3c;
-      color: #aaaaaa;
+      border-left-color: #42474e;
+      color: #9acbfa;
     }
 
     /* Tables + hr */
     table, thead, tbody, tr, th, td {
-      background: #111111;
-      color:      #cccccc;
-      border-color: #3c3c3c;
+      background: #101418;
+      color:      #e0e2e8;
+      border-color: #42474e;
     }
-    hr { border-color: #3c3c3c; }
+    hr { border-color: #42474e; }
   '';
 
   # Neovim / LazyVim — theming owned by Noctalia's community `neovim`
@@ -1459,7 +1479,8 @@ in
       - [ ] Join Tailscale: `sudo tailscale up`
       - [ ] Set up Obsidian Sync + enable Iconize community plugin
       - [ ] Register Typora license
-      - [ ] Pick Typora theme: Themes → Noctalia Mono
+      - [ ] Pick Typora theme: Themes → Noctalia (renamed from "Noctalia Mono" —
+            re-pick it if Typora still has the old name selected)
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
@@ -1471,7 +1492,9 @@ in
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] Sync noctalia-greeter to the shell's palette + wallpaper: Noctalia → Settings → Shell → Security → Noctalia Greeter → Sync Now (writes /var/lib/noctalia-greeter — needs admin creds, not something Nix owns)
-      - [ ] Noctalia app themes (discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
+      - [ ] Noctalia app themes (bat/zellij/discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.
+      - [ ] Verify the template list actually took effect: `grep -A20 community_ids ~/.local/state/noctalia/settings.toml`. Once the settings UI has written a `[theme.templates]` block there, that list WINS over `community_ids` in home.nix — permanently, and silently. An app listed in the flake but missing from settings.toml is simply never themed, with no error. Fix by ticking it in Noctalia → Settings → Theme → Templates, or by stopping the shell (`systemctl --user stop noctalia`), editing that list, and starting it again.
+      - [ ] Pick a wallpaper if you don't want the shipped default — the Material You palette is derived from it, so this re-colours everything. `noctalia msg wallpaper-set <path>` (the flake's `wallpaper.default.path` only seeds a fresh $HOME; settings.toml wins after that).
       - [ ] Crush browser MCPs need Chromium downloaded once:
             `npx -y agent-browser install` and `npx -y @playwright/mcp install chromium`
             (both write to their own ~/.cache dirs — no root; skip if you don't use those MCPs).
