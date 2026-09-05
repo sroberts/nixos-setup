@@ -297,7 +297,7 @@ What doesn't carry:
   Noctalia replaces DMS in this flake. Its base config is declarative —
   `programs.noctalia.settings` in `home.nix` renders
   `~/.config/noctalia/config.toml` (validated at build time). Runtime tweaks
-  from the settings UI go to a separate `~/.config/noctalia/settings.toml`
+  from the settings UI go to a separate `~/.local/state/noctalia/settings.toml`
   that home-manager never touches.
 - **`dankinstall`-managed system packages.** On NixOS those live in the
   flake (`environment.systemPackages`, `home.packages`), not on disk.
@@ -361,7 +361,7 @@ it with `git revert` so the repo and running generation stay in sync.
    first-run SetupWizard and no `home.activation` seed. Every runtime change
    from the settings UI (including the wallpaper, which drives the Material
    You palette) is written to a *separate*
-   `~/.config/noctalia/settings.toml` overrides file that Noctalia merges on
+   `~/.local/state/noctalia/settings.toml` overrides file that Noctalia merges on
    top, so the store-path base can never clobber your live tweaks. Note the
    v5 renames: the module is `programs.noctalia` (was
    `programs.noctalia-shell`) and the IPC surface is `noctalia msg <command…>`
