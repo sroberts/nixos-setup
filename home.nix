@@ -1512,6 +1512,20 @@ in
             (both write to their own ~/.cache dirs — no root; skip if you don't use those MCPs).
       - [ ] Crush's GitHub MCP authenticates via `gh auth token`, so run `gh auth login` (see the GitHub sign-in TODO above) before first launch — otherwise the MCP will 401.
       - [ ] `sudo fwupdmgr update` for BIOS/EC firmware
+      - [ ] Set up the backup drive (see the Backups section in configuration.nix).
+            Two manual steps Nix can't own — a physical disk, and a secret:
+            1. Label an external drive `timemachine` (ERASES IT):
+                 `sudo mkfs.ext4 -L timemachine /dev/sdX1`
+               The label is how the config finds it, so any port/enclosure works.
+            2. Create the repo password, root-only. Store a copy in 1Password —
+               lose this and every snapshot is unreadable, by design:
+                 `sudo install -d -m 0700 /etc/restic`
+                 `sudo sh -c 'umask 077; head -c 32 /dev/urandom | base64 > /etc/restic/home-password'`
+            Then plug the drive in; it mounts and backs up on its own. Verify:
+                 `systemctl status restic-backups-home`
+                 `sudo restic -r /mnt/backup/restic/$(hostname) --password-file /etc/restic/home-password snapshots`
+            Restore/browse (Time Machine-style — snapshots as directories):
+                 `sudo restic -r /mnt/backup/restic/$(hostname) --password-file /etc/restic/home-password mount /mnt/restore`
       TODO
             fi
     '';
