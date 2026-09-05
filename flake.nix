@@ -13,7 +13,32 @@
 
     niri = {
       url = "github:sodiboo/niri-flake";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # DELIBERATELY no `inputs.nixpkgs.follows = "nixpkgs"`, unlike every
+      # other input here. Two reasons, in order of weight:
+      #
+      # 1. Upstream guidance. Noctalia's own NixOS docs
+      #    (docs.noctalia.dev/noctalia/getting-started/nixos) describe the
+      #    follows line as optional — "prevents downloading two versions of
+      #    nixpkgs but disables cache". So following is the thing that costs
+      #    you the binary cache; not following is the expected default.
+      #
+      # 2. It is currently load-bearing. niri-flake asks for
+      #    `libdisplay-info_0_2`, which nixpkgs has removed (the attr is now a
+      #    throw stub pointing at _0_3). Forcing niri onto our nixpkgs makes
+      #    evaluation fail outright on programs.niri.package. Upstream
+      #    niri-flake hasn't moved since 2026-08-04 — its main HEAD is the
+      #    commit we pin — so there is nothing to bump to. Its own pin
+      #    predates the removal, so letting it use that is what unblocks
+      #    nixpkgs updates.
+      #
+      # Cost: a second nixpkgs in the closure; niri links a different
+      # mesa/wayland than the rest of the system. Accepted, and it buys cache
+      # hits for niri instead of source builds.
+      #
+      # Note we can't simply drop niri-flake for nixpkgs' `niri`: nixpkgs ships
+      # the package (26.04, older than the unstable build we run) but NO
+      # programs.niri module, and home.nix's binds/outputs/touchpad are all
+      # written as `programs.niri.settings` with build-time validation.
     };
 
     noctalia = {

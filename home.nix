@@ -63,6 +63,18 @@ in
     inputs.noctalia.homeModules.default
   ];
 
+  # home-manager gained its own modules/programs/noctalia.nix upstream, which
+  # declares the same `programs.noctalia` options as the module imported from
+  # the noctalia flake above. Two declarations of one option is a hard eval
+  # error ("option ... is already declared"), so drop home-manager's copy and
+  # keep upstream Noctalia's — it tracks the v5 schema this file is written
+  # against and runs `noctalia config validate` at build time.
+  #
+  # Revisit when home-manager's module matures: if it gains equivalent
+  # coverage, switching to it would let us drop the import above. Compare with:
+  #   nix eval .#nixosConfigurations.sjr-fw13.options.home-manager.users.sroberts.programs.noctalia
+  disabledModules = [ "programs/noctalia.nix" ];
+
   programs.noctalia = {
     enable = true;
     # Run Noctalia as a systemd user unit (PartOf/WantedBy=wayland.systemd.target,
