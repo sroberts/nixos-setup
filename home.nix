@@ -1521,11 +1521,11 @@ in
                lose this and every snapshot is unreadable, by design:
                  `sudo install -d -m 0700 /etc/restic`
                  `sudo sh -c 'umask 077; head -c 32 /dev/urandom | base64 > /etc/restic/home-password'`
-            Then plug the drive in; it mounts and backs up on its own. Verify:
-                 `systemctl status restic-backups-home`
-                 `sudo restic -r /mnt/backup/restic/$(hostname) --password-file /etc/restic/home-password snapshots`
-            Restore/browse (Time Machine-style — snapshots as directories):
-                 `sudo restic -r /mnt/backup/restic/$(hostname) --password-file /etc/restic/home-password mount /mnt/restore`
+            Then plug the drive in; it mounts and backs up on its own.
+            Running, verifying, and restoring are all covered in backup.md.
+      - [ ] Test a restore once, while everything still works: recover a file to
+            /tmp and diff it (see backup.md). A backup you've never restored
+            from is a hypothesis, not a backup.
       TODO
             fi
     '';

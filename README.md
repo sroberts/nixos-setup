@@ -16,6 +16,7 @@ The first machine (and currently the only one) is `sjr-fw13`, a Framework 13 AMD
 | `flake.lock` | Pins every input to a specific commit. Generated on first build, then committed. |
 | `INSTALL.md` | Single canonical install runbook (partition → encrypt → install → verify) plus rationale, gotchas, and migration notes. |
 | `secure-boot.md` | lanzaboote post-install runbook (Framework-specific BIOS bits flagged inline; the `sbctl` flow itself is hardware-agnostic). |
+| `backup.md` | Backup runbook: how to run, verify, and restore from the restic snapshots on the USB drive. |
 | `hosts/README.md` | Per-host layout and the runbook for standing up a new machine. |
 | `CONTRIBUTING.md` | Branch/PR workflow, the per-merge checks, and what gets a PR rejected. |
 | `CLAUDE.md` | Context for Claude Code; useful for humans too. |
@@ -32,6 +33,7 @@ The first machine (and currently the only one) is `sjr-fw13`, a Framework 13 AMD
 - **Adding a new host** → run `scripts/new-host.sh` on the target machine; see `hosts/README.md`. No edits to `flake.nix` needed — hosts are auto-discovered.
 - **Already running, want to make a change** → edit a `.nix` file, then `sudo nixos-rebuild switch --flake .#<host>` (use the directory name under `hosts/`).
 - **Enabling Secure Boot** → `secure-boot.md`. Do this only after the encrypted system boots reliably.
+- **Restoring a file, or recovering after disk loss** → `backup.md`.
 - **Want to know why X is the way it is** → read `configuration.nix` and `home.nix` directly; the "Stack at a glance" table in `INSTALL.md` covers the high-level decisions, and the comments in the `.nix` files cover the rest.
 
 ## Day-to-day commands
