@@ -1208,12 +1208,18 @@ in
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
   # Providers: local Ollama daemon; auto-discovery on empty models list picks
-  # up everything in `ollama list`, so gpt-oss:20b (seeded via
-  # services.ollama.loadModels) becomes available immediately.
+  # up everything in `ollama list`, so every model in
+  # services.ollama.loadModels becomes available immediately — including ones
+  # not bound to a role below, which stay selectable in the model picker.
   #
   # Top-level `models` binds crush's two agent roles:
-  #   - large (coder agent): gpt-oss:20b — reasoning-first.
-  #   - small (task agent):  gpt-oss:20b — same model; no smaller gpt-oss exists.
+  #   - large (coder agent): qwen3.8 — 27B with a 256K context and tool use,
+  #     built for coding and long-horizon agentic work, which is exactly this
+  #     role. The long context is the real win over gpt-oss:20b for coding:
+  #     more of a repo fits in one conversation.
+  #   - small (task agent):  gpt-oss:20b — meant to be the faster of the two.
+  #     Still larger than ideal; llama3.2 (2 GB, already pulled) would restore
+  #     a genuine speed difference if task-agent latency ever grates.
   #
   # MCP servers — mirror what Claude Code would use where it's portable:
   #   - context7:      up-to-date library docs; remote HTTP (no auth for
@@ -1257,7 +1263,7 @@ in
     models = {
       large = {
         provider = "ollama";
-        model = "gpt-oss:20b";
+        model = "qwen3.8";
       };
       small = {
         provider = "ollama";
