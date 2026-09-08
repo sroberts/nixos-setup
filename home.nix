@@ -1024,6 +1024,29 @@ in
     '';
   };
 
+  # `framework` skill for Claude Code — framework_tool usage for this laptop's
+  # EC: fans, charge limit, thermals, backlight, PD ports, firmware versions.
+  # Authored in this repo (assets/skills/framework/) rather than fetched, so it
+  # is version-controlled with the config it documents.
+  #
+  # Installed to the GLOBAL skills dir (~/.claude/skills/, alongside impeccable
+  # and fizzy) so it is available in every project, not just this one — the
+  # hardware is the same wherever you're working.
+  #
+  # Unlike home.activation.wallpapers, this OVERWRITES on every rebuild: the
+  # repo is the source of truth for the skill, so a local edit is drift to be
+  # corrected, not a user tweak to preserve.
+  home.activation.frameworkSkill = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="$HOME/.claude/skills/framework"
+      ${pkgs.coreutils}/bin/mkdir -p "$DEST"
+      ${pkgs.coreutils}/bin/install -m 0644 \
+        ${./assets/skills/framework/SKILL.md} "$DEST/SKILL.md"
+    '';
+  };
+
   # Wallpaper library — seeds ~/Pictures/Wallpapers with the assets in
   # ./assets/wallpapers/. Copy-once per file: if a wallpaper already exists
   # at the destination (user replaced it, deleted-and-recreated it, or picked
