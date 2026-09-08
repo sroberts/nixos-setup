@@ -455,6 +455,11 @@ in
       "gemma4:latest"
       "gpt-oss:20b"
       "lfm2.5-thinking"
+      # 27B, ~16.5 GB, 256K context, vision + tool use. Bound to crush's
+      # large/coder role in home.nix. Comfortable here: 93 GB RAM, and the
+      # 780M iGPU shares system memory rather than being capped at a fixed
+      # VRAM size. `qwen3.8:27b` is the same manifest as `:latest`.
+      "qwen3.8"
     ];
   };
 
