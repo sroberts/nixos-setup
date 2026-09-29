@@ -22,34 +22,6 @@ let
     };
     vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
   };
-
-  # basecamp/fizzy-cli — packaged from the prebuilt linux-amd64 release
-  # binary because `go install` can't reach v3.x.x for this repo: their
-  # go.mod still declares `module github.com/basecamp/fizzy-cli` with no
-  # `/v3` suffix, and Go's semantic import versioning won't resolve v2+
-  # tags without the major-version path. So `@latest` falls back to a
-  # pseudo-version of master, which fizzy itself flags as out-of-date.
-  # autoPatchelfHook fixes the ELF interpreter path; stdenv.cc.cc.lib
-  # covers libstdc++/libgcc_s that the cgo binary links against.
-  fizzy-cli = pkgs.stdenvNoCC.mkDerivation rec {
-    pname = "fizzy-cli";
-    version = "3.0.3";
-    src = pkgs.fetchurl {
-      url = "https://github.com/basecamp/fizzy-cli/releases/download/v${version}/fizzy-linux-amd64";
-      hash = "sha256-r1vNVFkRaRkxo81nhpE0X8MiHsiE2M7px0ZMxfKPgVQ=";
-    };
-    dontUnpack = true;
-    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-    buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-    installPhase = ''
-      install -Dm755 $src $out/bin/fizzy
-    '';
-    meta = {
-      description = "Fizzy CLI and Agent Skills";
-      homepage = "https://github.com/basecamp/fizzy-cli";
-      platforms = [ "x86_64-linux" ];
-    };
-  };
 in
 {
   home.username = "sroberts";
@@ -588,11 +560,9 @@ in
     gnumake
 
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
-    # via pipx. JFryy/qq is built from source in the `let` above;
-    # basecamp/fizzy-cli is the prebuilt v3.0.3 binary, also from `let`.
+    # via pipx. JFryy/qq is built from source in the `let` above.
     q-text-as-data
     qq
-    fizzy-cli
     # pipx itself is still NOT installed via Nix: build-time deps in current
     # nixos-unstable (black, black[extras], nox) cycle through transient
     # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
@@ -652,7 +622,6 @@ in
         '';
       }
     )
-    gemini-cli
 
     # ogulcancelik/herdr — terminal workspace manager for AI coding agents
     # (panes, sessions that survive detach). Tag-pinned in flake.nix to
@@ -993,7 +962,7 @@ in
   # Not in nixpkgs; installed via `npx impeccable install`, which auto-detects
   # the coding tool and writes the skill under .claude/skills/. Run from $HOME
   # so its "project" install lands in the *global* skills dir (~/.claude/skills/,
-  # available in every project — same place ~/.claude/skills/fizzy lives).
+  # available in every project).
   #
   # Two things this hook has to paper over, both because home-manager runs
   # activation with a bare PATH (coreutils/findutils/grep/sed only — no node,
@@ -1029,8 +998,8 @@ in
   # Authored in this repo (assets/skills/framework/) rather than fetched, so it
   # is version-controlled with the config it documents.
   #
-  # Installed to the GLOBAL skills dir (~/.claude/skills/, alongside impeccable
-  # and fizzy) so it is available in every project, not just this one — the
+  # Installed to the GLOBAL skills dir (~/.claude/skills/, alongside impeccable)
+  # so it is available in every project, not just this one — the
   # hardware is the same wherever you're working.
   #
   # Unlike home.activation.wallpapers, this OVERWRITES on every rebuild: the
@@ -1529,8 +1498,6 @@ in
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
-      - [ ] Authenticate Gemini CLI: `gemini auth`
-      - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] Sync noctalia-greeter to the shell's palette + wallpaper: Noctalia → Settings → Shell → Security → Noctalia Greeter → Sync Now (writes /var/lib/noctalia-greeter — needs admin creds, not something Nix owns)
       - [ ] Noctalia app themes (bat/zellij/discord/obsidian/zed/steam/…) are community templates fetched from api.noctalia.dev at runtime — offline first-boot won't have them until the shell reaches the network. If they're missing, confirm connectivity and toggle the wallpaper (or restart Noctalia) to re-apply.

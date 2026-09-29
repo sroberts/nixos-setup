@@ -273,7 +273,6 @@ curl -s http://localhost:11434/api/version
 
 # AI CLIs on PATH
 claude --version
-gemini --version
 ```
 
 Work through `~/TODO.md` (auto-created on first activation) for the
