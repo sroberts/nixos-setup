@@ -42,11 +42,13 @@
     };
 
     noctalia = {
-      # Pinned to the v5.0.0 beta tag (major bump from the v4 line). Beta: expect
-      # schema/module changes vs 4.x — re-verify programs.noctalia options
-      # and the seeded settings.json after bumping. Move to the stable v5.0.0 tag
-      # once it ships.
-      url = "github:noctalia-dev/noctalia-shell/v5.0.0-beta2";
+      # Pinned to a stable v5 tag (the v5 line renamed the home-manager module
+      # from programs.noctalia-shell to programs.noctalia, swapped the ipc
+      # surface for `noctalia msg`, and moved config to a declarative
+      # config.toml). Bump by editing the tag below and re-verifying the
+      # programs.noctalia options in home.nix still exist — a plain
+      # `nix flake update noctalia` won't move a tag-pinned ref.
+      url = "github:noctalia-dev/noctalia-shell/v5.2.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -65,10 +67,10 @@
 
     # Terminal workspace manager for AI coding agents (panes, sessions
     # that survive detach). Tag-pinned to keep client + server in lockstep;
-    # bump by editing the `v0.7.x` in the URL below (plain `nix flake
+    # bump by editing the `v0.9.x` in the URL below (plain `nix flake
     # update herdr` won't move a tag-pinned ref).
     herdr = {
-      url = "github:ogulcancelik/herdr/v0.7.1";
+      url = "github:ogulcancelik/herdr/v0.9.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
