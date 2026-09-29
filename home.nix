@@ -652,7 +652,6 @@ in
         '';
       }
     )
-    gemini-cli
 
     # ogulcancelik/herdr — terminal workspace manager for AI coding agents
     # (panes, sessions that survive detach). Tag-pinned in flake.nix to
@@ -1529,7 +1528,6 @@ in
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
       - [ ] Authenticate Claude Code: run `claude`
-      - [ ] Authenticate Gemini CLI: `gemini auth`
       - [ ] Run `fizzy setup` (auth + config; the binary itself is packaged)
       - [ ] (Optional) Customize wallpaper in Noctalia — default ships in ~/Pictures/Wallpapers
       - [ ] Sync noctalia-greeter to the shell's palette + wallpaper: Noctalia → Settings → Shell → Security → Noctalia Greeter → Sync Now (writes /var/lib/noctalia-greeter — needs admin creds, not something Nix owns)

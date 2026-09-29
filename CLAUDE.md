@@ -97,7 +97,7 @@ The lanzaboote block uses `lib.mkForce` to override systemd-boot; `lib` is alrea
 
 ## What's *not* declarative (by design)
 
-Listed in `home.activation.todoMd` (the generated `~/TODO.md`): authenticating Claude Code / Gemini CLI / `fizzy setup`, signing into 1Password / Gmail / GitHub / Slack / Discord / Signal / Zoom, joining Tailscale, setting wallpaper in Noctalia (its Material You-style theme derives from the wallpaper), syncing noctalia-greeter to the shell palette, Obsidian Sync, Typora license, Chromium extensions, `sudo fwupdmgr update`. These are credentials, account state, and firmware updates — not something Nix should own.
+Listed in `home.activation.todoMd` (the generated `~/TODO.md`): authenticating Claude Code / `fizzy setup`, signing into 1Password / Gmail / GitHub / Slack / Discord / Signal / Zoom, joining Tailscale, setting wallpaper in Noctalia (its Material You-style theme derives from the wallpaper), syncing noctalia-greeter to the shell palette, Obsidian Sync, Typora license, Chromium extensions, `sudo fwupdmgr update`. These are credentials, account state, and firmware updates — not something Nix should own.
 
 Ollama models are **not** on that list: `services.ollama.loadModels` in `configuration.nix` pulls them declaratively on first start via `ollama-model-loader.service`.
 
