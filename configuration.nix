@@ -23,10 +23,10 @@ let
   anythingllm-desktop =
     let
       pname = "anythingllm-desktop";
-      version = "1.15.0";
+      version = "1.16.2";
       src = pkgs.fetchurl {
         url = "https://github.com/Mintplex-Labs/anything-llm/releases/download/v${version}/AnythingLLMDesktop.AppImage";
-        hash = "sha256-Dk/FeGzefACiJlyTf+/BVc8ZJryF9Gq8BWxZqXeAacs=";
+        hash = "sha256-QKEW6MW5TI+gA7zSz8ves5n7zGUMfC4qvb8fL5hUB70=";
       };
       contents = pkgs.appimageTools.extractType2 { inherit pname version src; };
     in
@@ -331,7 +331,7 @@ in
   #     the greeter rejects that reply as invalid credentials.
   #   - keyboard.layout: greeter runs before the session's input config, so
   #     the layout has to be told explicitly.
-  programs.noctalia-greeter = {
+  services.displayManager.noctalia-greeter = {
     enable = true;
     settings = {
       auth.allow_empty_password = true;
