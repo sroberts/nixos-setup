@@ -340,6 +340,9 @@ in
     pkgs.niri.overrideAttrs (old: {
       inherit (unstable) src version cargoDeps;
       doCheck = false;
+      # nixpkgs' versionCheckHook expects `niri --version` to print our
+      # `version` (unstable-…), but niri reports its Cargo version (26.04).
+      doInstallCheck = false;
     });
 
   # noctalia-greeter on tty1 — a Quickshell-based login screen that mirrors

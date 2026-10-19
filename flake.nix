@@ -48,7 +48,7 @@
       # config.toml). Bump by editing the tag below and re-verifying the
       # programs.noctalia options in home.nix still exist — a plain
       # `nix flake update noctalia` won't move a tag-pinned ref.
-      url = "github:noctalia-dev/noctalia-shell/v5.2.0";
+      url = "github:noctalia-dev/noctalia-shell/v5.3.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -70,7 +70,7 @@
     # bump by editing the `v0.9.x` in the URL below (plain `nix flake
     # update herdr` won't move a tag-pinned ref).
     herdr = {
-      url = "github:ogulcancelik/herdr/v0.9.1";
+      url = "github:ogulcancelik/herdr/v0.9.5";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
