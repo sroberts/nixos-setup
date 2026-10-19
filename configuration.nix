@@ -322,11 +322,25 @@ in
   # (filesystem assumptions that don't hold), even when the binary itself
   # works at runtime. We don't gain confidence by running niri's own tests
   # during our system build.
+  #
+  # Built with OUR nixpkgs, not niri-flake's: nixpkgs' `niri` recipe fed
+  # niri-flake's niri-unstable source + vendored crates. niri-flake doesn't
+  # follow our nixpkgs (see flake.nix), so its prebuilt niri carries its own
+  # older glibc — and niri dlopens the system mesa from /run/opengl-driver.
+  # Once our nixpkgs' mesa needed a newer glibc than niri's (the 2026-10-15
+  # bump: mesa wants GLIBC_2.43, niri-flake's pin is 2.42), mesa failed to
+  # load, niri came up with no render device, and login was a black screen.
+  # Building niri here keeps niri, mesa and glibc on one nixpkgs. nixpkgs'
+  # recipe already links libdisplay-info 0.3, sidestepping the _0_2 removal
+  # that blocks the follows. Cost: niri builds from source (no cache hit).
   programs.niri.package =
-    (inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable).overrideAttrs
-      (old: {
-        doCheck = false;
-      });
+    let
+      unstable = inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable;
+    in
+    pkgs.niri.overrideAttrs (old: {
+      inherit (unstable) src version cargoDeps;
+      doCheck = false;
+    });
 
   # noctalia-greeter on tty1 — a Quickshell-based login screen that mirrors
   # Noctalia Shell's palette/wallpaper (imperative sync via Settings → Shell →
