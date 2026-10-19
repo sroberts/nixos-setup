@@ -281,6 +281,13 @@ in
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   services.tailscale.enable = true;
+  # tally's soft-pad listener (systemd.user.services.tally in home.nix runs
+  # `tally serve --remote`): TLS WebSocket on 47824 for paired vibepad phones,
+  # plus mDNS on 5353 so the phone can find the laptop via Bonjour
+  # (_tally._tcp) when its address changes. Auth is the pinned cert + token
+  # from `tally pair`, so the open port alone grants nothing.
+  networking.firewall.allowedTCPPorts = [ 47824 ];
+  networking.firewall.allowedUDPPorts = [ 5353 ];
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
   # Goodix fingerprint reader. fprintd runs the daemon; the PAM hooks
