@@ -52,7 +52,7 @@ in
     inputs.noctalia.homeModules.default
   ];
 
-  # home-manager gained its own modules/programs/noctalia.nix upstream, which
+  # home-manager gained its own modules/programs/noctalia/ upstream, which
   # declares the same `programs.noctalia` options as the module imported from
   # the noctalia flake above. Two declarations of one option is a hard eval
   # error ("option ... is already declared"), so drop home-manager's copy and
@@ -62,7 +62,7 @@ in
   # Revisit when home-manager's module matures: if it gains equivalent
   # coverage, switching to it would let us drop the import above. Compare with:
   #   nix eval .#nixosConfigurations.sjr-fw13.options.home-manager.users.sroberts.programs.noctalia
-  disabledModules = [ "programs/noctalia.nix" ];
+  disabledModules = [ "programs/noctalia" ];
 
   programs.noctalia = {
     enable = true;
