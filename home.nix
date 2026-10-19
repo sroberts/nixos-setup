@@ -22,6 +22,23 @@ let
     };
     vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
   };
+
+  # sroberts/tally — host daemon that mirrors herdr's agent states to the
+  # vibe-macropad (USB serial) and the vibepad iPhone app. No tags or flake
+  # upstream, so it's pinned to a commit; bump `rev` + `hash` by hand. go.mod
+  # asks for Go 1.27, newer than the default `buildGoModule` toolchain.
+  tally = pkgs.buildGo127Module {
+    pname = "tally";
+    version = "0-unstable-2026-10-19";
+    src = pkgs.fetchFromGitHub {
+      owner = "sroberts";
+      repo = "tally";
+      rev = "f444368d03170cfcc44b9de94535605a155813db";
+      hash = "sha256-g7vnqcACaWOKnalMmJbH5JNoMEIuQjmJ42PNaAZpBuY=";
+    };
+    vendorHash = "sha256-VPTg7xj2H5waBLy6jUGHypp7K7/+zo0k5/QPAYYMA0Q=";
+    subPackages = [ "cmd/tally" ];
+  };
 in
 {
   home.username = "sroberts";
@@ -527,6 +544,21 @@ in
     };
   };
 
+  # tally's background agent, declared here instead of via `tally
+  # install-agent` (which writes the same unit imperatively into
+  # ~/.config/systemd/user/). Mirrors that unit: `tally serve`, restart 2 s
+  # after any exit. `--remote` also serves paired vibepad phones on :47824;
+  # the firewall opening for it is in configuration.nix. Pair with `tally pair`.
+  systemd.user.services.tally = {
+    Unit.Description = "tally: herdr agent status for the vibepads";
+    Service = {
+      ExecStart = "${tally}/bin/tally serve --remote";
+      Restart = "always";
+      RestartSec = 2;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
   # Default terminal for tools that consult $TERMINAL (lazygit edit, fzf,
   # xdg-terminal-exec helpers, etc.).
   home.sessionVariables.TERMINAL = "ghostty";
@@ -627,6 +659,10 @@ in
     # (panes, sessions that survive detach). Tag-pinned in flake.nix to
     # match the herdr server version; bump by editing the tag there.
     inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
+
+    # sroberts/tally — vibepad daemon for herdr; built from source in the
+    # `let` above. Runs via systemd.user.services.tally below.
+    tally
   ];
 
   ############################################################
