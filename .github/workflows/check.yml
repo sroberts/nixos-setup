@@ -29,8 +29,19 @@ jobs:
       # (the LUKS UUIDs are identifiers, not secrets), so the flake evaluates
       # in CI with no stubbing. Device paths in those files are just strings —
       # evaluation never touches real disks.
+      # No --no-build: niri-nix's niri package reads its Cargo.lock out of the
+      # fetched source (`cargoLock.lockFile = "${src}/Cargo.lock"`), so merely
+      # EVALUATING it is import-from-derivation — Nix has to realise the src
+      # fetch first. --no-build refuses that and the check dies with
+      # `path '<hash>-source.drv' is not valid`, which reads like store
+      # corruption but is just IFD being blocked.
+      #
+      # The cost is a source fetch, not a niri compile: the realised
+      # derivation is fetchFromGitHub, so this downloads the niri repo and
+      # stops there. niri-flake didn't need this because it shipped cargoDeps
+      # precomputed.
       - name: nix flake check
-        run: nix flake check --no-build --show-trace
+        run: nix flake check --show-trace
 
       # Enforce nixfmt formatting on every .nix file. The flake's formatter
       # output (formatter.x86_64-linux = nixfmt) defines the canonical style;
