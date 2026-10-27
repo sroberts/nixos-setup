@@ -80,7 +80,37 @@ in
   # the fail line where nixos-rebuild switch dies mid-activation.
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
-  boot.kernelPackages = pkgs.linuxPackages_latest; # 6.12+ floor for Ryzen 7040
+  # 6.12+ floor for Ryzen 7040.
+  #
+  # framework-laptop-kmod is patched here to emit a module-signing
+  # certificate. nixpkgs now builds kernel modules with `cmd_sign` pointing at
+  # `kmodigest` (pkgs/os-specific/linux/kernel/common-flags.nix), and
+  # aggregateModules concatenates one `<module>.ko.cer` per OUT-OF-TREE module
+  # into modules.cer (pkgs/os-specific/linux/kmod/aggregator.nix). Modules
+  # whose package hand-rolls an installPhase — rather than running
+  # `make modules_install`, which is what triggers Kbuild's signing step —
+  # never produce that .cer, so the whole linux-<ver>-modules build dies with:
+  #
+  #   cat: extra/framework_laptop.ko.cer: No such file or directory
+  #
+  # Upstream bug, not ours: nixpkgs#575192, with the real fix (a
+  # kernelModuleInstallHook) in flight as nixpkgs#578004 — open, unmerged as
+  # of 2026-10-27. tuxedo-drivers is broken the same way (nixpkgs#576266).
+  # Running kmodigest by hand produces the .cer the aggregator wants; drop
+  # this whole block once #578004 lands.
+  boot.kernelPackages = pkgs.linuxPackages_latest.extend (
+    _kfinal: kprev: {
+      framework-laptop-kmod = kprev.framework-laptop-kmod.overrideAttrs (_old: {
+        installPhase = ''
+          runHook preInstall
+          ${lib.getExe pkgs.kmodigest} framework_laptop.ko
+          install -D -t $out/lib/modules/${kprev.kernel.modDirVersion}/extra \
+            framework_laptop.ko framework_laptop.ko.cer
+          runHook postInstall
+        '';
+      });
+    }
+  );
 
   # FAT32 doesn't support Unix perms, so the ESP defaults to world-readable.
   # bootctl writes a kernel random-seed file in /boot/loader and (correctly)
