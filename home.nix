@@ -50,6 +50,10 @@ in
   ############################################################
   imports = [
     inputs.noctalia.homeModules.default
+    # niri-nix's home-manager module. niri-flake's NixOS module used to pull
+    # its home-manager side in implicitly; niri-nix keeps them separate, so it
+    # is imported explicitly here.
+    inputs.niri.homeModules.default
   ];
 
   # home-manager gained its own modules/programs/noctalia/ upstream, which
@@ -132,7 +136,7 @@ in
             #              starshipConfigSeed activation). (issue #62)
             #   niri     — migrated: the `include "noctalia.kdl"` line is added
             #              declaratively via the xdg.configFile.niri-config
-            #              override just below programs.niri.settings, so
+            #              override just below the niri settings, so
             #              apply.sh's has-include grep short-circuits and only
             #              noctalia.kdl gets written (as a regular file, not
             #              through HM). (issue #62)
@@ -213,8 +217,11 @@ in
   };
 
   # niri input — natural scrolling, tap-to-click, disable-while-typing.
-  # Schema is validated at build time by niri-flake.
-  programs.niri.settings = {
+  # Schema is validated at Nix eval time by niri-nix. Note the namespace:
+  # niri-nix uses `wayland.windowManager.niri.*` on the home-manager side,
+  # where niri-flake used `programs.niri.*`. The NixOS side is still
+  # `programs.niri.*` (see configuration.nix).
+  wayland.windowManager.niri.settings = {
     input.touchpad = {
       tap = true;
       natural-scroll = true;
@@ -491,16 +498,17 @@ in
 
   # Extend niri's generated config.kdl with an `include "noctalia.kdl"` line
   # so noctalia's builtin `niri` template's separately-written noctalia.kdl
-  # actually applies. programs.niri.config's `default` is not merge-able (any
+  # actually applies. The module's rendered config is not merge-able (any
   # override replaces the settings-derived default entirely), so we compose
-  # our own file by reusing programs.niri.finalConfig — the already-rendered
+  # our own file by reusing wayland.windowManager.niri.finalConfig — the
+  # already-rendered
   # string of settings — and appending the include line.
   #
   # `niri validate` (which validated-config-for would run) rejects a config
   # whose included file doesn't exist. That file is written at runtime by
   # noctalia, not at build time, so we bypass validated-config-for and use
   # pkgs.writeText directly — settings themselves are still type-checked at
-  # Nix eval time by niri-flake, so the only unchecked thing is our one-line
+  # Nix eval time by niri-nix, so the only unchecked thing is our one-line
   # include, which is worth the trade.
   #
   # apply.sh's grep pattern `^[[:space:]]*include([[:space:]].*)?"([^"]*/)?
@@ -509,7 +517,7 @@ in
   # config.kdl (which is still an HM store-path symlink).
   xdg.configFile.niri-config.source = lib.mkForce (
     pkgs.writeText "config.kdl" ''
-      ${config.programs.niri.finalConfig}
+      ${config.wayland.windowManager.niri.finalConfig}
       include "noctalia.kdl"
     ''
   );

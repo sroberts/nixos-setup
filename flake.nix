@@ -11,34 +11,32 @@
 
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
+    # niri — compositor packages + NixOS/home-manager modules.
+    #
+    # This is niri-nix, NOT sodiboo/niri-flake. The swap happened because
+    # niri-flake's main has not moved since 2026-08-04 and cost us real
+    # breakage twice: it pins `libdisplay-info_0_2`, which nixpkgs removed, so
+    # it cannot follow our nixpkgs at all; and not following meant niri linked
+    # a different glibc from the system mesa it dlopens, which black-screened
+    # login after a nixpkgs bump. The standing fix for that — rebuilding niri
+    # from nixpkgs' recipe with niri-flake's source — is no longer needed.
+    #
+    # niri-nix builds against `libdisplay-info_0_3`, so it follows our nixpkgs
+    # cleanly: one nixpkgs in the closure, and niri/mesa/glibc stay in lockstep
+    # by construction rather than by workaround. It also tracks niri daily
+    # (source 2026-10-26 vs niri-flake's 2026-08-02), which picks up upstream's
+    # removal of the deprecated `systemctl --user import-environment` call.
+    #
+    # Trade-off: following nixpkgs forfeits niri-nix.cachix.org, so niri builds
+    # from source — exactly the cost we already paid under niri-flake. Keeping
+    # glibc aligned is worth more than the cache.
+    #
+    # Option namespaces differ from niri-flake: NixOS side is still
+    # `programs.niri.*`, but home-manager moved to
+    # `wayland.windowManager.niri.*` (see home.nix).
     niri = {
-      url = "github:sodiboo/niri-flake";
-      # DELIBERATELY no `inputs.nixpkgs.follows = "nixpkgs"`, unlike every
-      # other input here. Two reasons, in order of weight:
-      #
-      # 1. Upstream guidance. Noctalia's own NixOS docs
-      #    (docs.noctalia.dev/noctalia/getting-started/nixos) describe the
-      #    follows line as optional — "prevents downloading two versions of
-      #    nixpkgs but disables cache". So following is the thing that costs
-      #    you the binary cache; not following is the expected default.
-      #
-      # 2. It is currently load-bearing. niri-flake asks for
-      #    `libdisplay-info_0_2`, which nixpkgs has removed (the attr is now a
-      #    throw stub pointing at _0_3). Forcing niri onto our nixpkgs makes
-      #    evaluation fail outright on programs.niri.package. Upstream
-      #    niri-flake hasn't moved since 2026-08-04 — its main HEAD is the
-      #    commit we pin — so there is nothing to bump to. Its own pin
-      #    predates the removal, so letting it use that is what unblocks
-      #    nixpkgs updates.
-      #
-      # Cost: a second nixpkgs in the closure; niri links a different
-      # mesa/wayland than the rest of the system. Accepted, and it buys cache
-      # hits for niri instead of source builds.
-      #
-      # Note we can't simply drop niri-flake for nixpkgs' `niri`: nixpkgs ships
-      # the package (26.04, older than the unstable build we run) but NO
-      # programs.niri module, and home.nix's binds/outputs/touchpad are all
-      # written as `programs.niri.settings` with build-time validation.
+      url = "git+https://codeberg.org/BANanaD3V/niri-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     noctalia = {
@@ -119,7 +117,10 @@
             ./hosts/${hostname}
             ./configuration.nix
 
-            niri.nixosModules.niri
+            # niri-nix exposes `nixosModules.default` (niri-flake used
+            # `nixosModules.niri`). The home-manager side is imported in
+            # home.nix alongside noctalia's.
+            niri.nixosModules.default
             noctalia-greeter.nixosModules.default
 
             # ── SECURE BOOT ──
