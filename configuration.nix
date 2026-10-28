@@ -80,6 +80,36 @@ in
   # the fail line where nixos-rebuild switch dies mid-activation.
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # PINNED to the 7.2 series — deliberately NOT linuxPackages_latest.
+  #
+  # linuxPackages_latest hands you whatever major kernel nixpkgs ships at the
+  # moment you update, unreviewed. On 2026-10-27 that silently moved this
+  # machine 7.2.10 -> 7.3.0 as part of a routine input bump, and the first
+  # suspend-then-hibernate escalation on 7.3.0 froze the machine hard at
+  # `PM: hibernation: hibernation entry` — it had to be power-cycled, and the
+  # next boot was cold, not a resume.
+  #
+  # Evidence it is the kernel and not userspace: hibernation succeeded on
+  # 7.2.10 that same morning ("Allocated 38910536 kbytes in 9.55 seconds",
+  # then `hibernation exit`), and the freeze happens after userspace is
+  # frozen, so no compositor or shell code is running at that point.
+  # amdgpu + hibernate on this hardware has a long tail of trouble — see
+  # nixpkgs#413932, "black screen/freeze after wake up from hibernate on
+  # amdgpu/framework laptop 13", open since 2025.
+  #
+  # This box hibernates on a 15-minute idle escalation, so a broken hibernate
+  # path does not announce itself until you walk away — which is exactly how
+  # it bit us. Treat a kernel move as a change to TEST (suspend, wait out
+  # HibernateDelaySec, confirm resume), not a free ride on `nix flake update`.
+  #
+  # Note nixpkgs' 7.2 series is 7.2.11 here; 7.2.10 exactly would require
+  # pinning nixpkgs itself. Same series, one patch release on.
+  #
+  # Revisit when a later kernel is known-good on Framework 13 AMD: bump to
+  # linuxPackages_7_3 (or newer) deliberately and hibernate-test it before
+  # trusting it.
+  #
   # 6.12+ floor for Ryzen 7040.
   #
   # framework-laptop-kmod is patched here to emit a module-signing
@@ -98,7 +128,7 @@ in
   # of 2026-10-27. tuxedo-drivers is broken the same way (nixpkgs#576266).
   # Running kmodigest by hand produces the .cer the aggregator wants; drop
   # this whole block once #578004 lands.
-  boot.kernelPackages = pkgs.linuxPackages_latest.extend (
+  boot.kernelPackages = pkgs.linuxPackages_7_2.extend (
     _kfinal: kprev: {
       framework-laptop-kmod = kprev.framework-laptop-kmod.overrideAttrs (_old: {
         installPhase = ''
