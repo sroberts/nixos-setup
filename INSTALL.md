@@ -56,7 +56,7 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Channel mgmt | Flakes + home-manager | Reproducible; pins Noctalia / niri independently |
 | Hardware module | `nixos-hardware.nixosModules.framework-13-7040-amd` | Maintained quirks (lid wake, sensors, GPU) |
 | Power | `power-profiles-daemon` | Framework's official recommendation for Ryzen 7040; do NOT use TLP |
-| Compositor | niri via `niri-flake` (sodiboo), pinned to `niri-unstable` | Quickshell-based shells (Noctalia, etc.) track niri's latest |
+| Compositor | niri via `niri-nix` (BANanaD3V), pinned to `niri-unstable` | Quickshell-based shells (Noctalia, etc.) track niri's latest |
 | Shell/UI | Noctalia v5 (Quickshell) via the `noctalia` flake + home-manager module | Faster updates than nixpkgs; run as a systemd user unit so `nixos-rebuild switch` restarts it cleanly instead of leaving a stale bar |
 | Greeter | `noctalia-greeter` on tty1 (its module sets up greetd) | Quickshell greeter that mirrors the shell's palette/wallpaper |
 | Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
@@ -288,7 +288,7 @@ One thing carries over cleanly from the previous install, if relevant:
   in `home.nix`, so you don't copy `~/.config/niri/config.kdl`. If you
   had personal-only binds layered on top of the DMS defaults that aren't
   represented in `home.nix`, grab those individually and add them to the
-  `programs.niri.settings.binds` block in `home.nix`.
+  `wayland.windowManager.niri.settings.binds` block in `home.nix`.
 
 What doesn't carry:
 
@@ -323,14 +323,14 @@ it with `git revert` so the repo and running generation stay in sync.
 
 ## Known gotchas
 
-1. **niri-flake's `niri-stable` lags niri-unstable.** This config pins
-   `programs.niri.package` to `niri-unstable` from the flake (see
+1. **niri stable lags niri-unstable.** This config pins
+   `programs.niri.package` to niri-nix's `niri-unstable` (see
    `configuration.nix`) because Quickshell-based shells like Noctalia
    track niri's latest Wayland-protocol surface, and the stable tag
-   trails. We also `.overrideAttrs (doCheck = false)` to skip niri's
-   in-build cargo tests, which can SIGABRT in the Nix build sandbox even
-   when the runtime binary is fine. Don't drop the override unless
-   you've verified niri's upstream test suite passes in a sandbox.
+   trails. niri builds from source (following our nixpkgs means no
+   niri-nix.cachix.org hits), with niri's cargo tests on — niri-nix
+   skips the EGL tests that can't run in the build sandbox. If a niri
+   bump ever fails in its test phase, that's the place to look.
 2. **Keep a recovery USB.** With an encrypted root, a broken boot chain
    means recovering from the live ISO: `cryptsetup open` → `mount` →
    `nixos-enter` → roll back. `secure-boot.md` has the exact commands;
@@ -365,12 +365,11 @@ it with `git revert` so the repo and running generation stay in sync.
    v5 renames: the module is `programs.noctalia` (was
    `programs.noctalia-shell`) and the IPC surface is `noctalia msg <command…>`
    (was `noctalia ipc call <target> <fn>`).
-10. **Polkit auth agent swap.** This flake disables niri-flake's bundled
-    `polkit-kde-agent` (`systemd.user.services.niri-flake-polkit.enable =
-    lib.mkForce false`) in favour of Noctalia's own polkit agent, enabled
-    declaratively via `programs.noctalia.settings.shell.polkit_agent = true`.
-    Two agents on the PolicyKit1 bus would race; the Noctalia docs explicitly
-    require the other to be disabled. In v5 this is native config — there is
+10. **Polkit auth agent.** Noctalia's own polkit agent is the only one,
+    enabled declaratively via `programs.noctalia.settings.shell.polkit_agent =
+    true`. niri-nix (unlike the niri-flake this repo used before) ships no
+    agent of its own. Two agents on the PolicyKit1 bus would race; the
+    Noctalia docs explicitly require the other to be disabled. In v5 this is native config — there is
     no runtime plugin fetch and no network dependency.
 11. **Noctalia runs as a systemd user unit**, not a niri `spawn-at-startup`
     (`programs.noctalia.systemd.enable = true`). `nixos-rebuild switch`
@@ -518,7 +517,7 @@ Known additional gotchas for this path:
 - [nixos-hardware framework-13-7040-amd module](https://github.com/NixOS/nixos-hardware/tree/master/framework/13-inch/7040-amd)
 - [Noctalia shell (Quickshell-based)](https://github.com/noctalia-dev/noctalia-shell)
 - [noctalia-greeter (greetd greeter)](https://github.com/noctalia-dev/noctalia-greeter)
-- [niri-flake (sodiboo)](https://github.com/sodiboo/niri-flake)
+- [niri-nix (BANanaD3V)](https://codeberg.org/BANanaD3V/niri-nix)
 - [niri Getting Started](https://niri-wm.github.io/niri/Getting-Started.html)
 - [lanzaboote (Secure Boot)](https://github.com/nix-community/lanzaboote)
 - [claude-code-nix (sadjow) — hourly-updated flake](https://github.com/sadjow/claude-code-nix)

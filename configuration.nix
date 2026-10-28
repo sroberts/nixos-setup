@@ -358,6 +358,11 @@ in
   #
   # Cost is unchanged: following nixpkgs means no niri-nix.cachix.org hit, so
   # niri builds from source — the same price the old workaround paid.
+  #
+  # No doCheck override: niri-nix's recipe already skips the sandbox-hostile
+  # EGL tests (`checkFlags = [ "--skip=::egl" ]`), and the rest of niri's
+  # cargo suite passes in the sandbox. (The home-manager side reuses this
+  # exact package via osConfig for `niri validate`, so it stays in sync.)
   programs.niri.package = inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable;
 
   # noctalia-greeter on tty1 — a Quickshell-based login screen that mirrors
@@ -378,14 +383,10 @@ in
     };
   };
 
-  # Polkit auth agent: defer to Noctalia's native polkit agent (enabled via
-  # programs.noctalia.settings.shell.polkit_agent in home.nix) rather than
-  # niri-flake's bundled polkit-kde-agent service. Two agents would race on the
-  # org.freedesktop.PolicyKit1.AuthenticationAgent bus name; the upstream
-  # plugin docs explicitly require the other agent to be disabled. Force
-  # the unit off — niri-flake hard-codes `wantedBy = [ "niri.service" ]`
-  # with no opt-out option, so this is the only knob.
-  systemd.user.services.niri-flake-polkit.enable = lib.mkForce false;
+  # Polkit auth agent: Noctalia's native one (programs.noctalia.settings.shell
+  # .polkit_agent in home.nix). niri-nix, unlike niri-flake, ships no polkit
+  # agent of its own, so there is nothing to disable here — don't add a
+  # second agent, or the two race on the PolicyKit1 AuthenticationAgent name.
 
   # Tear out GNOME left behind by the Calamares base install. Harmless
   # to keep on if you used the manual install path (nothing to disable).
