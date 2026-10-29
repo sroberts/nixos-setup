@@ -163,7 +163,21 @@ in
       location.address = "Greenville, SC";
       weather = {
         enabled = true;
-        unit = "fahrenheit";
+        # "imperial", NOT "fahrenheit". Upstream's example.toml documents this
+        # key as `celsius | fahrenheit`, but that comment is stale — v5.3.0's
+        # code only ever compares against "imperial":
+        #
+        #   bool WeatherService::useImperial() const
+        #     { return m_activeConfig.unit == "imperial"; }
+        #
+        # with a "metric" default, and the settings UI offers exactly
+        # metric/imperial. So "fahrenheit" is not rejected, it just never
+        # matches, and the display silently falls back to metric. That is why
+        # this read °C for months despite looking correct in config.toml.
+        #
+        # It is a whole unit system, not just temperature: imperial also
+        # switches wind to mph and elevation to feet.
+        unit = "imperial";
       };
 
       # Theme derives from the wallpaper (Material You), same as v4's matugen
