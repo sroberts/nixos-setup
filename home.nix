@@ -163,7 +163,21 @@ in
       location.address = "Greenville, SC";
       weather = {
         enabled = true;
-        unit = "fahrenheit";
+        # "imperial", NOT "fahrenheit". Upstream's example.toml documents this
+        # key as `celsius | fahrenheit`, but that comment is stale — v5.3.0's
+        # code only ever compares against "imperial":
+        #
+        #   bool WeatherService::useImperial() const
+        #     { return m_activeConfig.unit == "imperial"; }
+        #
+        # with a "metric" default, and the settings UI offers exactly
+        # metric/imperial. So "fahrenheit" is not rejected, it just never
+        # matches, and the display silently falls back to metric. That is why
+        # this read °C for months despite looking correct in config.toml.
+        #
+        # It is a whole unit system, not just temperature: imperial also
+        # switches wind to mph and elevation to feet.
+        unit = "imperial";
       };
 
       # Theme derives from the wallpaper (Material You), same as v4's matugen
@@ -1209,6 +1223,37 @@ in
         ${pkgs.coreutils}/bin/rm -f "$DEST"
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
         printf '%s' "$SRC" > "$STAMP"
+      fi
+    '';
+  };
+
+  # btop temperature scale — Fahrenheit.
+  #
+  # Deliberately NOT programs.btop.settings. Noctalia's builtin `btop`
+  # template writes `color_theme = "noctalia"` into this same btop.conf (see
+  # the builtin_ids note above), so home-manager can't own the file as a
+  # read-only store symlink without breaking theming — the same collision
+  # that bit bat and fuzzel.
+  #
+  # So instead of owning btop.conf, enforce the one line. btop rewrites the
+  # whole file on exit, keeping its own defaults and Noctalia's theme line
+  # intact; we only ever touch temp_scale. Idempotent, so reruns are no-ops.
+  #
+  # On a fresh $HOME btop.conf doesn't exist yet (btop writes it on first
+  # run), so seed a minimal file with just this key — btop fills in the rest
+  # of its defaults around it.
+  home.activation.btopFahrenheit = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      CONF="$HOME/.config/btop/btop.conf"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$CONF")"
+      if [ ! -f "$CONF" ]; then
+        echo 'temp_scale = "fahrenheit"' > "$CONF"
+      elif ${pkgs.gnugrep}/bin/grep -q '^temp_scale' "$CONF"; then
+        ${pkgs.gnused}/bin/sed -i 's/^temp_scale = .*/temp_scale = "fahrenheit"/' "$CONF"
+      else
+        echo 'temp_scale = "fahrenheit"' >> "$CONF"
       fi
     '';
   };
