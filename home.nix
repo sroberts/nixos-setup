@@ -4,6 +4,7 @@
   pkgs,
   lib,
   config,
+  osConfig,
   ...
 }:
 
@@ -50,6 +51,10 @@ in
   ############################################################
   imports = [
     inputs.noctalia.homeModules.default
+    # niri-nix's home-manager module. niri-flake's NixOS module used to pull
+    # its home-manager side in implicitly; niri-nix keeps them separate, so it
+    # is imported explicitly here.
+    inputs.niri.homeModules.default
   ];
 
   # home-manager gained its own modules/programs/noctalia/ upstream, which
@@ -131,8 +136,8 @@ in
             #              inject the palette (see programs.starship + the
             #              starshipConfigSeed activation). (issue #62)
             #   niri     — migrated: the `include "noctalia.kdl"` line is added
-            #              declaratively via the xdg.configFile.niri-config
-            #              override just below programs.niri.settings, so
+            #              declaratively via wayland.windowManager.niri
+            #              .extraConfig (see the niri block below), so
             #              apply.sh's has-include grep short-circuits and only
             #              noctalia.kdl gets written (as a regular file, not
             #              through HM). (issue #62)
@@ -188,8 +193,8 @@ in
       };
 
       # v5 folds the polkit agent into native config; this replaces v4's
-      # plugins.json `polkit-agent`. niri-flake's polkit-kde-agent stays
-      # force-disabled in configuration.nix so the two don't race.
+      # plugins.json `polkit-agent`. niri-nix ships no agent of its own, so
+      # this is the only one on the PolicyKit1 bus.
       shell.polkit_agent = true;
 
       # Idle escalation, native to Noctalia's idle manager. Named behaviors
@@ -212,13 +217,44 @@ in
     };
   };
 
-  # niri input — natural scrolling, tap-to-click, disable-while-typing.
-  # Schema is validated at build time by niri-flake.
-  programs.niri.settings = {
+  # niri config. Note the namespace: niri-nix uses
+  # `wayland.windowManager.niri.*` on the home-manager side, where niri-flake
+  # used `programs.niri.*`. The NixOS side is still `programs.niri.*` (see
+  # configuration.nix).
+  #
+  # `settings` is NOT niri-flake's typed schema: it's freeform RFC 42 and
+  # maps 1:1 onto KDL nodes — attr = node, `_args` = arguments, `_props` =
+  # properties, `{ }` = bare flag node. So binds are `"Mod+Q".close-window`
+  # (no `.action.`), and a node's name is the KDL name (`output`, not
+  # `outputs`). Nothing is checked at eval time; the rendered file is run
+  # through `niri validate` at build time, so a wrong shape fails the build
+  # instead of silently dropping niri to its default config.
+  wayland.windowManager.niri = {
+    enable = true;
+    # Same store path the NixOS module installs — used for build-time
+    # validation, so the config is checked against the niri that runs it.
+    package = osConfig.programs.niri.package;
+    # Pull in the noctalia.kdl that noctalia's builtin `niri` template writes
+    # at runtime. niri-nix's validation strips `include` lines before running
+    # `niri validate`, so the not-yet-existing file doesn't fail the build.
+    # apply.sh's grep pattern `^[[:space:]]*include([[:space:]].*)?"([^"]*/)?
+    # noctalia\.kdl"([[:space:]]|$)` matches this line, so noctalia's
+    # apply-time short-circuit fires and it never tries to write into
+    # config.kdl (an HM store-path symlink).
+    extraConfig = ''
+      include "noctalia.kdl"
+    '';
+  };
+  # niri writes its stock default config.kdl on any login where the file is
+  # missing (which is how the misnamed niri-flake-era override left us on
+  # defaults). Overwrite that rather than failing activation on a clobber.
+  xdg.configFile."niri/config.kdl".force = true;
+
+  wayland.windowManager.niri.settings = {
     input.touchpad = {
-      tap = true;
-      natural-scroll = true;
-      dwt = true;
+      tap = { };
+      natural-scroll = { };
+      dwt = { };
     };
     # Monitor layout. Outputs are matched by "make model serial" (more
     # stable than connector names — surviving dock swaps / different DP
@@ -227,16 +263,22 @@ in
     # aligned at y=480 (Dell 1440 − laptop 960) so crossing the boundary
     # matches the physical arrangement — laptop on the desk, Dell rising
     # above it. Discover identifier strings with `niri msg outputs`.
-    outputs = {
-      "Dell Inc. DELL P3221D C57ZQ83".position = {
-        x = 0;
-        y = 0;
-      };
-      "BOE NE135A1M-NY1 Unknown".position = {
-        x = 2560;
-        y = 480;
-      };
-    };
+    output = [
+      {
+        _args = [ "Dell Inc. DELL P3221D C57ZQ83" ];
+        position._props = {
+          x = 0;
+          y = 0;
+        };
+      }
+      {
+        _args = [ "BOE NE135A1M-NY1 Unknown" ];
+        position._props = {
+          x = 2560;
+          y = 480;
+        };
+      }
+    ];
     # Noctalia now runs as a systemd user unit tied to wayland.systemd.target
     # (see programs.noctalia.systemd.enable above), not a compositor spawn.
     # NOTE: v5 replaced the `noctalia ipc call <target> <fn>` surface with
@@ -252,11 +294,11 @@ in
     # `noctalia msg --help` lists every command.
     binds = {
       # Help + spawn
-      "Mod+Shift+Slash".action.show-hotkey-overlay = [ ];
-      "Mod+T".action.spawn = "ghostty";
-      "Mod+Return".action.spawn = "ghostty";
+      "Mod+Shift+Slash".show-hotkey-overlay = [ ];
+      "Mod+T".spawn = "ghostty";
+      "Mod+Return".spawn = "ghostty";
       # App launcher — Noctalia's, toggled over IPC. v5: `panel-toggle <id>`.
-      "Mod+Space".action.spawn = [
+      "Mod+Space".spawn = [
         "noctalia"
         "msg"
         "panel-toggle"
@@ -264,7 +306,7 @@ in
       ];
       # Mod+D is an alias for the same launcher — fuzzel used to live here as
       # a second, separately-themed launcher; it was dropped as redundant.
-      "Mod+D".action.spawn = [
+      "Mod+D".spawn = [
         "noctalia"
         "msg"
         "panel-toggle"
@@ -272,165 +314,165 @@ in
       ];
 
       # Window
-      "Mod+Q".action.close-window = [ ];
+      "Mod+Q".close-window = [ ];
 
       # Column focus (arrows + vim keys)
-      "Mod+Left".action.focus-column-left = [ ];
-      "Mod+Right".action.focus-column-right = [ ];
-      "Mod+H".action.focus-column-left = [ ];
-      "Mod+L".action.focus-column-right = [ ];
+      "Mod+Left".focus-column-left = [ ];
+      "Mod+Right".focus-column-right = [ ];
+      "Mod+H".focus-column-left = [ ];
+      "Mod+L".focus-column-right = [ ];
 
       # Window focus within column (arrows). Vim J/K is reassigned below
       # to workspace switching — niri's workspaces only run vertically,
       # so J/K is the natural fit for them.
-      "Mod+Down".action.focus-window-down = [ ];
-      "Mod+Up".action.focus-window-up = [ ];
+      "Mod+Down".focus-window-down = [ ];
+      "Mod+Up".focus-window-up = [ ];
 
       # Vim-style workspace focus. Mod+U/I below still works as a
       # secondary binding (niri upstream default).
-      "Mod+J".action.focus-workspace-down = [ ];
-      "Mod+K".action.focus-workspace-up = [ ];
+      "Mod+J".focus-workspace-down = [ ];
+      "Mod+K".focus-workspace-up = [ ];
 
       # Column / window move (Ctrl = move). Vim Ctrl+J/K mirrors the
       # focus binding above and moves the current column to the
       # workspace below/above. Arrow Ctrl+Down/Up keeps within-column
       # window movement so that primitive isn't lost.
-      "Mod+Ctrl+Left".action.move-column-left = [ ];
-      "Mod+Ctrl+Right".action.move-column-right = [ ];
-      "Mod+Ctrl+H".action.move-column-left = [ ];
-      "Mod+Ctrl+L".action.move-column-right = [ ];
-      "Mod+Ctrl+Down".action.move-window-down = [ ];
-      "Mod+Ctrl+Up".action.move-window-up = [ ];
-      "Mod+Ctrl+J".action.move-column-to-workspace-down = [ ];
-      "Mod+Ctrl+K".action.move-column-to-workspace-up = [ ];
+      "Mod+Ctrl+Left".move-column-left = [ ];
+      "Mod+Ctrl+Right".move-column-right = [ ];
+      "Mod+Ctrl+H".move-column-left = [ ];
+      "Mod+Ctrl+L".move-column-right = [ ];
+      "Mod+Ctrl+Down".move-window-down = [ ];
+      "Mod+Ctrl+Up".move-window-up = [ ];
+      "Mod+Ctrl+J".move-column-to-workspace-down = [ ];
+      "Mod+Ctrl+K".move-column-to-workspace-up = [ ];
 
       # First / last column
-      "Mod+Home".action.focus-column-first = [ ];
-      "Mod+End".action.focus-column-last = [ ];
-      "Mod+Ctrl+Home".action.move-column-to-first = [ ];
-      "Mod+Ctrl+End".action.move-column-to-last = [ ];
+      "Mod+Home".focus-column-first = [ ];
+      "Mod+End".focus-column-last = [ ];
+      "Mod+Ctrl+Home".move-column-to-first = [ ];
+      "Mod+Ctrl+End".move-column-to-last = [ ];
 
       # Monitor focus (Shift = monitor)
-      "Mod+Shift+Left".action.focus-monitor-left = [ ];
-      "Mod+Shift+Right".action.focus-monitor-right = [ ];
-      "Mod+Shift+Down".action.focus-monitor-down = [ ];
-      "Mod+Shift+Up".action.focus-monitor-up = [ ];
-      "Mod+Shift+H".action.focus-monitor-left = [ ];
-      "Mod+Shift+L".action.focus-monitor-right = [ ];
-      "Mod+Shift+J".action.focus-monitor-down = [ ];
-      "Mod+Shift+K".action.focus-monitor-up = [ ];
+      "Mod+Shift+Left".focus-monitor-left = [ ];
+      "Mod+Shift+Right".focus-monitor-right = [ ];
+      "Mod+Shift+Down".focus-monitor-down = [ ];
+      "Mod+Shift+Up".focus-monitor-up = [ ];
+      "Mod+Shift+H".focus-monitor-left = [ ];
+      "Mod+Shift+L".focus-monitor-right = [ ];
+      "Mod+Shift+J".focus-monitor-down = [ ];
+      "Mod+Shift+K".focus-monitor-up = [ ];
 
       # Move column to monitor (Shift+Ctrl)
-      "Mod+Shift+Ctrl+Left".action.move-column-to-monitor-left = [ ];
-      "Mod+Shift+Ctrl+Right".action.move-column-to-monitor-right = [ ];
-      "Mod+Shift+Ctrl+Down".action.move-column-to-monitor-down = [ ];
-      "Mod+Shift+Ctrl+Up".action.move-column-to-monitor-up = [ ];
-      "Mod+Shift+Ctrl+H".action.move-column-to-monitor-left = [ ];
-      "Mod+Shift+Ctrl+L".action.move-column-to-monitor-right = [ ];
-      "Mod+Shift+Ctrl+J".action.move-column-to-monitor-down = [ ];
-      "Mod+Shift+Ctrl+K".action.move-column-to-monitor-up = [ ];
+      "Mod+Shift+Ctrl+Left".move-column-to-monitor-left = [ ];
+      "Mod+Shift+Ctrl+Right".move-column-to-monitor-right = [ ];
+      "Mod+Shift+Ctrl+Down".move-column-to-monitor-down = [ ];
+      "Mod+Shift+Ctrl+Up".move-column-to-monitor-up = [ ];
+      "Mod+Shift+Ctrl+H".move-column-to-monitor-left = [ ];
+      "Mod+Shift+Ctrl+L".move-column-to-monitor-right = [ ];
+      "Mod+Shift+Ctrl+J".move-column-to-monitor-down = [ ];
+      "Mod+Shift+Ctrl+K".move-column-to-monitor-up = [ ];
 
       # Workspace focus / move (Page keys + u/i)
-      "Mod+Page_Down".action.focus-workspace-down = [ ];
-      "Mod+Page_Up".action.focus-workspace-up = [ ];
-      "Mod+U".action.focus-workspace-down = [ ];
-      "Mod+I".action.focus-workspace-up = [ ];
-      "Mod+Ctrl+Page_Down".action.move-column-to-workspace-down = [ ];
-      "Mod+Ctrl+Page_Up".action.move-column-to-workspace-up = [ ];
-      "Mod+Ctrl+U".action.move-column-to-workspace-down = [ ];
-      "Mod+Ctrl+I".action.move-column-to-workspace-up = [ ];
-      "Mod+Shift+Page_Down".action.move-workspace-down = [ ];
-      "Mod+Shift+Page_Up".action.move-workspace-up = [ ];
-      "Mod+Shift+U".action.move-workspace-down = [ ];
-      "Mod+Shift+I".action.move-workspace-up = [ ];
+      "Mod+Page_Down".focus-workspace-down = [ ];
+      "Mod+Page_Up".focus-workspace-up = [ ];
+      "Mod+U".focus-workspace-down = [ ];
+      "Mod+I".focus-workspace-up = [ ];
+      "Mod+Ctrl+Page_Down".move-column-to-workspace-down = [ ];
+      "Mod+Ctrl+Page_Up".move-column-to-workspace-up = [ ];
+      "Mod+Ctrl+U".move-column-to-workspace-down = [ ];
+      "Mod+Ctrl+I".move-column-to-workspace-up = [ ];
+      "Mod+Shift+Page_Down".move-workspace-down = [ ];
+      "Mod+Shift+Page_Up".move-workspace-up = [ ];
+      "Mod+Shift+U".move-workspace-down = [ ];
+      "Mod+Shift+I".move-workspace-up = [ ];
 
       # Scroll wheel = workspaces / columns
       "Mod+WheelScrollDown" = {
-        cooldown-ms = 150;
-        action.focus-workspace-down = [ ];
+        _props.cooldown-ms = 150;
+        focus-workspace-down = [ ];
       };
       "Mod+WheelScrollUp" = {
-        cooldown-ms = 150;
-        action.focus-workspace-up = [ ];
+        _props.cooldown-ms = 150;
+        focus-workspace-up = [ ];
       };
       "Mod+Ctrl+WheelScrollDown" = {
-        cooldown-ms = 150;
-        action.move-column-to-workspace-down = [ ];
+        _props.cooldown-ms = 150;
+        move-column-to-workspace-down = [ ];
       };
       "Mod+Ctrl+WheelScrollUp" = {
-        cooldown-ms = 150;
-        action.move-column-to-workspace-up = [ ];
+        _props.cooldown-ms = 150;
+        move-column-to-workspace-up = [ ];
       };
-      "Mod+WheelScrollRight".action.focus-column-right = [ ];
-      "Mod+WheelScrollLeft".action.focus-column-left = [ ];
-      "Mod+Ctrl+WheelScrollRight".action.move-column-right = [ ];
-      "Mod+Ctrl+WheelScrollLeft".action.move-column-left = [ ];
-      "Mod+Shift+WheelScrollDown".action.focus-column-right = [ ];
-      "Mod+Shift+WheelScrollUp".action.focus-column-left = [ ];
-      "Mod+Ctrl+Shift+WheelScrollDown".action.move-column-right = [ ];
-      "Mod+Ctrl+Shift+WheelScrollUp".action.move-column-left = [ ];
+      "Mod+WheelScrollRight".focus-column-right = [ ];
+      "Mod+WheelScrollLeft".focus-column-left = [ ];
+      "Mod+Ctrl+WheelScrollRight".move-column-right = [ ];
+      "Mod+Ctrl+WheelScrollLeft".move-column-left = [ ];
+      "Mod+Shift+WheelScrollDown".focus-column-right = [ ];
+      "Mod+Shift+WheelScrollUp".focus-column-left = [ ];
+      "Mod+Ctrl+Shift+WheelScrollDown".move-column-right = [ ];
+      "Mod+Ctrl+Shift+WheelScrollUp".move-column-left = [ ];
 
       # Numeric workspace switch + move
-      "Mod+1".action.focus-workspace = 1;
-      "Mod+2".action.focus-workspace = 2;
-      "Mod+3".action.focus-workspace = 3;
-      "Mod+4".action.focus-workspace = 4;
-      "Mod+5".action.focus-workspace = 5;
-      "Mod+6".action.focus-workspace = 6;
-      "Mod+7".action.focus-workspace = 7;
-      "Mod+8".action.focus-workspace = 8;
-      "Mod+9".action.focus-workspace = 9;
-      "Mod+Shift+1".action.move-column-to-workspace = 1;
-      "Mod+Shift+2".action.move-column-to-workspace = 2;
-      "Mod+Shift+3".action.move-column-to-workspace = 3;
-      "Mod+Shift+4".action.move-column-to-workspace = 4;
-      "Mod+Shift+5".action.move-column-to-workspace = 5;
-      "Mod+Shift+6".action.move-column-to-workspace = 6;
-      "Mod+Shift+7".action.move-column-to-workspace = 7;
-      "Mod+Shift+8".action.move-column-to-workspace = 8;
-      "Mod+Shift+9".action.move-column-to-workspace = 9;
+      "Mod+1".focus-workspace = 1;
+      "Mod+2".focus-workspace = 2;
+      "Mod+3".focus-workspace = 3;
+      "Mod+4".focus-workspace = 4;
+      "Mod+5".focus-workspace = 5;
+      "Mod+6".focus-workspace = 6;
+      "Mod+7".focus-workspace = 7;
+      "Mod+8".focus-workspace = 8;
+      "Mod+9".focus-workspace = 9;
+      "Mod+Shift+1".move-column-to-workspace = 1;
+      "Mod+Shift+2".move-column-to-workspace = 2;
+      "Mod+Shift+3".move-column-to-workspace = 3;
+      "Mod+Shift+4".move-column-to-workspace = 4;
+      "Mod+Shift+5".move-column-to-workspace = 5;
+      "Mod+Shift+6".move-column-to-workspace = 6;
+      "Mod+Shift+7".move-column-to-workspace = 7;
+      "Mod+Shift+8".move-column-to-workspace = 8;
+      "Mod+Shift+9".move-column-to-workspace = 9;
 
       # Previous workspace toggle
-      "Mod+Tab".action.focus-workspace-previous = [ ];
+      "Mod+Tab".focus-workspace-previous = [ ];
 
       # Consume / expel
-      "Mod+BracketLeft".action.consume-or-expel-window-left = [ ];
-      "Mod+BracketRight".action.consume-or-expel-window-right = [ ];
-      "Mod+Period".action.expel-window-from-column = [ ];
+      "Mod+BracketLeft".consume-or-expel-window-left = [ ];
+      "Mod+BracketRight".consume-or-expel-window-right = [ ];
+      "Mod+Period".expel-window-from-column = [ ];
 
       # Sizing
-      "Mod+R".action.switch-preset-column-width = [ ];
-      "Mod+Shift+R".action.switch-preset-window-height = [ ];
-      "Mod+Ctrl+R".action.reset-window-height = [ ];
-      "Mod+F".action.maximize-column = [ ];
-      "Mod+Shift+F".action.fullscreen-window = [ ];
-      "Mod+Ctrl+F".action.expand-column-to-available-width = [ ];
-      "Mod+C".action.center-column = [ ];
-      "Mod+Ctrl+C".action.center-visible-columns = [ ];
-      "Mod+Minus".action.set-column-width = "-10%";
-      "Mod+Equal".action.set-column-width = "+10%";
-      "Mod+Shift+Minus".action.set-window-height = "-10%";
-      "Mod+Shift+Equal".action.set-window-height = "+10%";
+      "Mod+R".switch-preset-column-width = [ ];
+      "Mod+Shift+R".switch-preset-window-height = [ ];
+      "Mod+Ctrl+R".reset-window-height = [ ];
+      "Mod+F".maximize-column = [ ];
+      "Mod+Shift+F".fullscreen-window = [ ];
+      "Mod+Ctrl+F".expand-column-to-available-width = [ ];
+      "Mod+C".center-column = [ ];
+      "Mod+Ctrl+C".center-visible-columns = [ ];
+      "Mod+Minus".set-column-width = "-10%";
+      "Mod+Equal".set-column-width = "+10%";
+      "Mod+Shift+Minus".set-window-height = "-10%";
+      "Mod+Shift+Equal".set-window-height = "+10%";
 
       # Floating + tabbed display
-      "Mod+V".action.toggle-window-floating = [ ];
-      "Mod+Shift+V".action.switch-focus-between-floating-and-tiling = [ ];
-      "Mod+W".action.toggle-column-tabbed-display = [ ];
+      "Mod+V".toggle-window-floating = [ ];
+      "Mod+Shift+V".switch-focus-between-floating-and-tiling = [ ];
+      "Mod+W".toggle-column-tabbed-display = [ ];
 
       # Screenshots
-      "Print".action.screenshot = [ ];
-      "Ctrl+Print".action.screenshot-screen = [ ];
-      "Alt+Print".action.screenshot-window = [ ];
+      "Print".screenshot = [ ];
+      "Ctrl+Print".screenshot-screen = [ ];
+      "Alt+Print".screenshot-window = [ ];
 
       # Session
-      "Mod+Shift+E".action.quit = [ ];
-      "Mod+Shift+P".action.power-off-monitors = [ ];
-      "Mod+Ctrl+Shift+T".action.toggle-debug-tint = [ ];
+      "Mod+Shift+E".quit = [ ];
+      "Mod+Shift+P".power-off-monitors = [ ];
+      "Mod+Ctrl+Shift+T".toggle-debug-tint = [ ];
 
       # Lock. Noctalia does NOT subscribe to logind's Lock signal, so
       # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
       # which raises its WlSessionLock directly.
-      "Super+Alt+L".action.spawn = [
+      "Super+Alt+L".spawn = [
         "noctalia"
         "msg"
         "session"
@@ -438,81 +480,56 @@ in
       ];
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
-      "XF86AudioRaiseVolume".action.spawn = [
+      "XF86AudioRaiseVolume".spawn = [
         "wpctl"
         "set-volume"
         "@DEFAULT_AUDIO_SINK@"
         "5%+"
       ];
-      "XF86AudioLowerVolume".action.spawn = [
+      "XF86AudioLowerVolume".spawn = [
         "wpctl"
         "set-volume"
         "@DEFAULT_AUDIO_SINK@"
         "5%-"
       ];
-      "XF86AudioMute".action.spawn = [
+      "XF86AudioMute".spawn = [
         "wpctl"
         "set-mute"
         "@DEFAULT_AUDIO_SINK@"
         "toggle"
       ];
-      "XF86AudioMicMute".action.spawn = [
+      "XF86AudioMicMute".spawn = [
         "wpctl"
         "set-mute"
         "@DEFAULT_AUDIO_SOURCE@"
         "toggle"
       ];
-      "XF86AudioPlay".action.spawn = [
+      "XF86AudioPlay".spawn = [
         "playerctl"
         "play-pause"
       ];
-      "XF86AudioNext".action.spawn = [
+      "XF86AudioNext".spawn = [
         "playerctl"
         "next"
       ];
-      "XF86AudioPrev".action.spawn = [
+      "XF86AudioPrev".spawn = [
         "playerctl"
         "previous"
       ];
 
       # Brightness — Framework keyboard top row.
-      "XF86MonBrightnessUp".action.spawn = [
+      "XF86MonBrightnessUp".spawn = [
         "brightnessctl"
         "s"
         "5%+"
       ];
-      "XF86MonBrightnessDown".action.spawn = [
+      "XF86MonBrightnessDown".spawn = [
         "brightnessctl"
         "s"
         "5%-"
       ];
     };
   };
-
-  # Extend niri's generated config.kdl with an `include "noctalia.kdl"` line
-  # so noctalia's builtin `niri` template's separately-written noctalia.kdl
-  # actually applies. programs.niri.config's `default` is not merge-able (any
-  # override replaces the settings-derived default entirely), so we compose
-  # our own file by reusing programs.niri.finalConfig — the already-rendered
-  # string of settings — and appending the include line.
-  #
-  # `niri validate` (which validated-config-for would run) rejects a config
-  # whose included file doesn't exist. That file is written at runtime by
-  # noctalia, not at build time, so we bypass validated-config-for and use
-  # pkgs.writeText directly — settings themselves are still type-checked at
-  # Nix eval time by niri-flake, so the only unchecked thing is our one-line
-  # include, which is worth the trade.
-  #
-  # apply.sh's grep pattern `^[[:space:]]*include([[:space:]].*)?"([^"]*/)?
-  # noctalia\.kdl"([[:space:]]|$)` matches the line we inject, so noctalia's
-  # apply-time short-circuit fires and it never tries to write into
-  # config.kdl (which is still an HM store-path symlink).
-  xdg.configFile.niri-config.source = lib.mkForce (
-    pkgs.writeText "config.kdl" ''
-      ${config.programs.niri.finalConfig}
-      include "noctalia.kdl"
-    ''
-  );
 
   # The idle escalation is driven entirely by Noctalia's own idle manager,
   # configured declaratively via programs.noctalia.settings.idle.behavior above:

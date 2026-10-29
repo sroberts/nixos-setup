@@ -374,36 +374,26 @@ in
   # niri + greetd (noctalia-greeter) login
   ############################################################
   programs.niri.enable = true;
-  # niri-flake's `programs.niri.package` defaults to niri-stable (v25.08).
-  # Pin to niri-unstable because Quickshell-based shells (Noctalia and the
-  # ecosystem that shares its Wayland-protocol footprint) track niri's
-  # latest, and the stable tag lags. Also disable the in-build cargo test
-  # suite — those tests sometimes SIGABRT inside the Nix build sandbox
-  # (filesystem assumptions that don't hold), even when the binary itself
-  # works at runtime. We don't gain confidence by running niri's own tests
-  # during our system build.
+  # Pin to niri-unstable: Quickshell-based shells (Noctalia and the ecosystem
+  # sharing its Wayland-protocol footprint) track niri's latest, and the
+  # stable tag lags.
   #
-  # Built with OUR nixpkgs, not niri-flake's: nixpkgs' `niri` recipe fed
-  # niri-flake's niri-unstable source + vendored crates. niri-flake doesn't
-  # follow our nixpkgs (see flake.nix), so its prebuilt niri carries its own
-  # older glibc — and niri dlopens the system mesa from /run/opengl-driver.
-  # Once our nixpkgs' mesa needed a newer glibc than niri's (the 2026-10-15
-  # bump: mesa wants GLIBC_2.43, niri-flake's pin is 2.42), mesa failed to
-  # load, niri came up with no render device, and login was a black screen.
-  # Building niri here keeps niri, mesa and glibc on one nixpkgs. nixpkgs'
-  # recipe already links libdisplay-info 0.3, sidestepping the _0_2 removal
-  # that blocks the follows. Cost: niri builds from source (no cache hit).
-  programs.niri.package =
-    let
-      unstable = inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable;
-    in
-    pkgs.niri.overrideAttrs (old: {
-      inherit (unstable) src version cargoDeps;
-      doCheck = false;
-      # nixpkgs' versionCheckHook expects `niri --version` to print our
-      # `version` (unstable-…), but niri reports its Cargo version (26.04).
-      doInstallCheck = false;
-    });
+  # This comes straight from niri-nix now. The previous arrangement — taking
+  # niri-flake's source and rebuilding it with nixpkgs' recipe — existed only
+  # to work around niri-flake: it pins `libdisplay-info_0_2` (removed from
+  # nixpkgs), so it could not follow our nixpkgs, and the resulting glibc skew
+  # against the system mesa niri dlopens black-screened login. niri-nix builds
+  # against `libdisplay-info_0_3` and follows our nixpkgs, so niri, mesa and
+  # glibc share one nixpkgs by construction and the override is unnecessary.
+  #
+  # Cost is unchanged: following nixpkgs means no niri-nix.cachix.org hit, so
+  # niri builds from source — the same price the old workaround paid.
+  #
+  # No doCheck override: niri-nix's recipe already skips the sandbox-hostile
+  # EGL tests (`checkFlags = [ "--skip=::egl" ]`), and the rest of niri's
+  # cargo suite passes in the sandbox. (The home-manager side reuses this
+  # exact package via osConfig for `niri validate`, so it stays in sync.)
+  programs.niri.package = inputs.niri.packages.${pkgs.stdenv.hostPlatform.system}.niri-unstable;
 
   # noctalia-greeter on tty1 — a Quickshell-based login screen that mirrors
   # Noctalia Shell's palette/wallpaper (imperative sync via Settings → Shell →
@@ -423,14 +413,10 @@ in
     };
   };
 
-  # Polkit auth agent: defer to Noctalia's native polkit agent (enabled via
-  # programs.noctalia.settings.shell.polkit_agent in home.nix) rather than
-  # niri-flake's bundled polkit-kde-agent service. Two agents would race on the
-  # org.freedesktop.PolicyKit1.AuthenticationAgent bus name; the upstream
-  # plugin docs explicitly require the other agent to be disabled. Force
-  # the unit off — niri-flake hard-codes `wantedBy = [ "niri.service" ]`
-  # with no opt-out option, so this is the only knob.
-  systemd.user.services.niri-flake-polkit.enable = lib.mkForce false;
+  # Polkit auth agent: Noctalia's native one (programs.noctalia.settings.shell
+  # .polkit_agent in home.nix). niri-nix, unlike niri-flake, ships no polkit
+  # agent of its own, so there is nothing to disable here — don't add a
+  # second agent, or the two race on the PolicyKit1 AuthenticationAgent name.
 
   # Tear out GNOME left behind by the Calamares base install. Harmless
   # to keep on if you used the manual install path (nothing to disable).
