@@ -1213,6 +1213,37 @@ in
     '';
   };
 
+  # btop temperature scale — Fahrenheit.
+  #
+  # Deliberately NOT programs.btop.settings. Noctalia's builtin `btop`
+  # template writes `color_theme = "noctalia"` into this same btop.conf (see
+  # the builtin_ids note above), so home-manager can't own the file as a
+  # read-only store symlink without breaking theming — the same collision
+  # that bit bat and fuzzel.
+  #
+  # So instead of owning btop.conf, enforce the one line. btop rewrites the
+  # whole file on exit, keeping its own defaults and Noctalia's theme line
+  # intact; we only ever touch temp_scale. Idempotent, so reruns are no-ops.
+  #
+  # On a fresh $HOME btop.conf doesn't exist yet (btop writes it on first
+  # run), so seed a minimal file with just this key — btop fills in the rest
+  # of its defaults around it.
+  home.activation.btopFahrenheit = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      CONF="$HOME/.config/btop/btop.conf"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$CONF")"
+      if [ ! -f "$CONF" ]; then
+        echo 'temp_scale = "fahrenheit"' > "$CONF"
+      elif ${pkgs.gnugrep}/bin/grep -q '^temp_scale' "$CONF"; then
+        ${pkgs.gnused}/bin/sed -i 's/^temp_scale = .*/temp_scale = "fahrenheit"/' "$CONF"
+      else
+        echo 'temp_scale = "fahrenheit"' >> "$CONF"
+      fi
+    '';
+  };
+
   # bat base config — writable, for the same reason as starship above (see the
   # long note at programs.bat). Carries the `--map-syntax` line that
   # home-manager's ghostty module would otherwise inject via
