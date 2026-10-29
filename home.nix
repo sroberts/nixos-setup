@@ -96,6 +96,23 @@ in
     # can't clobber the user's live tweaks — they live in settings.toml, which
     # home-manager doesn't touch.
     settings = {
+      # Bar spans the full width of the top edge, as a menu bar rather than
+      # Noctalia's default floating dock. Three defaults produce that dock
+      # look and all three have to go:
+      #   margin_ends = 180  -> 180px of dead space at EACH end, which is
+      #                         what makes it a centred capsule
+      #   margin_edge = 10   -> floats it 10px below the screen edge
+      #   radius      = 12   -> rounded corners, which read as odd once the
+      #                         bar is flush and full-width
+      # Everything else (thickness, padding, widget contents) stays at the
+      # Noctalia default — see `[bar.main]` in the upstream example.toml for
+      # the full option list.
+      bar.main = {
+        margin_ends = 0;
+        margin_edge = 0;
+        radius = 0;
+      };
+
       # Weather + where-am-I. v5 moved the unit under [weather]; [location]
       # geocodes `address`.
       location.address = "Greenville, SC";
