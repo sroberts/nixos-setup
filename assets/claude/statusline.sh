@@ -216,24 +216,6 @@ fi
 # ===== Build single-line output =====
 out=""
 out+="${blue}${i_model}${model_name}${reset}"
-
-# Current working directory
-cwd=$(echo "$input" | jq -r '.cwd // empty')
-if [ -n "$cwd" ]; then
-    display_dir="${cwd##*/}"
-    git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    out+=" ${dim}|${reset} "
-    out+="${cyan}${i_dir}${display_dir}${reset}"
-    if [ -n "$git_branch" ]; then
-        out+="${dim}@${reset}${green}${i_git}${git_branch}${reset}"
-        git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
-        [ -n "$git_stat" ] && out+=" ${dim}(${reset}${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}${dim})${reset}"
-    fi
-fi
-
-out+=" ${dim}|${reset} "
-token_color=$(usage_color "$pct_used")
-out+="${blue}${i_tok}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${token_color}${pct_used}%${reset}${dim})${reset}"
 out+=" ${dim}|${reset} "
 # effort scale — a brightness ramp climbing into the accent colours:
 #   low → med → high      overlay0 → overlay1 → text   (dim to bright)
@@ -252,6 +234,24 @@ case "$effort_level" in
     max)    out+="${red}${effort_level}${reset}" ;;
     *)      out+="${fg_c}${effort_level}${reset}" ;;
 esac
+
+# Current working directory
+cwd=$(echo "$input" | jq -r '.cwd // empty')
+if [ -n "$cwd" ]; then
+    display_dir="${cwd##*/}"
+    git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    out+=" ${dim}|${reset} "
+    out+="${cyan}${i_dir}${display_dir}${reset}"
+    if [ -n "$git_branch" ]; then
+        out+="${dim}@${reset}${green}${i_git}${git_branch}${reset}"
+        git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
+        [ -n "$git_stat" ] && out+=" ${dim}(${reset}${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}${dim})${reset}"
+    fi
+fi
+
+out+=" ${dim}|${reset} "
+token_color=$(usage_color "$pct_used")
+out+="${blue}${i_tok}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${token_color}${pct_used}%${reset}${dim})${reset}"
 
 # ===== Cross-platform OAuth token resolution (from statusline.sh) =====
 # Tries credential sources in order: env var → macOS Keychain → Linux creds file → GNOME Keyring
