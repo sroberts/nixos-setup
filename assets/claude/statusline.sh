@@ -82,6 +82,29 @@ white=$(slot_or  text     '221;221;221')  # segment labels (5h, 7d, extra)
 dim='\033[2m'
 reset='\033[0m'
 
+# Nerd Font glyphs (JetBrainsMono Nerd Font — set system-wide in
+# configuration.nix and as ghostty's font-family, so these resolve in the
+# terminal Claude Code runs in). All are Font Awesome / Devicons codepoints,
+# present in every Nerd Font build rather than the patchier Material set.
+#
+# Set NOCTALIA_STATUSLINE_ICONS=0 to turn them off without editing the file —
+# useful over SSH to a box with no patched font, where they'd render as
+# tofu boxes.
+if [ "${NOCTALIA_STATUSLINE_ICONS:-1}" = "0" ]; then
+    # Icons off: blank the decorative ones, but keep a TEXT label for effort,
+    # which otherwise loses its only marker and renders as a bare "med".
+    i_model=""; i_dir=""; i_git=""; i_tok=""; i_clock=""; i_ver=""
+    i_eff="effort: "
+else
+    i_model=$'\uf2db '   # microchip — model name
+    i_dir=$'\uf07b '     # folder    — working directory
+    i_git=$'\ue725 '     # branch    — git branch
+    i_tok=$'\uf1c0 '     # database  — context window usage
+    i_eff=$'\uf0e7 '     # bolt      — reasoning effort
+    i_clock=$'\uf017 '   # clock     — 5h / 7d usage windows
+    i_ver=$'\uf02b '     # tag       — CLI version
+fi
+
 # Format token counts (e.g., 50k / 200k)
 format_tokens() {
     local num=$1
@@ -192,7 +215,7 @@ fi
 
 # ===== Build single-line output =====
 out=""
-out+="${blue}${model_name}${reset}"
+out+="${blue}${i_model}${model_name}${reset}"
 
 # Current working directory
 cwd=$(echo "$input" | jq -r '.cwd // empty')
@@ -200,9 +223,9 @@ if [ -n "$cwd" ]; then
     display_dir="${cwd##*/}"
     git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
     out+=" ${dim}|${reset} "
-    out+="${cyan}${display_dir}${reset}"
+    out+="${cyan}${i_dir}${display_dir}${reset}"
     if [ -n "$git_branch" ]; then
-        out+="${dim}@${reset}${green}${git_branch}${reset}"
+        out+="${dim}@${reset}${green}${i_git}${git_branch}${reset}"
         git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
         [ -n "$git_stat" ] && out+=" ${dim}(${reset}${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}${dim})${reset}"
     fi
@@ -210,7 +233,7 @@ fi
 
 out+=" ${dim}|${reset} "
 token_color=$(usage_color "$pct_used")
-out+="${blue}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${token_color}${pct_used}%${reset}${dim})${reset}"
+out+="${blue}${i_tok}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${token_color}${pct_used}%${reset}${dim})${reset}"
 out+=" ${dim}|${reset} "
 # effort scale — a brightness ramp climbing into the accent colours:
 #   low → med → high      overlay0 → overlay1 → text   (dim to bright)
@@ -220,7 +243,7 @@ out+=" ${dim}|${reset} "
 faint_c=$(slot_or overlay0 '93;93;93')    # low
 dim_c=$(slot_or   overlay1 '130;130;130') # medium
 fg_c=$(slot_or    subtext1 '170;170;170') # high / unknown
-out+="effort: "
+out+="${dim}${i_eff}${reset}"
 case "$effort_level" in
     low)    out+="${faint_c}${effort_level}${reset}" ;;
     medium) out+="${dim_c}med${reset}" ;;
@@ -467,7 +490,7 @@ if $effective_builtin; then
     if [ -n "$builtin_five_hour_pct" ]; then
         five_hour_pct=$(printf "%.0f" "$builtin_five_hour_pct")
         five_hour_color=$(usage_color "$five_hour_pct")
-        out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
+        out+="${sep}${white}${i_clock}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
         if [ -n "$builtin_five_hour_reset" ] && [ "$builtin_five_hour_reset" != "null" ]; then
             five_hour_reset=$(date -j -r "$builtin_five_hour_reset" +"%H:%M" 2>/dev/null || date -d "@$builtin_five_hour_reset" +"%H:%M" 2>/dev/null)
             [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
@@ -477,7 +500,7 @@ if $effective_builtin; then
     if [ -n "$builtin_seven_day_pct" ]; then
         seven_day_pct=$(printf "%.0f" "$builtin_seven_day_pct")
         seven_day_color=$(usage_color "$seven_day_pct")
-        out+="${sep}${white}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
+        out+="${sep}${white}${i_clock}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
         if [ -n "$builtin_seven_day_reset" ] && [ "$builtin_seven_day_reset" != "null" ]; then
             seven_day_reset=$(date -j -r "$builtin_seven_day_reset" +"%a %b %-d, %H:%M" 2>/dev/null || date -d "@$builtin_seven_day_reset" +"%a %b %-d, %H:%M" 2>/dev/null)
             [ -n "$seven_day_reset" ] && out+=" ${dim}@${seven_day_reset}${reset}"
@@ -516,7 +539,7 @@ elif [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 
     five_hour_reset=$(format_reset_time "$five_hour_reset_iso" "time")
     five_hour_color=$(usage_color "$five_hour_pct")
 
-    out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
+    out+="${sep}${white}${i_clock}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
     [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
 
     # ---- 7-day (weekly) ----
@@ -525,14 +548,14 @@ elif [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 
     seven_day_reset=$(format_reset_time "$seven_day_reset_iso" "datetime")
     seven_day_color=$(usage_color "$seven_day_pct")
 
-    out+="${sep}${white}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
+    out+="${sep}${white}${i_clock}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
     [ -n "$seven_day_reset" ] && out+=" ${dim}@${seven_day_reset}${reset}"
 
     render_extra_usage "$usage_data"
 else
     # No valid usage data — show placeholders
-    out+="${sep}${white}5h${reset} ${dim}-${reset}"
-    out+="${sep}${white}7d${reset} ${dim}-${reset}"
+    out+="${sep}${white}${i_clock}5h${reset} ${dim}-${reset}"
+    out+="${sep}${white}${i_clock}7d${reset} ${dim}-${reset}"
 fi
 
 # ===== Update check (cached, 24h TTL) =====
@@ -578,7 +601,7 @@ fi
 
 # Append CLI version as last segment
 if [ -n "$cli_version" ]; then
-    out+=" ${dim}|${reset} ${orange}v${cli_version}${reset}"
+    out+=" ${dim}|${reset} ${orange}${i_ver}v${cli_version}${reset}"
 fi
 
 # Output
