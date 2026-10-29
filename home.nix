@@ -1242,6 +1242,51 @@ in
   # On a fresh $HOME btop.conf doesn't exist yet (btop writes it on first
   # run), so seed a minimal file with just this key — btop fills in the rest
   # of its defaults around it.
+  # Claude Code status line — vendored from
+  # github.com/daniel3303/ClaudeCodeStatusLine (v1.4.4), patched so its
+  # colours come from Noctalia's live palette instead of being hardcoded.
+  #
+  # Vendored rather than fetched because it carries local edits; the upstream
+  # version string is kept in the file so a future bump is a visible diff.
+  #
+  # Heads-up on what it does at runtime: it reads your Claude OAuth token
+  # (env var, macOS Keychain, or ~/.claude/.credentials.json) and calls
+  # api.anthropic.com/api/oauth/usage to render the 5h/7d usage bars, and it
+  # polls the GitHub releases API to check for newer versions of itself. Both
+  # are upstream behaviour, not something added here.
+  #
+  # settings.json is NOT owned by home-manager: Claude Code writes to it at
+  # runtime (plugins, marketplaces, permissions). So the hook merges just the
+  # statusLine key with jq and leaves everything else untouched — same
+  # reasoning as btop.conf below.
+  home.activation.claudeStatusline = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      DEST="$HOME/.claude/statusline/statusline.sh"
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")"
+      ${pkgs.coreutils}/bin/install -m 0755 \
+        ${./assets/claude/statusline.sh} "$DEST"
+
+      SETTINGS="$HOME/.claude/settings.json"
+      WANT='{"type":"command","command":"~/.claude/statusline/statusline.sh"}'
+      if [ -f "$SETTINGS" ]; then
+        TMP=$(${pkgs.coreutils}/bin/mktemp)
+        if ${pkgs.jq}/bin/jq --argjson sl "$WANT" '.statusLine = $sl' \
+             "$SETTINGS" > "$TMP" 2>/dev/null; then
+          ${pkgs.coreutils}/bin/mv "$TMP" "$SETTINGS"
+        else
+          # Malformed settings.json (hand-edited mid-save?) — leave it alone
+          # rather than overwrite something we failed to parse.
+          ${pkgs.coreutils}/bin/rm -f "$TMP"
+        fi
+      else
+        ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$SETTINGS")"
+        echo "{\"statusLine\":$WANT}" > "$SETTINGS"
+      fi
+    '';
+  };
+
   home.activation.btopFahrenheit = {
     after = [ "writeBoundary" ];
     before = [ ];
