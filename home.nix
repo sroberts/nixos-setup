@@ -111,7 +111,33 @@ in
         margin_ends = 0;
         margin_edge = 0;
         radius = 0;
+
+        # Widget list for the right-hand cluster. This is Noctalia's default
+        # `end` minus "volume" and "brightness", which went unused — the
+        # media/brightness KEYS in the niri binds below are unaffected, they
+        # drive wpctl/brightnessctl directly and never touched these widgets.
+        #
+        # Declaring `end` means we now own the whole list: a widget Noctalia
+        # adds to its default in a later release will NOT appear here until
+        # it's added below. Compare against `[bar.main]` in upstream's
+        # example.toml after a noctalia bump.
+        end = [
+          "media"
+          "tray"
+          "notifications"
+          "clipboard"
+          "network"
+          "bluetooth"
+          "battery"
+          "control-center"
+          "session"
+        ];
       };
+
+      # Battery: glyph only, no percentage label. display_mode stays at the
+      # default "glyph" (vs "graphic", the filled battery shape); show_label
+      # is what controls the text beside it, so this is the one knob.
+      widget.battery.show_label = false;
 
       # Media widget: show nothing at all when nothing is playing, rather
       # than Noctalia's default "Nothing Playing" placeholder.
