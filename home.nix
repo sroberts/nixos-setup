@@ -96,6 +96,68 @@ in
     # can't clobber the user's live tweaks — they live in settings.toml, which
     # home-manager doesn't touch.
     settings = {
+      # Bar spans the full width of the top edge, as a menu bar rather than
+      # Noctalia's default floating dock. Three defaults produce that dock
+      # look and all three have to go:
+      #   margin_ends = 180  -> 180px of dead space at EACH end, which is
+      #                         what makes it a centred capsule
+      #   margin_edge = 10   -> floats it 10px below the screen edge
+      #   radius      = 12   -> rounded corners, which read as odd once the
+      #                         bar is flush and full-width
+      # Everything else (thickness, padding, widget contents) stays at the
+      # Noctalia default — see `[bar.main]` in the upstream example.toml for
+      # the full option list.
+      bar.main = {
+        margin_ends = 0;
+        margin_edge = 0;
+        radius = 0;
+
+        # Widget list for the right-hand cluster. This is Noctalia's default
+        # `end` minus "volume" and "brightness", which went unused — the
+        # media/brightness KEYS in the niri binds below are unaffected, they
+        # drive wpctl/brightnessctl directly and never touched these widgets.
+        #
+        # Declaring `end` means we now own the whole list: a widget Noctalia
+        # adds to its default in a later release will NOT appear here until
+        # it's added below. Compare against `[bar.main]` in upstream's
+        # example.toml after a noctalia bump.
+        end = [
+          "media"
+          "tray"
+          "notifications"
+          "clipboard"
+          "network"
+          "bluetooth"
+          "battery"
+          "control-center"
+          "session"
+        ];
+      };
+
+      # Battery: glyph only, no percentage label. display_mode stays at the
+      # default "glyph" (vs "graphic", the filled battery shape); show_label
+      # is what controls the text beside it, so this is the one knob.
+      widget.battery.show_label = false;
+
+      # Network: glyph only, no SSID / interface name beside it.
+      # show_vpn_label is already false by default, so the VPN name stays
+      # hidden too; vpn_status keeps its "replace" default, meaning the glyph
+      # swaps to a shield on VPN rather than the indicator disappearing.
+      widget.network.show_label = false;
+
+      # Media widget: show nothing at all when nothing is playing, rather
+      # than Noctalia's default "Nothing Playing" placeholder.
+      #
+      # Both flags are needed — they cover different states:
+      #   hide_when_no_media  no MPRIS player running at all
+      #   hide_when_idle      a player IS running but is paused/stopped
+      # Setting only the first still leaves a widget sitting there whenever
+      # Spotify et al are open but paused, which is the common case.
+      widget.media = {
+        hide_when_no_media = true;
+        hide_when_idle = true;
+      };
+
       # Weather + where-am-I. v5 moved the unit under [weather]; [location]
       # geocodes `address`.
       location.address = "Greenville, SC";
