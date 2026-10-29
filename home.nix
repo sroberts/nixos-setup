@@ -139,6 +139,12 @@ in
       # is what controls the text beside it, so this is the one knob.
       widget.battery.show_label = false;
 
+      # Network: glyph only, no SSID / interface name beside it.
+      # show_vpn_label is already false by default, so the VPN name stays
+      # hidden too; vpn_status keeps its "replace" default, meaning the glyph
+      # swaps to a shield on VPN rather than the indicator disappearing.
+      widget.network.show_label = false;
+
       # Media widget: show nothing at all when nothing is playing, rather
       # than Noctalia's default "Nothing Playing" placeholder.
       #
