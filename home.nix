@@ -113,6 +113,19 @@ in
         radius = 0;
       };
 
+      # Media widget: show nothing at all when nothing is playing, rather
+      # than Noctalia's default "Nothing Playing" placeholder.
+      #
+      # Both flags are needed — they cover different states:
+      #   hide_when_no_media  no MPRIS player running at all
+      #   hide_when_idle      a player IS running but is paused/stopped
+      # Setting only the first still leaves a widget sitting there whenever
+      # Spotify et al are open but paused, which is the common case.
+      widget.media = {
+        hide_when_no_media = true;
+        hide_when_idle = true;
+      };
+
       # Weather + where-am-I. v5 moved the unit under [weather]; [location]
       # geocodes `address`.
       location.address = "Greenville, SC";
