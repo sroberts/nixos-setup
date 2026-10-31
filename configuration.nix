@@ -189,12 +189,27 @@ in
   # catches the laptop before the battery drains overnight.
   systemd.sleep.settings.Sleep.HibernateDelaySec = 10800; # 3h
 
-  # Closing the lid suspends to RAM, then hibernates HibernateDelaySec later —
-  # the same suspend-then-hibernate escalation the idle timeout uses. Applies
-  # on battery and AC (HandleLidSwitchExternalPower defaults to this value);
-  # HandleLidSwitchDocked defaults to "ignore", so an external display keeps
-  # the session alive with the lid shut.
-  services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
+  # Lid close. On BATTERY this suspends to RAM, then hibernates
+  # HibernateDelaySec later — the same escalation the idle timeout uses.
+  #
+  # On AC it is "ignore": plugged in, closing the lid leaves the machine
+  # running. HandleLidSwitchExternalPower would otherwise inherit
+  # HandleLidSwitch's value, which is how a plugged-in lid close used to
+  # suspend. This matches the idle path, where suspendUnlessOnAc (home.nix)
+  # skips the sleep step on AC — between the two, nothing puts this machine
+  # to sleep while it has wall power.
+  #
+  # Consequence worth knowing: on AC with the lid shut and no external
+  # display, the session stays live on a blanked internal panel. It still
+  # locks (Noctalia's 10-min idle lock is not gated), so this is a power
+  # choice, not a security hole.
+  #
+  # HandleLidSwitchDocked stays at its "ignore" default, so an external
+  # display keeps the session alive with the lid shut regardless of power.
+  services.logind.settings.Login = {
+    HandleLidSwitch = "suspend-then-hibernate";
+    HandleLidSwitchExternalPower = "ignore";
+  };
 
   ############################################################
   # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md

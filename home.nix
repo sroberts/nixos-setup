@@ -40,6 +40,58 @@ let
     vendorHash = "sha256-VPTg7xj2H5waBLy6jUGHypp7K7/+zo0k5/QPAYYMA0Q=";
     subPackages = [ "cmd/tally" ];
   };
+
+  # Idle-sleep gate. Noctalia's idle manager cannot do this itself:
+  # IdleBehaviorConfig (src/config/config_types.h) carries only name /
+  # enabled / timeout / action / command / resumeCommand / lockBeforeSuspend
+  # / lockedTimeoutSeconds, and idle_manager.cpp never looks at power state.
+  # So the AC check has to live inside the command it runs.
+  #
+  # On AC: do nothing and exit 0. On battery: suspend-then-hibernate as
+  # before. Only the SLEEP escalation is gated — the 10-min lock still fires
+  # on AC, since locking an unattended desk machine is the point.
+  #
+  # Power state comes from sysfs rather than upower, to avoid a dbus
+  # round-trip and a dependency for two file reads. Every type=Mains supply
+  # is scanned instead of hardcoding this laptop's `ACAD`, because home.nix
+  # is shared across hosts. Note USB-C charging DOES show up on ACAD here
+  # (verified: charging over USB-C PD reads ACAD/online=1 while the
+  # ucsi-source-psy-* ports report separately), so Mains alone is right and
+  # the USB entries are deliberately ignored.
+  #
+  # A machine with no Mains supply AND no battery is a desktop: treated as
+  # permanently on AC, so it never idle-suspends. Without that fallback the
+  # loop would find nothing online and suspend a desktop every 15 minutes.
+  suspendUnlessOnAc = pkgs.writeShellApplication {
+    name = "suspend-unless-on-ac";
+    runtimeInputs = [ pkgs.systemd ];
+    text = ''
+      on_ac() {
+        found_mains=0
+        found_battery=0
+        for ps in /sys/class/power_supply/*; do
+          [ -r "$ps/type" ] || continue
+          case "$(cat "$ps/type")" in
+            Mains)
+              found_mains=1
+              [ -r "$ps/online" ] || continue
+              [ "$(cat "$ps/online")" = "1" ] && return 0
+              ;;
+            Battery) found_battery=1 ;;
+          esac
+        done
+        # No mains and no battery => desktop; treat as always on AC.
+        [ "$found_mains" = "0" ] && [ "$found_battery" = "0" ] && return 0
+        return 1
+      }
+
+      if on_ac; then
+        echo "on AC — skipping idle suspend" >&2
+        exit 0
+      fi
+      exec systemctl suspend-then-hibernate
+    '';
+  };
 in
 {
   home.username = "sroberts";
@@ -278,6 +330,10 @@ in
       # 15 min. `noctalia:session lock` is the internal action; the bare
       # systemctl command is run as a user command. See services.swayidle
       # below for the one job (lock-on-lid-close) this can't cover.
+      #
+      # The sleep step goes through suspendUnlessOnAc (see the let block) so
+      # it is a no-op while plugged in. The LOCK step is intentionally NOT
+      # gated — plugged in or not, an idle session still locks.
       idle.behavior = {
         lock = {
           timeout = 600;
@@ -286,7 +342,7 @@ in
         };
         hibernate = {
           timeout = 900;
-          command = "systemctl suspend-then-hibernate";
+          command = "${suspendUnlessOnAc}/bin/suspend-unless-on-ac";
           enabled = true;
         };
       };
@@ -614,9 +670,11 @@ in
   #     Locks via WlSessionLock — the ONLY path that works, since Noctalia
   #     ignores logind's Lock signal, so `loginctl lock-session` is a no-op.
   #   - SUSPEND-THEN-HIBERNATE (15 min): [idle.behavior.hibernate] timeout=900
-  #     running `systemctl suspend-then-hibernate` as a user command. Suspends
-  #     to RAM, then hibernates after HibernateDelaySec (3h, configuration.nix)
-  #     — hibernate at 3h 15m total.
+  #     running `suspend-unless-on-ac` as a user command. On battery that is
+  #     `systemctl suspend-then-hibernate`: suspends to RAM, then hibernates
+  #     after HibernateDelaySec (3h, configuration.nix) — hibernate at 3h 15m
+  #     total. On AC it exits 0 without sleeping, so a plugged-in machine
+  #     stays up indefinitely. The lock step above still runs either way.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
   # before a sleep Noctalia didn't initiate — namely a lid close (logind's
