@@ -334,14 +334,36 @@ in
     };
     # Monitor layout. Outputs are matched by "make model serial" (more
     # stable than connector names — surviving dock swaps / different DP
-    # ports). The Dell sits at the origin; the laptop panel is placed to
-    # its right at x=2560 (Dell's logical width at scale 1) and bottom-
-    # aligned at y=480 (Dell 1440 − laptop 960) so crossing the boundary
-    # matches the physical arrangement — laptop on the desk, Dell rising
-    # above it. Discover identifier strings with `niri msg outputs`.
+    # ports). Discover identifier strings with `niri msg outputs`.
+    #
+    # The laptop panel is the DENSITY REFERENCE: it keeps niri's auto scale
+    # of 2, giving 2880x1920 over 290mm = 252 dpi native, 126 dpi effective.
+    # The Dell is then scaled to match that density rather than to the 96-dpi
+    # nominal niri would pick for it on its own. Left alone it auto-selects
+    # scale 1 (93 dpi), which is 36% coarser — one logical pixel covers 36%
+    # more millimetres there, so the cursor and all UI visibly grew on
+    # crossing to the monitor.
+    #
+    # Exact parity is 93/126 = 0.7365; 0.75 is used instead because it is a
+    # clean 90/120 fractional step and lands 1.8% off, which is not visible.
+    # Scale below 1 means niri renders the Dell at a LARGER logical size than
+    # its panel (3413x1920) and downsamples to 2560x1440 — supersampling, so
+    # it costs GPU fill rate and softens text slightly vs. native 1:1. That
+    # is the deliberate price of matching densities; raise this toward 1 if
+    # the softness bothers you more than the size jump did.
+    #
+    # Both positions are DERIVED from the Dell's scaled logical size, so they
+    # must be recomputed if that scale changes: the Dell sits at the origin
+    # spanning 0..3413, the laptop starts where it ends (x=3413) and is
+    # bottom-aligned at y=960 (Dell 1920 − laptop 960) so crossing the
+    # boundary matches the physical arrangement — laptop on the desk, Dell
+    # rising above it. Getting these wrong does not error: niri silently
+    # shoves an overlapping output aside (it bumped the Dell to x=4000
+    # mid-test), which inverts the arrangement without complaint.
     output = [
       {
         _args = [ "Dell Inc. DELL P3221D C57ZQ83" ];
+        scale = 0.75;
         position._props = {
           x = 0;
           y = 0;
@@ -350,8 +372,8 @@ in
       {
         _args = [ "BOE NE135A1M-NY1 Unknown" ];
         position._props = {
-          x = 2560;
-          y = 480;
+          x = 3413;
+          y = 960;
         };
       }
     ];
