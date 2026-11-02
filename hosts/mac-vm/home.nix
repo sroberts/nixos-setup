@@ -13,13 +13,15 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAYQavuQjYZQAxRspxYRObVbvZNY8+vX145cN+O3tFGd gosha20777@Georgys-Air\n";
 
   programs.niri.settings = {
-    # Pin the virtual display to standard Retina 16:10 MacBook resolution with 1.75 scale
+    # Pin the virtual display to 16:10 MacBook resolution on 15.3" panel (199.3 PPI).
+    # Scale 2.10 gives ~15.6' - 17.5' x-height (4.7x - 5.3x MAR at 40-45 cm),
+    # matching ThinkPad 15.6" 1080p @ 1.40 feel and making UI ~6% larger.
     outputs."Virtual-1" = {
       mode = {
         width = 2560;
         height = 1656;
       };
-      scale = 1.75;
+      scale = 2.10;
     };
 
     # QEMU Virtio Pinch Touchpad delivers reconstructed macOS gesture contacts
