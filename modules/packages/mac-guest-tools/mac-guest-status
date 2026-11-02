@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Report Try NixOS guest state to macOS launcher app via dev.tryomarchy.guest."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import time
+
+PORT = Path("/dev/virtio-ports/dev.tryomarchy.guest")
+PROTOCOL = 1
+
+
+def get_nixos_version() -> str:
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("VERSION="):
+                    return line.strip().split("=", 1)[1].strip('"')
+    except Exception:
+        pass
+    return "unstable"
+
+
+def build_report() -> bytes:
+    version = get_nixos_version()
+    release = os.uname().release
+    value = {
+        "protocol": PROTOCOL,
+        "package": "try-nixos-1.0.0",
+        "omarchy": f"NixOS {version}",
+        "nixos": version,
+        "channel": "unstable",
+        "kernel": {
+            "running": release,
+            "installed": release,
+            "release": release,
+        },
+    }
+    return json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
+
+
+def main() -> None:
+    while True:
+        try:
+            with PORT.open("wb", buffering=0) as port:
+                while True:
+                    port.write(build_report())
+                    time.sleep(10)
+        except OSError:
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()

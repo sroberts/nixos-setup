@@ -9,7 +9,7 @@
 {
   imports = [
     ../common.nix
-    ../../modules/disko/btrfs-bios.nix
+    ../../modules/disko/btrfs-uefi.nix
     (modulesPath + "/profiles/qemu-guest.nix")
   ];
 
@@ -41,13 +41,19 @@
   # Passwordless sudo for dev VM to allow seamless automated rebuilds
   security.sudo.wheelNeedsPassword = false;
 
-  # Legacy BIOS bootloader configuration for /dev/vda
-  boot.loader.systemd-boot.enable = lib.mkForce false;
-  boot.loader.limine.enable = lib.mkForce false;
-  boot.loader.grub = {
-    enable = lib.mkForce true;
-    configurationLimit = 10;
+  # Install Limine to standard removable UEFI path so VM always boots without NVRAM state
+  boot.loader.efi.canTouchEfiVariables = false;
+  boot.loader.limine.efiInstallAsRemovable = true;
+
+  # Compressed RAM swap (25% total RAM)
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+    memoryPercent = 25;
   };
+
+  # Disable nested hypervisor inside guest VM
+  my.virtualization.enable = false;
 
   # Enable OpenSSH daemon for SSH access from host
   services.openssh = {

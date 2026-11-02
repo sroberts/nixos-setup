@@ -42,9 +42,9 @@ in
       size = 24;
     };
     input.touchpad = {
-      tap = true;
-      natural-scroll = true;
-      dwt = true;
+      tap = lib.mkDefault true;
+      natural-scroll = lib.mkDefault true;
+      dwt = lib.mkDefault true;
     };
     input.keyboard.xkb.layout = "us,ru,de";
 

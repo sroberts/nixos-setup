@@ -188,6 +188,7 @@
     {
       nixosConfigurations = lib.genAttrs hostNames mkHost // {
         live-x86_64 = mkLive "x86_64-linux";
+        live-aarch64 = mkLive "aarch64-linux";
       };
 
       # `nix fmt` formats all .nix files in the tree. pkgs.nixfmt is the RFC 166

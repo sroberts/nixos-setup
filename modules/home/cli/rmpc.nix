@@ -13,7 +13,7 @@
   programs.rmpc = {
     enable = true;
     # Master build from the flake input (custom_loader support; see flake.nix).
-    package = inputs.rmpc.packages.${pkgs.stdenv.hostPlatform.system}.rmpc;
+    package = inputs.rmpc.packages.${pkgs.stdenv.hostPlatform.system}.rmpc or pkgs.rmpc;
     config = builtins.readFile ../../data/rmpc/config.ron;
   };
 

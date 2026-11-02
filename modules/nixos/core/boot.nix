@@ -47,7 +47,7 @@ in
     extraInstallCommands = "${pkgs.callPackage ../../packages/limine-enrich { }}/bin/limine-enrich";
   };
 
-  boot.loader.efi.canTouchEfiVariables = true;
+  boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
   boot.loader.timeout = lib.mkDefault 2;
   boot.kernelPackages = pkgs.linuxPackages_latest;
 

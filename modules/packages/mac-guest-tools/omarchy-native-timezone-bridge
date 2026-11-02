@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Follow the macOS host time zone and handle wake events."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+PORT = Path("/dev/virtio-ports/dev.tryomarchy.timezone")
+STATE_DIR = Path("/var/lib/try-omarchy")
+STATE_FILE = STATE_DIR / "timezone.json"
+ZONE_PATTERN = re.compile(r"^[A-Za-z0-9_+/-]+$")
+
+
+def log(message: str) -> None:
+    print(f"omarchy-native-timezone-bridge: {message}", file=sys.stderr, flush=True)
+
+
+def valid_zone(zone: str) -> bool:
+    if not isinstance(zone, str) or not 0 < len(zone) <= 128:
+        return False
+    if not ZONE_PATTERN.match(zone):
+        return False
+    if any(part in ("", ".", "..") for part in zone.split("/")):
+        return False
+    # If /etc/zoneinfo exists, check that it's a valid zone
+    zoneinfo = Path("/etc/zoneinfo")
+    if zoneinfo.exists():
+        target = zoneinfo / zone
+        try:
+            if not target.is_file() or not target.resolve().is_relative_to(zoneinfo.resolve()):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def get_current_zone() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["timedatectl", "show", "--property=Timezone", "--value"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+        return proc.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def set_zone(zone: str) -> bool:
+    current = get_current_zone()
+    if current == zone:
+        return False
+    try:
+        subprocess.run(["timedatectl", "set-timezone", zone], check=True, timeout=5)
+        log(f"Set time zone to {zone}")
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            STATE_FILE.write_text(json.dumps({"mode": "auto", "zone": zone}))
+        except OSError:
+            pass
+        return True
+    except subprocess.SubprocessError as error:
+        log(f"Failed to set time zone: {error}")
+        return False
+
+
+def handle_wake() -> None:
+    log("Host resumed from sleep; recovering guest clock from RTC")
+    rtc = Path("/sys/class/rtc/rtc0")
+    try:
+        name = (rtc / "name").read_text().strip()
+        if name.startswith(("rtc-pl031", "rtc-efi")):
+            start = time.monotonic()
+            rtc_seconds = int((rtc / "since_epoch").read_text().strip())
+            wall_seconds = time.time()
+            elapsed = time.monotonic() - start
+            if rtc_seconds > 0 and 0 <= elapsed <= 2 and (rtc_seconds - wall_seconds) > 5:
+                time.clock_settime(time.CLOCK_REALTIME, rtc_seconds + elapsed)
+                log(f"Stepped guest clock forward by {rtc_seconds - wall_seconds:.0f}s")
+    except Exception as error:
+        log(f"RTC clock recovery skipped: {error}")
+    try:
+        subprocess.run(
+            ["systemctl", "--no-block", "try-restart", "systemd-timesyncd.service"],
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        pass
+
+def handle_message(line: bytes) -> None:
+    try:
+        msg = json.loads(line)
+    except Exception as error:
+        log(f"Invalid JSON message: {error}")
+        return
+
+    if not isinstance(msg, dict):
+        return
+
+    msg_type = msg.get("type")
+    if msg_type == "wake":
+        handle_wake()
+    elif msg_type == "timezone":
+        zone = msg.get("zone")
+        if valid_zone(zone):
+            set_zone(zone)
+        else:
+            log(f"Invalid timezone received from host: {zone}")
+
+
+def run() -> int:
+    while True:
+        try:
+            with PORT.open("r+b", buffering=0) as port:
+                log(f"Connected to {PORT}")
+                buffer = b""
+                while True:
+                    chunk = port.read(4096)
+                    if not chunk:
+                        log("Port closed by host")
+                        break
+                    buffer += chunk
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        if line:
+                            handle_message(line)
+        except OSError as error:
+            log(f"Timezone channel error: {error}; retrying in 2 seconds")
+            time.sleep(2)
+
+
+if __name__ == "__main__":
+    sys.exit(run())

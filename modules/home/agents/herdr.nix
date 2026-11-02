@@ -5,7 +5,9 @@
   ...
 }:
 {
-  home.packages = [
-    inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
-  ];
+  home.packages =
+    let
+      pkg = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default or null;
+    in
+    pkgs.lib.optional (pkg != null) pkg;
 }

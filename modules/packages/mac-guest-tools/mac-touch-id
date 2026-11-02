@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# CLI tool to manage macOS Touch ID integration for sudo in NixOS
+set -euo pipefail
+
+STATE_FILE="/var/lib/try-omarchy/native-authentication.json"
+BROKER="@broker@/bin/native-authentication-broker"
+
+if [[ ! -x "$BROKER" ]]; then
+  BROKER="native-authentication-broker"
+fi
+
+is_enrolled() {
+  [[ -f "$STATE_FILE" ]]
+}
+
+status() {
+  if is_enrolled; then
+    echo "Touch ID is enabled and enrolled for sudo."
+    exit 0
+  else
+    echo "Touch ID is disabled (not enrolled)."
+    exit 1
+  fi
+}
+
+enable_touch_id() {
+  if is_enrolled; then
+    echo "Touch ID is already enrolled. Run 'mac-touch-id repair' to re-pair."
+    return 0
+  fi
+  echo "Enrolling Touch ID for sudo..."
+  echo "You will be prompted with Touch ID on your Mac."
+  if [[ $EUID -ne 0 ]]; then
+    sudo "$BROKER" enroll
+  else
+    "$BROKER" enroll
+  fi
+  echo "Touch ID enrollment successful!"
+  test_touch_id
+}
+
+disable_touch_id() {
+  if ! is_enrolled; then
+    echo "Touch ID is already disabled."
+    return 0
+  fi
+  echo "Disabling Touch ID for sudo..."
+  if [[ $EUID -ne 0 ]]; then
+    sudo "$BROKER" disable
+  else
+    "$BROKER" disable
+  fi
+  echo "Touch ID disabled."
+}
+
+repair_touch_id() {
+  echo "Re-pairing Touch ID..."
+  disable_touch_id || true
+  enable_touch_id
+}
+
+test_touch_id() {
+  echo "Testing Touch ID with sudo..."
+  sudo -k
+  if sudo echo "Touch ID sudo check passed!"; then
+    echo "Touch ID is working seamlessly."
+  else
+    echo "Touch ID test failed. Please try re-enrolling with 'mac-touch-id repair'."
+    exit 1
+  fi
+}
+
+usage() {
+  echo "Usage: mac-touch-id [status|enable|enroll|disable|repair|test]" >&2
+  exit 1
+}
+
+case "${1:-status}" in
+  status)
+    status
+    ;;
+  enable|enroll)
+    enable_touch_id
+    ;;
+  disable)
+    disable_touch_id
+    ;;
+  repair)
+    repair_touch_id
+    ;;
+  test)
+    test_touch_id
+    ;;
+  *)
+    usage
+    ;;
+esac

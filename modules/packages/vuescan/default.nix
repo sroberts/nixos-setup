@@ -26,10 +26,18 @@ stdenv.mkDerivation rec {
   pname = "vuescan";
   version = "9.8.55";
 
-  src = fetchurl {
-    url = "https://files.hamrick.com/version-archive/9.8.55/vuex6498.tgz";
-    hash = "sha256-Q9oWI7m4KpQbOSMiRoYUeYogEOxbfFyOtlkEzzUv6UQ=";
-  };
+  src = fetchurl (
+    if stdenv.hostPlatform.isAarch64 then
+      {
+        url = "https://files.hamrick.com/version-archive/${version}/vuea6498.tgz";
+        hash = "sha256-3raQs499/6AIx69UzYe8RNp5/Pfy6qHBDaKSn3ONwgo=";
+      }
+    else
+      {
+        url = "https://files.hamrick.com/version-archive/${version}/vuex6498.tgz";
+        hash = "sha256-Q9oWI7m4KpQbOSMiRoYUeYogEOxbfFyOtlkEzzUv6UQ=";
+      }
+  );
 
   sourceRoot = "VueScan";
   # VueScan appends an internal resource archive (vuescan.dat, ~40MB) to the end
@@ -99,7 +107,10 @@ stdenv.mkDerivation rec {
     description = "Scanner software for photos, documents, and film";
     homepage = "https://www.hamrick.com/";
     license = licenses.unfree;
-    platforms = [ "x86_64-linux" ];
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
     mainProgram = "vuescan";
   };
 }

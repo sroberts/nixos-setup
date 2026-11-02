@@ -14,6 +14,9 @@
   repoRoot, # flake root path (specialArgs from mkLive)
   ...
 }:
+let
+  kittyWrapped = (pkgs.callPackage ../packages/mac-guest-tools { }).kittyWrapped;
+in
 {
   imports = [
     # Live desktop = the shared system + home module trees, exactly like a
@@ -38,13 +41,32 @@
   boot.zfs.forceImportRoot = false;
   boot.loader.limine.enable = lib.mkForce false;
 
+  # Disable virtualization stack in live installer ISO
+  my.virtualization.enable = false;
+
+  # VirtIO kernel modules for seamless VM display and device support (x86_64 and aarch64)
+  boot.initrd.availableKernelModules = [
+    "virtio_gpu"
+    "virtio_pci"
+    "virtio_blk"
+    "virtio_input"
+    "virtio_net"
+    "virtio_console"
+  ];
+  # Trackpad recognition for QEMU pinch device
+  services.udev.extraRules = ''
+    ATTRS{name}=="QEMU Virtio Pinch*", ENV{ID_INPUT_TOUCHPAD}="1"
+    SUBSYSTEM=="block", KERNEL=="vd[a-z]", ATTR{ro}=="0", ENV{ID_MODEL}=="", ENV{ID_MODEL}="QEMU_VirtIO_Disk", ENV{ID_MODEL_ENC}="QEMU\x20VirtIO\x20Disk"
+  '';
+
   # Home Manager live tweaks: auto-start installer, set scale, and fish hint
   home-manager.users.${config.systemSettings.username} = {
+    programs.kitty.package = lib.mkDefault kittyWrapped;
+
     programs.niri.settings = {
       outputs."eDP-1".scale = 1.25;
       outputs."Virtual-1".scale = 1.25;
     };
-
     # Launch the TUI installer in --execute mode only AFTER graphical-session.target
     # and noctalia.service are active (preventing early startup race with Noctalia's
     # kitty theme generation).
@@ -61,7 +83,7 @@
       Service = {
         Type = "simple";
         ExecStartPre = "${pkgs.coreutils}/bin/sleep 1";
-        ExecStart = "${pkgs.kitty}/bin/kitty --title \"NixOS Everforest Installer\" -e /run/current-system/sw/bin/nixos-installer --execute";
+        ExecStart = "${kittyWrapped}/bin/kitty --title \"NixOS Everforest Installer\" -e /run/current-system/sw/bin/nixos-installer --execute";
       };
       Install = {
         WantedBy = [ "graphical-session.target" ];
