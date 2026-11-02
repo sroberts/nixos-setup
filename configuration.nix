@@ -545,6 +545,34 @@ in
       # 780M iGPU shares system memory rather than being capped at a fixed
       # VRAM size. `qwen3.8:27b` is the same manifest as `:latest`.
       "qwen3.8"
+      # d1 — 3.7 GB, multimodal (its manifest carries a `projector` layer
+      # alongside the model). Pulled and available, but deliberately bound to
+      # NO crush role: see home.nix, where the ollama provider leaves its
+      # model list empty, so auto-discovery lists every pulled model in the
+      # picker without any of them being wired to an agent role.
+      "d1"
+
+      # lfm3 and lfm3-audio are NOT here, and cannot be yet. Both are gated on
+      # a newer runtime than nixpkgs ships:
+      #
+      #   Error: model requires ollama version v0.40.13 or newer
+      #          (current version is v0.40.4)
+      #
+      # and this is not a pin we can escape by updating: nixos-unstable is at
+      # ollama 0.40.11 as of 2026-11-02, still short of 0.40.13. Listing them
+      # anyway is actively harmful rather than merely useless — the pull is a
+      # hard error, so ollama-model-loader.service exits non-zero and systemd
+      # restart-loops it indefinitely, which is exactly what happened when
+      # they were first added here.
+      #
+      # Worth knowing for next time: `ollama pull` fails at the MANIFEST stage,
+      # so this is not catchable by checking that the model exists in the
+      # registry (all three returned HTTP 200 from
+      # registry.ollama.ai/v2/library/<name>/manifests/latest). Only the pull,
+      # or reading the required version out of the manifest, tells you.
+      #
+      # Revisit once nixpkgs carries ollama >= 0.40.13: re-add both names and
+      # rebuild. `nix eval nixpkgs#ollama.version` is the one-line check.
     ];
   };
 
