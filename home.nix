@@ -1449,9 +1449,22 @@ in
   #     built for coding and long-horizon agentic work, which is exactly this
   #     role. The long context is the real win over gpt-oss:20b for coding:
   #     more of a repo fits in one conversation.
-  #   - small (task agent):  gpt-oss:20b — meant to be the faster of the two.
-  #     Still larger than ideal; llama3.2 (2 GB, already pulled) would restore
-  #     a genuine speed difference if task-agent latency ever grates.
+  #   - small (task agent):  lfm3 — 1.1 GB, text-only. This role is supposed
+  #     to be the fast one, and gpt-oss:20b (13 GB) never actually was: it is
+  #     within spitting distance of the large model, so the two roles behaved
+  #     the same. lfm3 restores a real speed difference for the cheap
+  #     mechanical work the task agent does.
+  #
+  #     lfm3 is bound HERE rather than to `large` on purpose. It is 1.1 GB
+  #     against qwen3.8's 17 GB; using it for the coder role would be a severe
+  #     downgrade on exactly the work that needs the most capability and the
+  #     256K context. If the intent was the opposite, this is a one-line swap.
+  #
+  #     lfm3-audio and d1 are pulled (configuration.nix) but intentionally
+  #     bound to no role: both carry a `projector` layer, i.e. they are
+  #     multimodal rather than text models. Provider auto-discovery still
+  #     lists them in crush's model picker, which is the right place for a
+  #     model you reach for deliberately.
   #
   # MCP servers — mirror what Claude Code would use where it's portable:
   #   - context7:      up-to-date library docs; remote HTTP (no auth for
@@ -1499,7 +1512,7 @@ in
       };
       small = {
         provider = "ollama";
-        model = "gpt-oss:20b";
+        model = "lfm3";
       };
     };
     mcp = {

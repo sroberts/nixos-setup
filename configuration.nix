@@ -545,6 +545,22 @@ in
       # 780M iGPU shares system memory rather than being capped at a fixed
       # VRAM size. `qwen3.8:27b` is the same manifest as `:latest`.
       "qwen3.8"
+      # Liquid AI LFM3 family + d1. Sizes are from the registry manifests, not
+      # guessed: all three are small enough that pulling them costs ~6.5 GB
+      # total, against the 17 GB qwen3.8 alone already occupies.
+      #
+      #   lfm3        1.1 GB  text-only (model/license/params layers only).
+      #                       Bound to crush's `small` task-agent role in
+      #                       home.nix — see the note there.
+      #   lfm3-audio  1.7 GB  carries a `projector` layer, i.e. multimodal
+      #                       with audio input. NOT a text model, so it is
+      #                       deliberately not bound to a crush role; it stays
+      #                       selectable in the picker via auto-discovery.
+      #   d1          3.7 GB  also carries a `projector` layer (multimodal).
+      #                       Same reasoning — pulled and available, not bound.
+      "lfm3"
+      "lfm3-audio"
+      "d1"
     ];
   };
 
