@@ -24,6 +24,9 @@
     "coretemp"
     "gigabyte_wmi"
   ];
+
+  # Enable transparent QEMU user emulation for building ARM64 (aarch64-linux) targets
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
   environment.systemPackages = with pkgs; [
     lm_sensors
     nvtopPackages.full
