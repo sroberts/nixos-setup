@@ -41,6 +41,97 @@ let
     subPackages = [ "cmd/tally" ];
   };
 
+  # wishlist (charmbracelet) — an SSH directory: a TUI listing every endpoint
+  # it knows about, so connecting is a pick rather than a remembered hostname.
+  #
+  # This wrapper exists because of one awkward asymmetry in its CLI: the two
+  # Tailscale CREDENTIAL flags read from the environment
+  # ($TAILSCALE_CLIENT_ID / $TAILSCALE_CLIENT_SECRET / $TAILSCALE_KEY), but
+  # `--tailscale.net` has NO env var and must be passed as a flag. So the
+  # tailnet has to come from somewhere at call time.
+  #
+  # It is derived from the running tailscaled rather than written down,
+  # deliberately: THIS REPO IS PUBLIC, and a tailnet name is a private
+  # identifier for a live network. Deriving it also means this works unchanged
+  # on any host that joins a different tailnet. Override with
+  # $WISHLIST_TAILNET if the API wants something other than the MagicDNS
+  # suffix.
+  #
+  # The credential is NOT in the store either — Nix store paths are
+  # world-readable, so a secret interpolated into this script would be
+  # readable by every user on the machine. It is read at runtime from
+  # ~/.config/wishlist/tailscale-oauth, which the wrapper refuses to use
+  # unless it is mode 0600/0400. See TODO.md for creating it.
+  #
+  # OAuth client rather than an API key on purpose: Tailscale API keys expire
+  # after 90 days, so a key here would mean re-doing this four times a year.
+  # An OAuth client secret does not expire, and needs only `devices:read`.
+  #
+  # Plain `wishlist` is also installed and still works on its own — with no
+  # config file of its own it reads ~/.ssh/config, which is exactly what we
+  # want: see the note below on why no wishlist.yaml is shipped.
+  wishlistTailscale = pkgs.writeShellApplication {
+    name = "wishlist-ts";
+    runtimeInputs = with pkgs; [
+      wishlist
+      tailscale
+      jq
+      coreutils
+    ];
+    text = ''
+      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist"
+      CREDS="$CONF_DIR/tailscale-oauth"
+
+      if [ ! -r "$CREDS" ]; then
+        echo "wishlist-ts: no Tailscale credential at $CREDS" >&2
+        echo "" >&2
+        echo "Create a Tailscale OAuth client (scope: devices:read) at" >&2
+        echo "  https://login.tailscale.com/admin/settings/oauth" >&2
+        echo "then write it, root-free and 0600:" >&2
+        echo "  install -d -m 0700 $CONF_DIR" >&2
+        echo "  umask 077; editor $CREDS" >&2
+        echo "with two lines:" >&2
+        echo "  TAILSCALE_CLIENT_ID=<id>" >&2
+        echo "  TAILSCALE_CLIENT_SECRET=<secret>" >&2
+        exit 1
+      fi
+
+      # A credential readable by group/world is worse than no credential.
+      PERM=$(stat -c '%a' "$CREDS")
+      case "$PERM" in
+        600 | 400) ;;
+        *)
+          echo "wishlist-ts: $CREDS is mode $PERM, want 600" >&2
+          echo "  chmod 600 $CREDS" >&2
+          exit 1
+          ;;
+      esac
+
+      set -a
+      # shellcheck disable=SC1090
+      . "$CREDS"
+      set +a
+
+      if [ -z "''${TAILSCALE_CLIENT_ID:-}" ] && [ -z "''${TAILSCALE_KEY:-}" ]; then
+        echo "wishlist-ts: $CREDS sets neither TAILSCALE_CLIENT_ID nor TAILSCALE_KEY" >&2
+        exit 1
+      fi
+
+      NET="''${WISHLIST_TAILNET:-}"
+      if [ -z "$NET" ]; then
+        NET=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix // empty')
+      fi
+      if [ -z "$NET" ]; then
+        echo "wishlist-ts: could not determine the tailnet name." >&2
+        echo "Is tailscaled running? \`tailscale status\` to check," >&2
+        echo "or set WISHLIST_TAILNET=<tailnet> explicitly." >&2
+        exit 1
+      fi
+
+      exec wishlist --tailscale.net="$NET" "$@"
+    '';
+  };
+
   # Idle-sleep gate. Noctalia's idle manager cannot do this itself:
   # IdleBehaviorConfig (src/config/config_types.h) carries only name /
   # enabled / timeout / action / command / resumeCommand / lockBeforeSuspend
@@ -724,6 +815,24 @@ in
     yara-x # binary is `yr`
     gum
     crush # charmbracelet/crush
+
+    # wishlist — SSH directory TUI. Two entry points on purpose:
+    #   wishlist     plain; lists ~/.ssh/config only.
+    #   wishlist-ts  adds Tailscale discovery (the wrapper in the let block).
+    #
+    # NOTE: no wishlist config file is shipped, and that is load-bearing.
+    # wishlist uses the FIRST config that parses, searching
+    # .wishlist/config.yaml, then ~/.config/wishlist.yaml, then
+    # ~/.ssh/config. Writing a ~/.config/wishlist.yaml would therefore SHADOW
+    # ~/.ssh/config entirely and silently drop the hosts defined there from
+    # the list. Leaving it absent is what makes ssh config + discovered
+    # tailnet nodes appear together.
+    #
+    # (The real search order is from `wishlist --help`, not the README, which
+    # describes a ~/.config/wishlist/ SUBFOLDER that the binary does not
+    # actually look in.)
+    wishlist
+    wishlistTailscale
     glow
     gh
     railway
@@ -1820,6 +1929,15 @@ in
             session does NOT pick up — log out and back in (or reboot) after the first
             rebuild that added them, or text injection silently fails while dictation
             itself appears to work. Check with `id -nG | tr " " "\n" | grep -E "ydotool|uinput|input"`.
+      - [ ] wishlist Tailscale discovery: create an OAuth client at
+            https://login.tailscale.com/admin/settings/oauth with ONLY the
+            `devices:read` scope, then store it 0600 (an OAuth client is used rather
+            than an API key because Tailscale API keys expire every 90 days):
+              install -d -m 0700 ~/.config/wishlist
+              umask 077; printf 'TAILSCALE_CLIENT_ID=%s\nTAILSCALE_CLIENT_SECRET=%s\n' <id> <secret> > ~/.config/wishlist/tailscale-oauth
+            Then `wishlist-ts` lists the tailnet alongside ~/.ssh/config. Plain
+            `wishlist` works without any of this (ssh config only). The credential is
+            deliberately NOT in the flake: store paths are world-readable.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
