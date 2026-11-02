@@ -63,6 +63,25 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # OpenWhispr — local-first voice dictation (Electron). Upstream ships its
+    # own flake AND a NixOS module, so we take both rather than hand-rolling
+    # an appimageTools wrapper: the module wires the Wayland auto-paste
+    # plumbing (ydotoold + the uinput module/udev rule + the two group
+    # memberships), which is the part that is fiddly to get right and the
+    # thing upstream's own issue #728 exists about.
+    #
+    # Version caveat: upstream's nix/package.nix pins the AppImage by hash and
+    # was last bumped to v1.7.4 (2026-07-08), while releases are at v1.11.0.
+    # `nix flake update openwhispr` tracks their main branch, so it only moves
+    # the app when THEY bump that hash — a flake update is not enough on its
+    # own. If the gap matters, the alternative is vendoring a copy of their
+    # package.nix with a newer version + hash, at the cost of maintaining the
+    # extraPkgs list ourselves.
+    openwhispr = {
+      url = "github:OpenWhispr/openwhispr";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Terminal workspace manager for AI coding agents (panes, sessions
     # that survive detach). Tag-pinned to keep client + server in lockstep;
     # bump by editing the `v0.9.x` in the URL below (plain `nix flake
@@ -122,6 +141,7 @@
             # home.nix alongside noctalia's.
             niri.nixosModules.default
             noctalia-greeter.nixosModules.default
+            inputs.openwhispr.nixosModules.default
 
             # ── SECURE BOOT ──
             # Uncomment together with the input in the inputs block and the
