@@ -1203,6 +1203,60 @@ in
     '';
   };
 
+  # OpenWhispr push-to-talk key. The app is installed and permissioned by
+  # upstream's NixOS module (see programs.openwhispr in configuration.nix),
+  # which also sets DICTATION_KEY session-wide — but that variable alone is
+  # not enough to be durable.
+  #
+  # src/helpers/environment.js loads the app's own config with
+  #   require("dotenv").config({ path: <userData>/.env, override: true })
+  # and its comment says so outright: "App config (.env in userData) takes
+  # precedence over system env vars". So the moment that file exists it beats
+  # environment.sessionVariables. The app writes it itself, including when it
+  # migrates a hotkey out of localStorage, so it WILL exist after first run.
+  # Declaring the key therefore means asserting it in that file too.
+  #
+  # Consequence to know: changing the push-to-talk key in OpenWhispr's own UI
+  # will not survive a rebuild. The key lives in configuration.nix (and here);
+  # change it there, not in the app.
+  #
+  # This REWRITES only the DICTATION_KEY line and preserves every other line.
+  # That matters more than usual: the same .env holds BYOK provider API keys
+  # until the app migrates them into the system keyring, so a clobber would
+  # destroy credentials. The file is left 0600 for the same reason, and its
+  # contents are never echoed.
+  #
+  # Electron's userData is ~/.config/<productName>; electron-builder.json sets
+  # productName = "OpenWhispr" while package.json name is "open-whispr", so
+  # both spellings are handled — whichever directory exists is fixed up, and
+  # the OpenWhispr one is created so a fresh profile is deterministic too.
+  home.activation.openwhisprHotkey = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      set_key() {
+        D="$1"
+        F="$D/.env"
+        ${pkgs.coreutils}/bin/mkdir -p "$D"
+        if [ ! -e "$F" ]; then
+          ${pkgs.coreutils}/bin/install -m 0600 /dev/null "$F"
+          echo 'DICTATION_KEY=RightControl' >> "$F"
+        elif ${pkgs.gnugrep}/bin/grep -q '^DICTATION_KEY=' "$F"; then
+          ${pkgs.gnused}/bin/sed -i 's/^DICTATION_KEY=.*/DICTATION_KEY=RightControl/' "$F"
+        else
+          echo 'DICTATION_KEY=RightControl' >> "$F"
+        fi
+        ${pkgs.coreutils}/bin/chmod 0600 "$F"
+      }
+
+      set_key "$HOME/.config/OpenWhispr"
+      # Only fix up the alternate spelling if the app actually made it.
+      if [ -d "$HOME/.config/open-whispr" ]; then
+        set_key "$HOME/.config/open-whispr"
+      fi
+    '';
+  };
+
   # Wallpaper library — seeds ~/Pictures/Wallpapers with the assets in
   # ./assets/wallpapers/. Copy-once per file: if a wallpaper already exists
   # at the destination (user replaced it, deleted-and-recreated it, or picked
@@ -1757,6 +1811,15 @@ in
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
+      - [ ] OpenWhispr first run: pick and download a speech model in the app (the
+            model files live under ~/.config/OpenWhispr — not in the Nix store, so a
+            reinstall re-downloads them). Push-to-talk is right control, set
+            declaratively via DICTATION_KEY; changing it in the app's own UI will NOT
+            survive a rebuild, because the activation hook rewrites that line.
+            NOTE: auto-paste needs the `ydotool` and `uinput` groups, which a running
+            session does NOT pick up — log out and back in (or reboot) after the first
+            rebuild that added them, or text injection silently fails while dictation
+            itself appears to work. Check with `id -nG | tr " " "\n" | grep -E "ydotool|uinput|input"`.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
