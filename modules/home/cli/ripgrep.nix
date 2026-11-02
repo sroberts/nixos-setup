@@ -1,2 +1,2 @@
-# crush prefers `rg` for greps; unfound falls back to slower search
+# ripgrep — fast line-oriented search tool
 { pkgs, ... }: { home.packages = [ pkgs.ripgrep ]; }

@@ -68,7 +68,7 @@
 │       ├── apps/                   # typora, thunderbird, libreoffice, nemo, kdenlive
 │       ├── cli/                    # eza, bat, fzf, zoxide, starship, jq, ripgrep, yazi, gum, btop...
 │       ├── desktop/                # niri binds, noctalia shell, wayland-tools, gtk, swayidle, wallpapers
-│       ├── dev/                    # git, gh, lazygit, neovim, vscode, c-toolchain, crush
+│       ├── dev/                    # git, gh, lazygit, neovim, vscode, c-toolchain
 │       ├── shells/                 # fish, bash
 │       ├── system/                 # xdg.nix (структура каталогов, закладки, иконки), sops.nix, mimeapps, face
 │       └── terminal/               # kitty (шрифты, паддинги, темы, прозрачность)
