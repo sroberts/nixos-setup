@@ -62,7 +62,7 @@ in
   # Home Manager live tweaks: auto-start installer, set scale, and fish hint
   home-manager.users.${config.systemSettings.username} = {
     programs.kitty.package = lib.mkDefault kittyWrapped;
-    
+
     programs.niri.settings = {
       outputs."eDP-1".scale = 1.25;
       outputs."Virtual-1".scale = 1.25;
