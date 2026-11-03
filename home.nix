@@ -453,6 +453,80 @@ let
       exec systemctl suspend-then-hibernate
     '';
   };
+  # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
+  #
+  # The TUI and the app do not share configuration: the TUI reads
+  # ~/.config/herdr/config.toml, the app reads ~/.config/herdr-app/. The TUI
+  # config held `onboarding`, a theme NAME and 20 custom colours; only the
+  # colours have a counterpart here, and the names differ, so this is a
+  # translation rather than a copy. Nothing was dropped silently — the
+  # mapping is written out below.
+  #
+  # Where each app key comes from (app colour names are the ones in
+  # ~/.config/herdr-app/herdr.d.ts; writing a TUI name here would be accepted
+  # and then do nothing, which is the trap this table exists to avoid):
+  #
+  #   TUI                 -> app
+  #   accent              -> accent
+  #   text                -> foreground
+  #   subtext0            -> muted
+  #   overlay0            -> dim
+  #   surface_dim         -> canvas        (behind cards)
+  #   surface0            -> surface       (card surface)
+  #   surface1            -> raised
+  #   active_row_bg       -> selected
+  #   selection_bg        -> selection
+  #   green/yellow/red    -> done/working/blocked   (agent states)
+  #
+  # Deliberately NOT carried over:
+  #   panel_bg, sidebar_bg   both "reset" in the TUI, meaning "inherit the
+  #                          terminal background". The app has no such
+  #                          sentinel; leaving `chrome`/`background` unset
+  #                          lets the base theme decide, which is closest.
+  #   overlay1               #ffffff, same as `text`; the app has no slot
+  #                          between foreground and muted, so it would just
+  #                          duplicate foreground.
+  #   mauve, blue, teal,     TUI accent palette with no app counterpart. The
+  #   peach                  app's equivalent is ansi0..ansi15 in a
+  #                          themes/<name>.json, which needs all 16 — the TUI
+  #                          config only ever had these few, so there is
+  #                          nothing faithful to build from.
+  #   theme.name = "terminal"  not an app theme (it has graphite/ink/moss/
+  #                          paper). The palette is dark, so `graphite` is the
+  #                          base and the custom colours sit on top.
+  #   onboarding = false     TUI-only flag; the app's welcome screen lives in
+  #                          its `frame/`, which Herdr rewrites every start.
+  #
+  # auto_switch = false becomes appearance = "dark": the app otherwise follows
+  # the system's light/dark mode, which is what the TUI was switching off.
+  #
+  # NOTE: this MERGES into settings.json and owns only the keys below, because
+  # the app writes that same file itself — the zoom keybinds and Settings
+  # screen both save there, and a read-only home.file symlink would break
+  # them. The flip side is that changing the theme in the app's own picker is
+  # reverted on the next rebuild, because this file is the source of truth.
+  # Change the look HERE, not in the picker.
+  herdrAppSettings = {
+    appearance = "dark";
+    theme = "graphite";
+    colors = {
+      accent = "#3584e4";
+      foreground = "#ffffff";
+      muted = "#ffffff";
+      dim = "#706b7a";
+      canvas = "#1a1a1a";
+      surface = "#282828";
+      raised = "#323232";
+      selected = "#282828";
+      selection = "#323232";
+      done = "#2ec27e";
+      working = "#f5c211";
+      blocked = "#c01c28";
+    };
+  };
+
+  herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
+
 in
 {
   home.username = "sroberts";
@@ -1696,6 +1770,50 @@ in
   # `programs.noctalia.settings.wallpaper.default.path` above becomes the seed
   # selection until the user picks another in the UI (which lands in
   # ~/.local/state/noctalia/settings.toml and wins).
+  # Merge the declared herdr-app look into its settings.json. See the mapping
+  # note in the let block above for where each value came from.
+  #
+  # A merge rather than a copy because Herdr writes this file too (zoom keys,
+  # Settings screen): ours win for the keys we declare, everything else the
+  # app put there is preserved. `colors` is merged key-by-key, so a colour the
+  # app or the user added that we say nothing about survives.
+  #
+  # Invalid JSON is moved aside rather than destroyed — the app does the same
+  # with shared.json, and silently discarding a file the user may have hand
+  # edited would be worse than leaving a copy behind.
+  home.activation.herdrAppSettings = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      HOME_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/herdr-app"
+      F="$HOME_DIR/settings.json"
+      WANT="${herdrAppSettingsJson}"
+
+      ${pkgs.coreutils}/bin/install -d -m 0755 "$HOME_DIR"
+
+      if [ -e "$F" ] && ! ${pkgs.jq}/bin/jq -e . "$F" >/dev/null 2>&1; then
+        BAD="$F.corrupt-$(${pkgs.coreutils}/bin/date +%s)"
+        ${pkgs.coreutils}/bin/mv "$F" "$BAD"
+        echo "herdr-app: $F was not valid JSON; kept it as $BAD" >&2
+      fi
+
+      OLD="{}"
+      [ -e "$F" ] && OLD=$(${pkgs.coreutils}/bin/cat "$F")
+
+      # `*` is jq's recursive merge, so nested `colors` merges instead of
+      # being replaced wholesale.
+      TMP=$(${pkgs.coreutils}/bin/mktemp "$HOME_DIR/.settings.json.XXXXXX")
+      if printf '%s' "$OLD" \
+        | ${pkgs.jq}/bin/jq --slurpfile want "$WANT" '. * $want[0]' > "$TMP"; then
+        ${pkgs.coreutils}/bin/chmod 0644 "$TMP"
+        ${pkgs.coreutils}/bin/mv "$TMP" "$F"
+      else
+        ${pkgs.coreutils}/bin/rm -f "$TMP"
+        echo "herdr-app: could not merge settings into $F; left it alone" >&2
+      fi
+    '';
+  };
+
   home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -2268,6 +2386,11 @@ in
             https://releases.herdr.dev/app/latest.json and .../core/latest.json
             and bump the version + hash together. `hc update` will refuse with
             "update it in your Nix configuration", which is the intended answer.
+            The look is declared too (migrated from the herdr TUI's config.toml):
+            appearance, theme and 12 colours are merged into
+            ~/.config/herdr-app/settings.json on every rebuild, so changing the
+            theme in the app's own picker does NOT stick — edit home.nix instead.
+            Everything else in that file (zoom, sounds, telemetry) stays yours.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
