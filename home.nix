@@ -1277,6 +1277,15 @@ in
     herdr-app
     herdr-core
 
+    # Herdr UI (herdrui.dev) — a native GPUI window for the `herdr` daemon
+    # above, which it reaches over that daemon's herdr-client.sock. It owns
+    # no terminals: closing it leaves the daemon and its sessions running.
+    #
+    # THIRD PARTY, not herdr.dev — penso/herdr-gpui, Apache-2.0. See the
+    # longer note on the flake input. Built from source (no binary cache),
+    # so expect the first build after a tag bump to be slow.
+    inputs.herdr-gpui.packages.${pkgs.stdenv.hostPlatform.system}.default
+
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
     tally
@@ -2391,6 +2400,14 @@ in
             ~/.config/herdr-app/settings.json on every rebuild, so changing the
             theme in the app's own picker does NOT stick — edit home.nix instead.
             Everything else in that file (zoom, sounds, telemetry) stays yours.
+      - [ ] Herdr UI (https://herdrui.dev/): run `herdr-gpui` once. It is a CLIENT
+            for the `herdr` TUI daemon (it attaches to ~/.config/herdr/herdr-client.sock
+            and starts that daemon if it is not up), NOT for herdr-app/herdr-core.
+            Third party, not herdr.dev — penso/herdr-gpui, Apache-2.0.
+            It never self-updates: bump the tag in flake.nix to upgrade.
+            Untested here: whether its vendored herdr-protocol matches the pinned
+            herdr 0.9.5 daemon. If the window attaches and paints your sessions,
+            it does. If it fails, bump or pin `herdr` rather than patching this.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
