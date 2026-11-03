@@ -91,6 +91,28 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Herdr UI (https://herdrui.dev/) — a native GPUI window that is a CLIENT
+    # for the `herdr` daemon above. It attaches to that daemon's
+    # herdr-client.sock and paints its cells; it owns no terminals and never
+    # installs or upgrades a daemon, so it pairs with the `herdr` input and
+    # is unrelated to the herdr-app/herdr-core pair in home.nix.
+    #
+    # THIRD PARTY, not herdr.dev: published by Fabien Penso (penso/herdr-gpui)
+    # under Apache-2.0. The name and domain closely mirror the official ones,
+    # which is worth knowing because this is a client for the daemon that runs
+    # coding agents. It is pinned to a tag and read on purpose rather than
+    # tracking a branch.
+    #
+    # Tag-pinned like `herdr`: versions are date-stamped (v2026MMDD.N), and a
+    # plain `nix flake update herdr-gpui` won't move a tag-pinned ref — bump
+    # the tag in the URL. Upstream's own flake builds it from source with the
+    # toolchain rust-toolchain.toml pins, so there is no binary cache for it
+    # and the first build is a long one.
+    herdr-gpui = {
+      url = "github:penso/herdr-gpui/v20261103.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # ── SECURE BOOT ────────────────────────────────────────────────
     # Uncomment to enable lanzaboote. Do this ONLY after the system is
     # installed and booting (see secure-boot.md). Enabling it before

@@ -43,6 +43,28 @@
         "type": "github"
       }
     },
+    "herdr-gpui": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay_2"
+      },
+      "locked": {
+        "lastModified": 1793693833,
+        "narHash": "sha256-SwxipGpaLtkHrwZgGFBXYYR6qpXKqa7vXa+rhZAdVxk=",
+        "owner": "penso",
+        "repo": "herdr-gpui",
+        "rev": "063e7e1533d0a8e52d1df0f6e2774ba5c1cc8c7a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "penso",
+        "ref": "v20261103.1",
+        "repo": "herdr-gpui",
+        "type": "github"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -196,6 +218,7 @@
       "inputs": {
         "claude-code-nix": "claude-code-nix",
         "herdr": "herdr",
+        "herdr-gpui": "herdr-gpui",
         "home-manager": "home-manager",
         "niri": "niri",
         "nixos-hardware": "nixos-hardware",
@@ -218,6 +241,27 @@
         "owner": "oxalica",
         "repo": "rust-overlay",
         "rev": "4cdea398dc491b082dccdce0fad1ed0b75fa3394",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "rust-overlay_2": {
+      "inputs": {
+        "nixpkgs": [
+          "herdr-gpui",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790062494,
+        "narHash": "sha256-Mds1vuoczq1fRm1rf+Iar8IKDBHNjOMo2JqqPWJUlng=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "b88764907c1b2de6c0e206d8d9d9634d91c81334",
         "type": "github"
       },
       "original": {
