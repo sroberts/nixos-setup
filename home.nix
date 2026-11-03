@@ -132,6 +132,68 @@ let
     '';
   };
 
+  # One-time setup for the credential wishlist-ts reads.
+  #
+  # This exists to avoid a specific footgun: writing the file with
+  # `printf 'TAILSCALE_CLIENT_SECRET=...' > file` puts a long-lived secret
+  # into ~/.zsh_history, where it persists in plaintext long after you have
+  # forgotten it is there. TODO.md used to suggest exactly that. This prompts
+  # instead — the secret is read with echo OFF, never appears as an argument,
+  # and is never printed back.
+  #
+  # It is a package rather than a documented snippet so it survives a
+  # reinstall, which is the whole point of this repo.
+  wishlistTailscaleSetup = pkgs.writeShellApplication {
+    name = "wishlist-ts-setup";
+    runtimeInputs = with pkgs; [ coreutils ];
+    text = ''
+      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist"
+      CREDS="$CONF_DIR/tailscale-oauth"
+
+      echo "Create the OAuth client first, if you have not:"
+      echo "  https://login.tailscale.com/admin/settings/oauth"
+      echo "  Generate OAuth client -> tick ONLY  Devices > Read  (devices:read)"
+      echo "wishlist only enumerates nodes, so no other scope is needed."
+      echo
+
+      if [ -e "$CREDS" ]; then
+        printf 'A credential already exists at %s. Replace it? [y/N] ' "$CREDS"
+        IFS= read -r REPLY_RAW
+        case "$REPLY_RAW" in
+          y | Y | yes | YES) ;;
+          *)
+            echo "left unchanged"
+            exit 0
+            ;;
+        esac
+      fi
+
+      install -d -m 0700 "$CONF_DIR"
+
+      printf 'Client ID: '
+      IFS= read -r CLIENT_ID
+      printf 'Client secret (hidden): '
+      IFS= read -rs CLIENT_SECRET
+      echo
+
+      if [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+        echo "error: both values are required; nothing written" >&2
+        exit 1
+      fi
+
+      # umask before the redirect so the file is never briefly world-readable.
+      umask 077
+      printf 'TAILSCALE_CLIENT_ID=%s\nTAILSCALE_CLIENT_SECRET=%s\n' \
+        "$CLIENT_ID" "$CLIENT_SECRET" > "$CREDS"
+      chmod 600 "$CREDS"
+
+      echo "wrote $CREDS (mode $(stat -c '%a' "$CREDS"))"
+      echo "id starts ''${CLIENT_ID:0:6}; secret not echoed"
+      echo
+      echo "Now run: wishlist-ts"
+    '';
+  };
+
   # Idle-sleep gate. Noctalia's idle manager cannot do this itself:
   # IdleBehaviorConfig (src/config/config_types.h) carries only name /
   # enabled / timeout / action / command / resumeCommand / lockBeforeSuspend
@@ -833,6 +895,7 @@ in
     # actually look in.)
     wishlist
     wishlistTailscale
+    wishlistTailscaleSetup
     glow
     gh
     railway
@@ -1929,15 +1992,17 @@ in
             session does NOT pick up — log out and back in (or reboot) after the first
             rebuild that added them, or text injection silently fails while dictation
             itself appears to work. Check with `id -nG | tr " " "\n" | grep -E "ydotool|uinput|input"`.
-      - [ ] wishlist Tailscale discovery: create an OAuth client at
-            https://login.tailscale.com/admin/settings/oauth with ONLY the
-            `devices:read` scope, then store it 0600 (an OAuth client is used rather
-            than an API key because Tailscale API keys expire every 90 days):
-              install -d -m 0700 ~/.config/wishlist
-              umask 077; printf 'TAILSCALE_CLIENT_ID=%s\nTAILSCALE_CLIENT_SECRET=%s\n' <id> <secret> > ~/.config/wishlist/tailscale-oauth
+      - [ ] wishlist Tailscale discovery: run `wishlist-ts-setup`. It points you at
+            https://login.tailscale.com/admin/settings/oauth to generate an OAuth
+            client (tick ONLY `devices:read`), then prompts for the id and secret and
+            writes ~/.config/wishlist/tailscale-oauth at 0600. It prompts rather than
+            taking arguments ON PURPOSE: passing a secret on a command line would
+            record it in ~/.zsh_history in plaintext.
+            An OAuth client is used rather than an API key because Tailscale API keys
+            expire every 90 days. The credential is deliberately NOT in the flake —
+            Nix store paths are world-readable.
             Then `wishlist-ts` lists the tailnet alongside ~/.ssh/config. Plain
-            `wishlist` works without any of this (ssh config only). The credential is
-            deliberately NOT in the flake: store paths are world-readable.
+            `wishlist` works without any of this (ssh config only).
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
