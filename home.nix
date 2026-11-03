@@ -60,8 +60,18 @@ let
   # The credential is NOT in the store either — Nix store paths are
   # world-readable, so a secret interpolated into this script would be
   # readable by every user on the machine. It is read at runtime from
-  # ~/.config/wishlist/tailscale-oauth, which the wrapper refuses to use
-  # unless it is mode 0600/0400. See TODO.md for creating it.
+  # ~/.config/wishlist-ts/oauth, which the wrapper refuses to use unless it
+  # is mode 0600/0400. See TODO.md for creating it.
+  #
+  # That path is `wishlist-ts`, NOT `wishlist`, and the difference is
+  # load-bearing. `~/.config/wishlist` (extensionless) is the SIXTH entry in
+  # wishlist's own config search path (userConfigPaths, cmd/wishlist/main.go
+  # v0.15.2), and getConfig only falls through to the next candidate on
+  # os.ErrNotExist — any other error aborts the whole run. A directory there
+  # yields EISDIR, so `wishlist` died with
+  #   failed to read config: read ~/.config/wishlist: is a directory
+  # and never reached ~/.ssh/config. An EMPTY directory is just as fatal, so
+  # the migration hook below removes it rather than only moving the file.
   #
   # OAuth client rather than an API key on purpose: Tailscale API keys expire
   # after 90 days, so a key here would mean re-doing this four times a year.
@@ -79,8 +89,10 @@ let
       coreutils
     ];
     text = ''
-      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist"
-      CREDS="$CONF_DIR/tailscale-oauth"
+      # NOT .../wishlist — see the comment above; that exact path is one of
+      # wishlist's own config candidates and a directory there is fatal.
+      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist-ts"
+      CREDS="$CONF_DIR/oauth"
 
       if [ ! -r "$CREDS" ]; then
         echo "wishlist-ts: no Tailscale credential at $CREDS" >&2
@@ -147,8 +159,10 @@ let
     name = "wishlist-ts-setup";
     runtimeInputs = with pkgs; [ coreutils ];
     text = ''
-      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist"
-      CREDS="$CONF_DIR/tailscale-oauth"
+      # NOT .../wishlist — see the comment above; that exact path is one of
+      # wishlist's own config candidates and a directory there is fatal.
+      CONF_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist-ts"
+      CREDS="$CONF_DIR/oauth"
 
       echo "Create the OAuth client first, if you have not:"
       echo "  https://login.tailscale.com/admin/settings/oauth"
@@ -883,16 +897,22 @@ in
     #   wishlist-ts  adds Tailscale discovery (the wrapper in the let block).
     #
     # NOTE: no wishlist config file is shipped, and that is load-bearing.
-    # wishlist uses the FIRST config that parses, searching
-    # .wishlist/config.yaml, then ~/.config/wishlist.yaml, then
-    # ~/.ssh/config. Writing a ~/.config/wishlist.yaml would therefore SHADOW
-    # ~/.ssh/config entirely and silently drop the hosts defined there from
-    # the list. Leaving it absent is what makes ssh config + discovered
-    # tailnet nodes appear together.
+    # wishlist uses the FIRST config that parses. The real order, from
+    # userConfigPaths in cmd/wishlist/main.go (v0.15.2) — NOT the README,
+    # which is wrong about this:
+    #   .wishlist/config.yaml, .wishlist/config.yml, .wishlist/config,
+    #   $XDG_CONFIG_HOME/wishlist.yaml, .../wishlist.yml, .../wishlist,
+    #   ~/.ssh/config, /etc/ssh/ssh_config
+    # Writing any of the first six would therefore SHADOW ~/.ssh/config
+    # entirely and silently drop the hosts defined there. Leaving them absent
+    # is what makes ssh config + discovered tailnet nodes appear together.
     #
-    # (The real search order is from `wishlist --help`, not the README, which
-    # describes a ~/.config/wishlist/ SUBFOLDER that the binary does not
-    # actually look in.)
+    # Two traps in that list, both hit for real:
+    #   - the last three are under ~/.config and the sixth is EXTENSIONLESS,
+    #     so ~/.config/wishlist is a config candidate, not a free namespace.
+    #   - getConfig falls through only on os.ErrNotExist. Any other error
+    #     (EISDIR, EACCES) aborts instead of trying the next candidate, so a
+    #     bad entry here does not degrade gracefully — it breaks wishlist.
     wishlist
     wishlistTailscale
     wishlistTailscaleSetup
@@ -1425,6 +1445,43 @@ in
       # Only fix up the alternate spelling if the app actually made it.
       if [ -d "$HOME/.config/open-whispr" ]; then
         set_key "$HOME/.config/open-whispr"
+      fi
+    '';
+  };
+
+  # Move a pre-existing wishlist Tailscale credential out of
+  # ~/.config/wishlist, which turned out to be one of wishlist's own config
+  # candidates (see the wishlist notes above). Anyone who ran
+  # wishlist-ts-setup before this fix has the file at the old path and a
+  # directory that makes plain `wishlist` abort; both have to go.
+  #
+  # Mode is preserved by `mv`, and the content is never read or echoed. The
+  # rmdir is deliberately non-forcing: if anything else is in there it stays
+  # and is reported, rather than being deleted on the user's behalf.
+  home.activation.wishlistTsCredMigrate = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      OLD_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist"
+      OLD="$OLD_DIR/tailscale-oauth"
+      NEW_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/wishlist-ts"
+      NEW="$NEW_DIR/oauth"
+
+      if [ -e "$OLD" ] && [ ! -e "$NEW" ]; then
+        ${pkgs.coreutils}/bin/install -d -m 0700 "$NEW_DIR"
+        ${pkgs.coreutils}/bin/mv "$OLD" "$NEW"
+        echo "wishlist: moved Tailscale credential to $NEW"
+      fi
+
+      # An empty directory at the old path is still fatal to `wishlist`.
+      if [ -d "$OLD_DIR" ]; then
+        if ${pkgs.coreutils}/bin/rmdir "$OLD_DIR" 2>/dev/null; then
+          echo "wishlist: removed $OLD_DIR (it shadowed wishlist's own config path)"
+        else
+          echo "wishlist: WARNING $OLD_DIR still exists and is not empty." >&2
+          echo "wishlist: plain \`wishlist\` will abort with \"is a directory\"" >&2
+          echo "wishlist: until it is moved aside." >&2
+        fi
       fi
     '';
   };
@@ -1995,7 +2052,7 @@ in
       - [ ] wishlist Tailscale discovery: run `wishlist-ts-setup`. It points you at
             https://login.tailscale.com/admin/settings/oauth to generate an OAuth
             client (tick ONLY `devices:read`), then prompts for the id and secret and
-            writes ~/.config/wishlist/tailscale-oauth at 0600. It prompts rather than
+            writes ~/.config/wishlist-ts/oauth at 0600. It prompts rather than
             taking arguments ON PURPOSE: passing a secret on a command line would
             record it in ~/.zsh_history in plaintext.
             An OAuth client is used rather than an API key because Tailscale API keys
