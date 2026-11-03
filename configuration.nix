@@ -634,6 +634,19 @@ in
       "video"
       "input"
     ];
+
+    # herdr-core (home.nix) keeps coding agents running in the background,
+    # and on first start it runs `loginctl enable-linger` for its own user so
+    # the core outlives a logout. Declared here so the repo OWNS that fact
+    # rather than discovering it: without this the binary writes
+    # /var/lib/systemd/linger/sroberts behind Nix's back, and the running
+    # system stops matching these files.
+    #
+    # The effect is not herdr-specific: user units in general survive logout
+    # and start at boot. That is the point for an agent runner, but it is a
+    # real change in scope — set this to false to opt out, and herdr-core's
+    # agents then die with the session (it will try to re-enable it).
+    linger = true;
   };
 
   ############################################################

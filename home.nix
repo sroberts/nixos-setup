@@ -41,6 +41,200 @@ let
     subPackages = [ "cmd/tally" ];
   };
 
+  # ── herdr.dev desktop app ───────────────────────────────────────
+  # The GUI sibling of the `herdr` TUI already installed below (inputs.herdr,
+  # herdrdev/herdr — the site calls it "the original terminal version"; the
+  # old ogulcancelik/herdr URL now redirects to the herdrdev org). Two
+  # separate programs, deliberately both installed:
+  #
+  #   herdr        the TUI runtime           herdrdev/herdr      v0.9.5
+  #   herdr-app    the desktop frontend      herdrdev/herdr-app  v0.1.12
+  #   herdr-core   the agent/terminal server herdrdev/herdr-core v0.1.17
+  #
+  # herdr-app is a thin frame: herdr-core is a background server holding the
+  # terminals and agents, so they keep running when the window closes. The
+  # app finds the core by running `command -v herdr-core` (it already searches
+  # Nix paths — see client.rs), which is why both are simply on PATH here
+  # rather than wired together with a systemd unit.
+  #
+  # PREBUILT, NOT BUILT FROM SOURCE. Building would need Rust 1.95.0 and Zig
+  # 0.16.0 pinned, ten vendored submodules (GPUI, ghostty-sys, taffy,
+  # quickjs-jit-runtime, …) and a working Vulkan driver at test time; there is
+  # no flake.nix upstream and nothing in nixpkgs. The release tarballs are
+  # pinned by sha256 from https://releases.herdr.dev/{app,core}/latest.json,
+  # which is the same manifest the official installer verifies against.
+  #
+  # Upstream's installer is imperative and SELF-UPDATING (~/.local/share, then
+  # hourly checks). Both halves of that are switched off here, each by a
+  # mechanism upstream built on purpose, not by patching:
+  #
+  #   - App updates: `checks_app()` (src/update.rs) only runs when `root()` is
+  #     Some, and on Linux `find_root()` returns Some only if herdr-app.svg
+  #     sits NEXT TO the binary — that is how upstream tells a release folder
+  #     from cargo's target/. Installing the icon under share/icons instead of
+  #     beside bin/herdr-app therefore makes the updater inert. Do not move
+  #     the icon into $out/bin, and do not set HERDR_RELEASES_URL: either one
+  #     switches hourly self-update back on, and it would then try to unpack
+  #     a tarball into the read-only store.
+  #
+  #   - Core updates: `manager_of()` (herdr-core src/client.rs) reports the
+  #     owning package manager from the canonicalized exe path, and
+  #     `/nix/store/` is a case it handles by name — there is an upstream unit
+  #     test asserting /nix/store/... yields "nix". So the core reports
+  #     installed_by = "nix", the app's `check_core()` returns early, and
+  #     `hc update` refuses with "update it in your Nix configuration".
+  #
+  # So both are pinned here and bumping is a deliberate edit: change the
+  # version AND the matching hash below. Upstream ships often (multiple
+  # releases a week), so expect this to lag; `latest.json` is the check.
+  # Keep app and core compatible — the app manifest carries a `core_min`
+  # (0.1.11 for app 0.1.12), and core is forward-compatible within a
+  # "generation" (currently 1).
+  herdrTarget =
+    {
+      x86_64-linux = "linux-x86_64";
+      aarch64-linux = "linux-aarch64";
+    }
+    .${pkgs.stdenv.hostPlatform.system}
+      or (throw "herdr: no upstream build for ${pkgs.stdenv.hostPlatform.system}");
+
+  # Static-pie, so nothing to patch and no library closure at all.
+  herdr-core = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+    pname = "herdr-core";
+    version = "0.1.17";
+
+    src = pkgs.fetchurl {
+      url = "https://releases.herdr.dev/core/${finalAttrs.version}/herdr-core-${herdrTarget}.tar.gz";
+      hash =
+        {
+          x86_64-linux = "sha256-guxEBD9olL/bcWuXm4fNpD/X+kawEE57e9k+ZNGpuHc=";
+          aarch64-linux = "sha256-OjekVOxjSUz0MG2yZIH+nblmc9iIcjcB0k+KmSroq4w=";
+        }
+        .${pkgs.stdenv.hostPlatform.system};
+    };
+
+    # The tarball is flat (binary + licences at the top level), so the usual
+    # single-directory sourceRoot guess does not apply.
+    sourceRoot = ".";
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 herdr-core "$out/bin/herdr-core"
+      # `hc` is the short name upstream's installer also creates, and the one
+      # its docs and error messages use.
+      ln -s herdr-core "$out/bin/hc"
+      install -Dm644 LICENSE "$out/share/doc/${finalAttrs.pname}/LICENSE"
+      install -Dm644 THIRD-PARTY-NOTICES "$out/share/doc/${finalAttrs.pname}/THIRD-PARTY-NOTICES"
+      runHook postInstall
+    '';
+
+    meta = {
+      description = "Background server that runs terminals and coding agents for herdr";
+      homepage = "https://herdr.dev/";
+      license = lib.licenses.asl20;
+      platforms = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+      mainProgram = "herdr-core";
+    };
+  });
+
+  herdr-app = pkgs.stdenv.mkDerivation (finalAttrs: {
+    pname = "herdr-app";
+    version = "0.1.12";
+
+    src = pkgs.fetchurl {
+      url = "https://releases.herdr.dev/app/${finalAttrs.version}/herdr-app-${herdrTarget}.tar.gz";
+      hash =
+        {
+          x86_64-linux = "sha256-omXmySXEh0WEBnQf+gnS+g09S9QBo07YwBwzYQjlfB8=";
+          aarch64-linux = "sha256-dJ8x0w4/TX4k4nSPdNnLSpvdpMloAnq6/7b7I5/+tpQ=";
+        }
+        .${pkgs.stdenv.hostPlatform.system};
+    };
+
+    nativeBuildInputs = with pkgs; [
+      autoPatchelfHook
+      makeWrapper
+      copyDesktopItems
+    ];
+
+    # DT_NEEDED only. Verified with `patchelf --print-needed`: libxcb.so.1,
+    # libxkbcommon.so.0, libxkbcommon-x11.so.0, libgcc_s.so.1, libm, libc.
+    buildInputs = with pkgs; [
+      libxcb
+      libxkbcommon
+      stdenv.cc.cc.lib
+    ];
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 herdr-app "$out/bin/herdr-app"
+      # share/icons, NOT next to the binary — see the self-update note above.
+      install -Dm644 herdr-app.svg \
+        "$out/share/icons/hicolor/scalable/apps/herdr-app.svg"
+      install -Dm644 LICENSE "$out/share/doc/${finalAttrs.pname}/LICENSE"
+      install -Dm644 THIRD-PARTY-NOTICES "$out/share/doc/${finalAttrs.pname}/THIRD-PARTY-NOTICES"
+      runHook postInstall
+    '';
+
+    # GPUI dlopens its graphics and input stack rather than linking it, so
+    # autoPatchelfHook cannot see any of this and the RPATH alone is not
+    # enough. The full set, from the .so names in the binary: libEGL,
+    # libvulkan, libwayland-client, libwayland-egl, libxcb, libxkbcommon,
+    # libxkbcommon-x11. fontconfig/freetype are statically linked, so they
+    # are deliberately absent. The Vulkan ICD itself comes from the system
+    # driver via vulkan-loader's /run/opengl-driver lookup.
+    #
+    # PATH carries herdr-core because a desktop-launched app gets a minimal
+    # PATH, and without it the app shows "Herdr needs herdr-core".
+    postFixup = ''
+      wrapProgram "$out/bin/herdr-app" \
+        --prefix LD_LIBRARY_PATH : "${
+          lib.makeLibraryPath (
+            with pkgs;
+            [
+              vulkan-loader
+              libGL
+              wayland
+              libxkbcommon
+              libxcb
+            ]
+          )
+        }" \
+        --suffix PATH : "${lib.makeBinPath [ herdr-core ]}"
+    '';
+
+    desktopItems = [
+      (pkgs.makeDesktopItem {
+        name = "herdr-app";
+        exec = "herdr-app";
+        icon = "herdr-app";
+        desktopName = "Herdr";
+        comment = "Run and watch coding agents";
+        categories = [
+          "Development"
+          "Utility"
+        ];
+        startupWMClass = "herdr-app";
+      })
+    ];
+
+    meta = {
+      description = "Native desktop app for running coding agents";
+      homepage = "https://herdr.dev/";
+      license = lib.licenses.asl20;
+      platforms = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+      mainProgram = "herdr-app";
+    };
+  });
+
   # wishlist (charmbracelet) — an SSH directory: a TUI listing every endpoint
   # it knows about, so connecting is a pick rather than a remembered hostname.
   #
@@ -1002,6 +1196,12 @@ in
     # (panes, sessions that survive detach). Tag-pinned in flake.nix to
     # match the herdr server version; bump by editing the tag there.
     inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
+
+    # herdr.dev desktop app + its agent server. Separate programs from the
+    # TUI above; see the long note in the let block for why these are
+    # prebuilt and how self-update is kept switched off.
+    herdr-app
+    herdr-core
 
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
@@ -2060,6 +2260,14 @@ in
             Nix store paths are world-readable.
             Then `wishlist-ts` lists the tailnet alongside ~/.ssh/config. Plain
             `wishlist` works without any of this (ssh config only).
+      - [ ] herdr desktop app (https://herdr.dev/): launch `herdr-app` once and sign
+            in to whichever agent you use; herdr-core starts on demand and keeps
+            agents alive after the window closes. The app and core are PINNED in
+            home.nix and self-update is switched off on purpose (the store is
+            read-only) — upstream ships several releases a week, so check
+            https://releases.herdr.dev/app/latest.json and .../core/latest.json
+            and bump the version + hash together. `hc update` will refuse with
+            "update it in your Nix configuration", which is the intended answer.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
