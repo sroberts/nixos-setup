@@ -41,6 +41,200 @@ let
     subPackages = [ "cmd/tally" ];
   };
 
+  # ── herdr.dev desktop app ───────────────────────────────────────
+  # The GUI sibling of the `herdr` TUI already installed below (inputs.herdr,
+  # herdrdev/herdr — the site calls it "the original terminal version"; the
+  # old ogulcancelik/herdr URL now redirects to the herdrdev org). Two
+  # separate programs, deliberately both installed:
+  #
+  #   herdr        the TUI runtime           herdrdev/herdr      v0.9.5
+  #   herdr-app    the desktop frontend      herdrdev/herdr-app  v0.1.12
+  #   herdr-core   the agent/terminal server herdrdev/herdr-core v0.1.17
+  #
+  # herdr-app is a thin frame: herdr-core is a background server holding the
+  # terminals and agents, so they keep running when the window closes. The
+  # app finds the core by running `command -v herdr-core` (it already searches
+  # Nix paths — see client.rs), which is why both are simply on PATH here
+  # rather than wired together with a systemd unit.
+  #
+  # PREBUILT, NOT BUILT FROM SOURCE. Building would need Rust 1.95.0 and Zig
+  # 0.16.0 pinned, ten vendored submodules (GPUI, ghostty-sys, taffy,
+  # quickjs-jit-runtime, …) and a working Vulkan driver at test time; there is
+  # no flake.nix upstream and nothing in nixpkgs. The release tarballs are
+  # pinned by sha256 from https://releases.herdr.dev/{app,core}/latest.json,
+  # which is the same manifest the official installer verifies against.
+  #
+  # Upstream's installer is imperative and SELF-UPDATING (~/.local/share, then
+  # hourly checks). Both halves of that are switched off here, each by a
+  # mechanism upstream built on purpose, not by patching:
+  #
+  #   - App updates: `checks_app()` (src/update.rs) only runs when `root()` is
+  #     Some, and on Linux `find_root()` returns Some only if herdr-app.svg
+  #     sits NEXT TO the binary — that is how upstream tells a release folder
+  #     from cargo's target/. Installing the icon under share/icons instead of
+  #     beside bin/herdr-app therefore makes the updater inert. Do not move
+  #     the icon into $out/bin, and do not set HERDR_RELEASES_URL: either one
+  #     switches hourly self-update back on, and it would then try to unpack
+  #     a tarball into the read-only store.
+  #
+  #   - Core updates: `manager_of()` (herdr-core src/client.rs) reports the
+  #     owning package manager from the canonicalized exe path, and
+  #     `/nix/store/` is a case it handles by name — there is an upstream unit
+  #     test asserting /nix/store/... yields "nix". So the core reports
+  #     installed_by = "nix", the app's `check_core()` returns early, and
+  #     `hc update` refuses with "update it in your Nix configuration".
+  #
+  # So both are pinned here and bumping is a deliberate edit: change the
+  # version AND the matching hash below. Upstream ships often (multiple
+  # releases a week), so expect this to lag; `latest.json` is the check.
+  # Keep app and core compatible — the app manifest carries a `core_min`
+  # (0.1.11 for app 0.1.12), and core is forward-compatible within a
+  # "generation" (currently 1).
+  herdrTarget =
+    {
+      x86_64-linux = "linux-x86_64";
+      aarch64-linux = "linux-aarch64";
+    }
+    .${pkgs.stdenv.hostPlatform.system}
+      or (throw "herdr: no upstream build for ${pkgs.stdenv.hostPlatform.system}");
+
+  # Static-pie, so nothing to patch and no library closure at all.
+  herdr-core = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+    pname = "herdr-core";
+    version = "0.1.17";
+
+    src = pkgs.fetchurl {
+      url = "https://releases.herdr.dev/core/${finalAttrs.version}/herdr-core-${herdrTarget}.tar.gz";
+      hash =
+        {
+          x86_64-linux = "sha256-guxEBD9olL/bcWuXm4fNpD/X+kawEE57e9k+ZNGpuHc=";
+          aarch64-linux = "sha256-OjekVOxjSUz0MG2yZIH+nblmc9iIcjcB0k+KmSroq4w=";
+        }
+        .${pkgs.stdenv.hostPlatform.system};
+    };
+
+    # The tarball is flat (binary + licences at the top level), so the usual
+    # single-directory sourceRoot guess does not apply.
+    sourceRoot = ".";
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 herdr-core "$out/bin/herdr-core"
+      # `hc` is the short name upstream's installer also creates, and the one
+      # its docs and error messages use.
+      ln -s herdr-core "$out/bin/hc"
+      install -Dm644 LICENSE "$out/share/doc/${finalAttrs.pname}/LICENSE"
+      install -Dm644 THIRD-PARTY-NOTICES "$out/share/doc/${finalAttrs.pname}/THIRD-PARTY-NOTICES"
+      runHook postInstall
+    '';
+
+    meta = {
+      description = "Background server that runs terminals and coding agents for herdr";
+      homepage = "https://herdr.dev/";
+      license = lib.licenses.asl20;
+      platforms = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+      mainProgram = "herdr-core";
+    };
+  });
+
+  herdr-app = pkgs.stdenv.mkDerivation (finalAttrs: {
+    pname = "herdr-app";
+    version = "0.1.12";
+
+    src = pkgs.fetchurl {
+      url = "https://releases.herdr.dev/app/${finalAttrs.version}/herdr-app-${herdrTarget}.tar.gz";
+      hash =
+        {
+          x86_64-linux = "sha256-omXmySXEh0WEBnQf+gnS+g09S9QBo07YwBwzYQjlfB8=";
+          aarch64-linux = "sha256-dJ8x0w4/TX4k4nSPdNnLSpvdpMloAnq6/7b7I5/+tpQ=";
+        }
+        .${pkgs.stdenv.hostPlatform.system};
+    };
+
+    nativeBuildInputs = with pkgs; [
+      autoPatchelfHook
+      makeWrapper
+      copyDesktopItems
+    ];
+
+    # DT_NEEDED only. Verified with `patchelf --print-needed`: libxcb.so.1,
+    # libxkbcommon.so.0, libxkbcommon-x11.so.0, libgcc_s.so.1, libm, libc.
+    buildInputs = with pkgs; [
+      libxcb
+      libxkbcommon
+      stdenv.cc.cc.lib
+    ];
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 herdr-app "$out/bin/herdr-app"
+      # share/icons, NOT next to the binary — see the self-update note above.
+      install -Dm644 herdr-app.svg \
+        "$out/share/icons/hicolor/scalable/apps/herdr-app.svg"
+      install -Dm644 LICENSE "$out/share/doc/${finalAttrs.pname}/LICENSE"
+      install -Dm644 THIRD-PARTY-NOTICES "$out/share/doc/${finalAttrs.pname}/THIRD-PARTY-NOTICES"
+      runHook postInstall
+    '';
+
+    # GPUI dlopens its graphics and input stack rather than linking it, so
+    # autoPatchelfHook cannot see any of this and the RPATH alone is not
+    # enough. The full set, from the .so names in the binary: libEGL,
+    # libvulkan, libwayland-client, libwayland-egl, libxcb, libxkbcommon,
+    # libxkbcommon-x11. fontconfig/freetype are statically linked, so they
+    # are deliberately absent. The Vulkan ICD itself comes from the system
+    # driver via vulkan-loader's /run/opengl-driver lookup.
+    #
+    # PATH carries herdr-core because a desktop-launched app gets a minimal
+    # PATH, and without it the app shows "Herdr needs herdr-core".
+    postFixup = ''
+      wrapProgram "$out/bin/herdr-app" \
+        --prefix LD_LIBRARY_PATH : "${
+          lib.makeLibraryPath (
+            with pkgs;
+            [
+              vulkan-loader
+              libGL
+              wayland
+              libxkbcommon
+              libxcb
+            ]
+          )
+        }" \
+        --suffix PATH : "${lib.makeBinPath [ herdr-core ]}"
+    '';
+
+    desktopItems = [
+      (pkgs.makeDesktopItem {
+        name = "herdr-app";
+        exec = "herdr-app";
+        icon = "herdr-app";
+        desktopName = "Herdr";
+        comment = "Run and watch coding agents";
+        categories = [
+          "Development"
+          "Utility"
+        ];
+        startupWMClass = "herdr-app";
+      })
+    ];
+
+    meta = {
+      description = "Native desktop app for running coding agents";
+      homepage = "https://herdr.dev/";
+      license = lib.licenses.asl20;
+      platforms = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+      mainProgram = "herdr-app";
+    };
+  });
+
   # wishlist (charmbracelet) — an SSH directory: a TUI listing every endpoint
   # it knows about, so connecting is a pick rather than a remembered hostname.
   #
@@ -259,6 +453,80 @@ let
       exec systemctl suspend-then-hibernate
     '';
   };
+  # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
+  #
+  # The TUI and the app do not share configuration: the TUI reads
+  # ~/.config/herdr/config.toml, the app reads ~/.config/herdr-app/. The TUI
+  # config held `onboarding`, a theme NAME and 20 custom colours; only the
+  # colours have a counterpart here, and the names differ, so this is a
+  # translation rather than a copy. Nothing was dropped silently — the
+  # mapping is written out below.
+  #
+  # Where each app key comes from (app colour names are the ones in
+  # ~/.config/herdr-app/herdr.d.ts; writing a TUI name here would be accepted
+  # and then do nothing, which is the trap this table exists to avoid):
+  #
+  #   TUI                 -> app
+  #   accent              -> accent
+  #   text                -> foreground
+  #   subtext0            -> muted
+  #   overlay0            -> dim
+  #   surface_dim         -> canvas        (behind cards)
+  #   surface0            -> surface       (card surface)
+  #   surface1            -> raised
+  #   active_row_bg       -> selected
+  #   selection_bg        -> selection
+  #   green/yellow/red    -> done/working/blocked   (agent states)
+  #
+  # Deliberately NOT carried over:
+  #   panel_bg, sidebar_bg   both "reset" in the TUI, meaning "inherit the
+  #                          terminal background". The app has no such
+  #                          sentinel; leaving `chrome`/`background` unset
+  #                          lets the base theme decide, which is closest.
+  #   overlay1               #ffffff, same as `text`; the app has no slot
+  #                          between foreground and muted, so it would just
+  #                          duplicate foreground.
+  #   mauve, blue, teal,     TUI accent palette with no app counterpart. The
+  #   peach                  app's equivalent is ansi0..ansi15 in a
+  #                          themes/<name>.json, which needs all 16 — the TUI
+  #                          config only ever had these few, so there is
+  #                          nothing faithful to build from.
+  #   theme.name = "terminal"  not an app theme (it has graphite/ink/moss/
+  #                          paper). The palette is dark, so `graphite` is the
+  #                          base and the custom colours sit on top.
+  #   onboarding = false     TUI-only flag; the app's welcome screen lives in
+  #                          its `frame/`, which Herdr rewrites every start.
+  #
+  # auto_switch = false becomes appearance = "dark": the app otherwise follows
+  # the system's light/dark mode, which is what the TUI was switching off.
+  #
+  # NOTE: this MERGES into settings.json and owns only the keys below, because
+  # the app writes that same file itself — the zoom keybinds and Settings
+  # screen both save there, and a read-only home.file symlink would break
+  # them. The flip side is that changing the theme in the app's own picker is
+  # reverted on the next rebuild, because this file is the source of truth.
+  # Change the look HERE, not in the picker.
+  herdrAppSettings = {
+    appearance = "dark";
+    theme = "graphite";
+    colors = {
+      accent = "#3584e4";
+      foreground = "#ffffff";
+      muted = "#ffffff";
+      dim = "#706b7a";
+      canvas = "#1a1a1a";
+      surface = "#282828";
+      raised = "#323232";
+      selected = "#282828";
+      selection = "#323232";
+      done = "#2ec27e";
+      working = "#f5c211";
+      blocked = "#c01c28";
+    };
+  };
+
+  herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
+
 in
 {
   home.username = "sroberts";
@@ -1003,6 +1271,12 @@ in
     # match the herdr server version; bump by editing the tag there.
     inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
 
+    # herdr.dev desktop app + its agent server. Separate programs from the
+    # TUI above; see the long note in the let block for why these are
+    # prebuilt and how self-update is kept switched off.
+    herdr-app
+    herdr-core
+
     # Herdr UI (herdrui.dev) — a native GPUI window for the `herdr` daemon
     # above, which it reaches over that daemon's herdr-client.sock. It owns
     # no terminals: closing it leaves the daemon and its sessions running.
@@ -1505,6 +1779,50 @@ in
   # `programs.noctalia.settings.wallpaper.default.path` above becomes the seed
   # selection until the user picks another in the UI (which lands in
   # ~/.local/state/noctalia/settings.toml and wins).
+  # Merge the declared herdr-app look into its settings.json. See the mapping
+  # note in the let block above for where each value came from.
+  #
+  # A merge rather than a copy because Herdr writes this file too (zoom keys,
+  # Settings screen): ours win for the keys we declare, everything else the
+  # app put there is preserved. `colors` is merged key-by-key, so a colour the
+  # app or the user added that we say nothing about survives.
+  #
+  # Invalid JSON is moved aside rather than destroyed — the app does the same
+  # with shared.json, and silently discarding a file the user may have hand
+  # edited would be worse than leaving a copy behind.
+  home.activation.herdrAppSettings = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      HOME_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/herdr-app"
+      F="$HOME_DIR/settings.json"
+      WANT="${herdrAppSettingsJson}"
+
+      ${pkgs.coreutils}/bin/install -d -m 0755 "$HOME_DIR"
+
+      if [ -e "$F" ] && ! ${pkgs.jq}/bin/jq -e . "$F" >/dev/null 2>&1; then
+        BAD="$F.corrupt-$(${pkgs.coreutils}/bin/date +%s)"
+        ${pkgs.coreutils}/bin/mv "$F" "$BAD"
+        echo "herdr-app: $F was not valid JSON; kept it as $BAD" >&2
+      fi
+
+      OLD="{}"
+      [ -e "$F" ] && OLD=$(${pkgs.coreutils}/bin/cat "$F")
+
+      # `*` is jq's recursive merge, so nested `colors` merges instead of
+      # being replaced wholesale.
+      TMP=$(${pkgs.coreutils}/bin/mktemp "$HOME_DIR/.settings.json.XXXXXX")
+      if printf '%s' "$OLD" \
+        | ${pkgs.jq}/bin/jq --slurpfile want "$WANT" '. * $want[0]' > "$TMP"; then
+        ${pkgs.coreutils}/bin/chmod 0644 "$TMP"
+        ${pkgs.coreutils}/bin/mv "$TMP" "$F"
+      else
+        ${pkgs.coreutils}/bin/rm -f "$TMP"
+        echo "herdr-app: could not merge settings into $F; left it alone" >&2
+      fi
+    '';
+  };
+
   home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];
@@ -2069,6 +2387,19 @@ in
             Nix store paths are world-readable.
             Then `wishlist-ts` lists the tailnet alongside ~/.ssh/config. Plain
             `wishlist` works without any of this (ssh config only).
+      - [ ] herdr desktop app (https://herdr.dev/): launch `herdr-app` once and sign
+            in to whichever agent you use; herdr-core starts on demand and keeps
+            agents alive after the window closes. The app and core are PINNED in
+            home.nix and self-update is switched off on purpose (the store is
+            read-only) — upstream ships several releases a week, so check
+            https://releases.herdr.dev/app/latest.json and .../core/latest.json
+            and bump the version + hash together. `hc update` will refuse with
+            "update it in your Nix configuration", which is the intended answer.
+            The look is declared too (migrated from the herdr TUI's config.toml):
+            appearance, theme and 12 colours are merged into
+            ~/.config/herdr-app/settings.json on every rebuild, so changing the
+            theme in the app's own picker does NOT stick — edit home.nix instead.
+            Everything else in that file (zoom, sounds, telemetry) stays yours.
       - [ ] Herdr UI (https://herdrui.dev/): run `herdr-gpui` once. It is a CLIENT
             for the `herdr` TUI daemon (it attaches to ~/.config/herdr/herdr-client.sock
             and starts that daemon if it is not up), NOT for herdr-app/herdr-core.
