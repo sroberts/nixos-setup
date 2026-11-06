@@ -194,26 +194,6 @@
         "type": "github"
       }
     },
-    "openwhispr": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1793640703,
-        "narHash": "sha256-PB/xhu+NVx5Ic46mMXfF8UyWIP/xH6JTg14/aEJ+3h4=",
-        "owner": "OpenWhispr",
-        "repo": "openwhispr",
-        "rev": "66c10ee73c16fd2ef2e9616f0cc18ae39304a629",
-        "type": "github"
-      },
-      "original": {
-        "owner": "OpenWhispr",
-        "repo": "openwhispr",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "claude-code-nix": "claude-code-nix",
@@ -224,8 +204,7 @@
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
         "noctalia": "noctalia",
-        "noctalia-greeter": "noctalia-greeter",
-        "openwhispr": "openwhispr"
+        "noctalia-greeter": "noctalia-greeter"
       }
     },
     "rust-overlay": {
