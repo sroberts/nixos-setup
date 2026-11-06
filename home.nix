@@ -1648,8 +1648,20 @@ in
     };
   };
 
+  # The global gitignore used to be a hand-written file. Its one pattern now
+  # lives in programs.git.ignores above. force = true lets the first switch
+  # replace that unmanaged file instead of aborting with "would be clobbered".
+  # Nothing is lost: the file only ever held that one pattern.
+  xdg.configFile."git/ignore".force = true;
+
   programs.git = {
     enable = true;
+    # Global gitignore (~/.config/git/ignore). Once anything sets git ignores
+    # (programs.direnv's enableGitIntegration adds `.direnv/`), home-manager
+    # owns this file, so every global pattern has to be declared here.
+    # Claude Code's per-user, per-repo permission overrides must never be
+    # committed. This was a hand-written ~/.config/git/ignore before.
+    ignores = [ "**/.claude/settings.local.json" ];
     settings = {
       user = {
         name = "Scott J Roberts";
