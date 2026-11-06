@@ -500,6 +500,63 @@ let
       printf '%s\n' "$hex"
     '';
   };
+
+  # launch-or-focus <app-id-regex> <command…> — the Omarchy-style "jump to
+  # the app if it's open, start it if it isn't" that niri has no native
+  # action for. Bound to Mod+Shift+<letter> in the niri binds below.
+  #
+  # The regex is matched case-insensitively against each window's `.app_id`
+  # from `niri msg -j windows`. Case-insensitive and anchored by the caller
+  # because Electron apps report a different app_id depending on whether they
+  # run as native Wayland (lowercase desktop-file name, e.g. `slack`) or
+  # through XWayland (WM_CLASS, e.g. `Slack`); one pattern covers both.
+  #
+  # Several matching windows cycle: if one of them is already focused, focus
+  # the next match by window id (wrapping), so repeated presses walk through
+  # every Chromium window. If none is focused, jump to the most recently
+  # focused match (`focus_timestamp`) — that's the window you were last in,
+  # not an arbitrary one.
+  #
+  # No match → `niri msg action spawn`, so niri itself launches the command
+  # with its own environment and the app is fully detached from this script
+  # (no orphaned shell, no inherited stdio).
+  launchOrFocus = pkgs.writeShellApplication {
+    name = "launch-or-focus";
+    # The niri that is actually running, so the IPC client and server match.
+    runtimeInputs = [
+      osConfig.programs.niri.package
+      pkgs.jq
+    ];
+    text = ''
+      if [ "$#" -lt 2 ]; then
+        echo "usage: launch-or-focus <app-id-regex> <command> [args…]" >&2
+        exit 2
+      fi
+      pattern="$1"
+      shift
+
+      target="$(niri msg -j windows | jq -r --arg re "$pattern" '
+        [ .[] | select((.app_id // "") | test($re; "i")) ] as $m
+        | if ($m | length) == 0 then empty
+          else
+            ($m | sort_by(.id)) as $s
+            | ($s | map(.is_focused) | index(true)) as $i
+            | if $i == null then
+                $m
+                | max_by(.focus_timestamp // { secs: 0, nanos: 0 } | [.secs, .nanos])
+                | .id
+              else
+                $s[($i + 1) % ($s | length)].id
+              end
+          end
+      ')"
+
+      if [ -n "$target" ]; then
+        exec niri msg action focus-window --id "$target"
+      fi
+      exec niri msg action spawn -- "$@"
+    '';
+  };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
   #
   # The TUI and the app do not share configuration: the TUI reads
@@ -1130,6 +1187,66 @@ in
         "panel-toggle"
         "launcher"
       ];
+
+      # Launch-or-focus app binds (Omarchy-style Mod+Shift+<letter>): focus
+      # the app if a window of it is open — cycling through them on repeat
+      # presses — otherwise start it. See `launchOrFocus` in the let block.
+      # The first argument is a case-insensitive, anchored app_id regex;
+      # the rest is the launch command. app_ids come from `niri msg -j
+      # windows` where the app was open, else from the package's desktop
+      # file (StartupWMClass) — the alternations cover the Wayland vs.
+      # XWayland naming split Electron apps have. `hotkey-overlay-title`
+      # names each bind in the Mod+Shift+Slash overlay (spawn binds would
+      # otherwise show the raw store-path command line).
+      "Mod+Shift+B" = {
+        _props.hotkey-overlay-title = "Browser (Chromium)";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^chromium(-browser)?$"
+          "chromium"
+        ];
+      };
+      "Mod+Shift+O" = {
+        _props.hotkey-overlay-title = "Obsidian";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^(md\\.obsidian\\.)?obsidian$"
+          "obsidian"
+        ];
+      };
+      "Mod+Shift+S" = {
+        _props.hotkey-overlay-title = "Slack";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^slack$"
+          "slack"
+        ];
+      };
+      "Mod+Shift+G" = {
+        _props.hotkey-overlay-title = "Signal";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^signal(-desktop)?$"
+          "signal-desktop"
+        ];
+      };
+      "Mod+Shift+M" = {
+        _props.hotkey-overlay-title = "Spotify";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^spotify$"
+          "spotify"
+        ];
+      };
+      "Mod+Shift+N" = {
+        _props.hotkey-overlay-title = "Files (Nautilus)";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^org\\.gnome\\.nautilus$"
+          "nautilus"
+          "--new-window"
+        ];
+      };
 
       # Window
       "Mod+Q".close-window = [ ];
