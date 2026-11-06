@@ -2099,11 +2099,14 @@ in
       # Region capture into Noctalia's annotation editor. Done saves to
       # ~/Pictures/Screenshots and copies to the clipboard. See
       # programs.noctalia.settings.shell.screenshot.
-      "Mod+Alt+S".spawn = [
-        "noctalia"
-        "msg"
-        "screenshot-region"
-      ];
+      "Mod+Alt+S" = {
+        _props.hotkey-overlay-title = "Annotate Screenshot (region)";
+        spawn = [
+          "noctalia"
+          "msg"
+          "screenshot-region"
+        ];
+      };
 
       # Screen recording via the noctalia/screen_recorder plugin. Each bind is
       # a toggle: it starts a recording when idle and stops the current one
@@ -2111,30 +2114,39 @@ in
       # `focused` records the focused output. `region` opens a slurp picker
       # first. Recordings go to ~/Videos/Recordings, and stopping posts a
       # notification with the path.
-      "Mod+Alt+R".spawn = [
-        "noctalia"
-        "msg"
-        "plugin"
-        "noctalia/screen_recorder:service"
-        "all"
-        "toggle"
-        "focused"
-      ];
-      "Mod+Alt+Shift+R".spawn = [
-        "noctalia"
-        "msg"
-        "plugin"
-        "noctalia/screen_recorder:service"
-        "all"
-        "toggle"
-        "region"
-      ];
+      "Mod+Alt+R" = {
+        _props.hotkey-overlay-title = "Toggle Screen Recording";
+        spawn = [
+          "noctalia"
+          "msg"
+          "plugin"
+          "noctalia/screen_recorder:service"
+          "all"
+          "toggle"
+          "focused"
+        ];
+      };
+      "Mod+Alt+Shift+R" = {
+        _props.hotkey-overlay-title = "Toggle Region Recording";
+        spawn = [
+          "noctalia"
+          "msg"
+          "plugin"
+          "noctalia/screen_recorder:service"
+          "all"
+          "toggle"
+          "region"
+        ];
+      };
 
       # Colour picker: click any pixel, its #rrggbb lands on the clipboard
       # and a notification shows hex + rgb(). Escape cancels silently. See
       # pickColor in the let block. Absolute store path so the bind doesn't
       # depend on niri's spawn PATH.
-      "Mod+Shift+C".spawn = "${pickColor}/bin/pick-color";
+      "Mod+Shift+C" = {
+        _props.hotkey-overlay-title = "Colour Picker";
+        spawn = "${pickColor}/bin/pick-color";
+      };
 
       # Dictation (voxtype, see services.voxtype below). niri binds fire on
       # key PRESS only — there is no release event to end a push-to-talk —
@@ -2143,16 +2155,22 @@ in
       # Mod+Ctrl+Shift+X throws the current recording away without typing.
       # Absolute store paths for the same reason as swayidle's lock command:
       # don't depend on what PATH niri's spawn environment happens to have.
-      "Mod+Ctrl+X".spawn = [
-        "${config.services.voxtype.package}/bin/voxtype"
-        "record"
-        "toggle"
-      ];
-      "Mod+Ctrl+Shift+X".spawn = [
-        "${config.services.voxtype.package}/bin/voxtype"
-        "record"
-        "cancel"
-      ];
+      "Mod+Ctrl+X" = {
+        _props.hotkey-overlay-title = "Dictation: start/stop";
+        spawn = [
+          "${config.services.voxtype.package}/bin/voxtype"
+          "record"
+          "toggle"
+        ];
+      };
+      "Mod+Ctrl+Shift+X" = {
+        _props.hotkey-overlay-title = "Dictation: cancel";
+        spawn = [
+          "${config.services.voxtype.package}/bin/voxtype"
+          "record"
+          "cancel"
+        ];
+      };
 
       # Session
       "Mod+Shift+E".quit = [ ];
@@ -2177,10 +2195,13 @@ in
       # pressed again. The 10-min lock and 11-min screen-off still fire — see
       # the keepawake script in the let block for why this is not Noctalia's
       # caffeine. Absolute store path so the bind never depends on niri's PATH.
-      "Mod+Alt+I".spawn = [
-        "${keepawake}/bin/keepawake"
-        "--toggle"
-      ];
+      "Mod+Alt+I" = {
+        _props.hotkey-overlay-title = "Toggle Keep-Awake";
+        spawn = [
+          "${keepawake}/bin/keepawake"
+          "--toggle"
+        ];
+      };
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
       "XF86AudioRaiseVolume" = {
