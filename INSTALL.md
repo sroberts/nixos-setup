@@ -308,8 +308,8 @@ What doesn't carry:
 ```bash
 cd ~/nixos-setup
 git pull                                      # grab changes from any machine
-nix flake update                              # bump all inputs
-# Or: nix flake update noctalia               # bump one input
+os-update                                     # bump all inputs on a branch, build, nvd diff, open a PR
+# Or by hand: nix flake update [noctalia]     # bump all inputs / one input
 sudo nixos-rebuild switch --flake .#<host>    # <host> is the hostname / hosts/<dir>
 
 # commit your edits (per-host hardware configs under hosts/ are tracked too)

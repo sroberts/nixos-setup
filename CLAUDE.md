@@ -24,7 +24,23 @@ sudo nixos-rebuild test --flake .#<host>
 # Build only, don't activate
 sudo nixos-rebuild build --flake .#<host>
 
-# Bump nixpkgs / niri / noctalia / claude-code-nix
+# Update everything, the PR way: branch chore/flake-update-YYYY-MM-DD from
+# origin/main in a temporary worktree, `nix flake update`, `nom build` the host,
+# print `nvd diff /run/current-system <new>` + an input-rev table, then (on y)
+# push + open a PR carrying both. It never activates: it prints the branch
+# switch + `sudo nixos-rebuild switch` (or `nh os switch`) to run next, then
+# test and `gh pr merge --merge`. Refuses on uncommitted tracked changes.
+os-update
+
+# What did the last rebuild change? nvd diff, previous generation -> running.
+# `os-diff N` = generation N -> running; `os-diff N M` = N -> M.
+os-diff
+
+# nh (programs.nh, NH_FLAKE = ~/nixos-setup): rebuild without `.#<host>`,
+# with nom progress and a package diff before it elevates
+nh os switch
+
+# Bump nixpkgs / niri / noctalia / claude-code-nix by hand
 nix flake update
 # Or one input at a time (Nix 2.19+ positional arg; `--update-input` is deprecated)
 nix flake update noctalia
@@ -37,6 +53,8 @@ nix flake check
 ```
 
 There are no tests — a NixOS config is verified by evaluating and rebuilding it, not by a suite. CI runs three gates on every PR and push to `main` (see `.github/workflows/check.yml`): `nix flake check` (no `--no-build` — niri's package needs IFD), `nix fmt --check` over every `.nix` file, and an eval of every discovered host's system closure. No stubbing is needed — each host's `hardware-configuration.nix` is committed, so the flake evaluates in CI as-is (device paths are just strings; evaluation never touches disks).
+
+`os-update` / `os-diff` are `writeShellApplication`s in `home.nix`'s `let` block (rationale in the comment above them); `nh` is `programs.nh` in `configuration.nix` with `clean` deliberately off — `nix.gc` stays the one GC mechanism (weekly, `--delete-older-than 30d`), and the nh module warns if both run.
 
 Formatting **is** enforced: nixfmt is the linter, the tree is already clean, and CI fails on any drift. Run `nix fmt` after editing a `.nix` file — it is a no-op unless you actually introduced drift, so it will not produce a churn diff.
 

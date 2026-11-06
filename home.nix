@@ -527,6 +527,318 @@ let
 
   herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
 
+  # os-update — one command to bump every flake input and SEE what that does
+  # before anything is activated. Same idea as Omarchy's `omarchy-update`,
+  # reshaped for this repo's two hard rules: every change goes branch -> PR ->
+  # merge (CONTRIBUTING.md), and the user runs `sudo nixos-rebuild` by hand.
+  # So the script stops at "built, diffed, PR open" and prints the rebuild
+  # command instead of running it. Rollback is NixOS generations, so there is
+  # no separate snapshot step.
+  #
+  # Flow: refuse on a dirty tree -> fetch origin -> new branch
+  # chore/flake-update-YYYY-MM-DD from origin/main in a TEMPORARY git
+  # worktree -> `nix flake update` -> commit flake.lock -> `nom build` the
+  # host toplevel -> `nvd diff /run/current-system <new>` + an input-rev
+  # table -> y/N -> push + `gh pr create` with both in the PR body.
+  #
+  # Why a temporary worktree instead of switching branches in ~/nixos-setup:
+  # the update, the (long) build and a "no" answer never touch the user's
+  # checkout — whatever branch it is on stays put, and a declined or failed
+  # run leaves no branch and no half-updated flake.lock behind (the EXIT
+  # trap removes both). Only an accepted run keeps the branch; the worktree
+  # is removed even then, because git refuses to check out a branch in a
+  # second place while a worktree holds it.
+  #
+  # Why still refuse on a dirty tree, given the worktree is isolated: the
+  # NEXT step is the user running `git switch <branch>` in ~/nixos-setup to
+  # rebuild from it, and that is what local edits would block (or worse, get
+  # carried along into the test build). Only tracked changes count —
+  # untracked files (agent worktrees under .claude/, stray notes) do not
+  # stop a switch, so they don't stop this either.
+  #
+  # The repo path comes from NH_FLAKE (set by programs.nh.flake in
+  # configuration.nix), so there is one place that says where the repo
+  # lives; $HOME/nixos-setup is the fallback for a shell that predates the
+  # rebuild that introduced the variable.
+  #
+  # The script's own commit is authored by whoever runs it (plain `git
+  # commit`, the user's own identity) — no tool attribution lines.
+  osUpdateLockDiff = pkgs.writeText "os-update-lock-diff.jq" ''
+    # Input-rev table between two flake.lock files: one line per locked node
+    # whose rev (or narHash, for inputs without a rev) changed.
+    def short: if . == null then "-" else .[0:7] end;
+    def day: if . == null then "?" else todate[0:10] end;
+    $old[0].nodes as $o
+    | .nodes
+    | to_entries[]
+    | select(.value.locked != null)
+    | .key as $k
+    | .value.locked as $n
+    | ($o[$k].locked // {}) as $p
+    | select(($p.rev // $p.narHash) != ($n.rev // $n.narHash))
+    | "\($k)  \($p.rev | short) (\($p.lastModified | day)) -> \($n.rev | short) (\($n.lastModified | day))"
+  '';
+
+  osUpdate = pkgs.writeShellApplication {
+    name = "os-update";
+    runtimeInputs = [
+      pkgs.git
+      pkgs.gh
+      pkgs.nix
+      pkgs.nvd
+      pkgs.nix-output-monitor
+      pkgs.jq
+      pkgs.coreutils
+    ];
+    text = ''
+      usage() {
+        cat <<'EOF'
+      os-update [HOST] — bump every flake input on a branch, build it, show
+      what changes against the running system, and (on yes) open a PR.
+
+      HOST defaults to this machine's hostname and must exist under hosts/.
+      Nothing is activated: the script prints the rebuild command for you.
+      EOF
+      }
+      die() {
+        echo "os-update: $*" >&2
+        exit 1
+      }
+
+      case "''${1:-}" in
+        -h | --help)
+          usage
+          exit 0
+          ;;
+      esac
+
+      repo="''${NH_FLAKE:-$HOME/nixos-setup}"
+      host="''${1:-$(uname -n)}"
+
+      git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+        die "$repo is not a git checkout (set NH_FLAKE)"
+      [ -d "$repo/hosts/$host" ] || die "no hosts/$host in $repo"
+      [ -e /run/current-system ] || die "/run/current-system missing — not a NixOS system?"
+
+      if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then
+        git -C "$repo" status --short --untracked-files=no >&2
+        die "uncommitted changes in $repo — commit or stash them first"
+      fi
+
+      echo "==> Fetching origin"
+      git -C "$repo" fetch --quiet --prune origin
+
+      # One branch per day; a second run the same day gets -2, -3, ...
+      today="$(date +%F)"
+      branch="chore/flake-update-$today"
+      n=2
+      while git -C "$repo" show-ref --quiet --verify "refs/heads/$branch" ||
+        git -C "$repo" show-ref --quiet --verify "refs/remotes/origin/$branch"; do
+        branch="chore/flake-update-$today-$n"
+        n=$((n + 1))
+      done
+
+      tmp="$(mktemp -d -t os-update.XXXXXX)"
+      wt="$tmp/nixos-setup"
+      keep_branch=0
+      cleanup() {
+        git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1 || true
+        git -C "$repo" worktree prune || true
+        if [ "$keep_branch" = 0 ]; then
+          git -C "$repo" branch -D "$branch" >/dev/null 2>&1 || true
+        fi
+        rm -rf "$tmp"
+      }
+      trap cleanup EXIT
+
+      echo "==> Worktree for $branch (from origin/main) at $wt"
+      git -C "$repo" worktree add --quiet --no-track -b "$branch" "$wt" origin/main
+      cd "$wt"
+      git show HEAD:flake.lock >"$tmp/old.lock"
+
+      echo "==> nix flake update"
+      nix flake update
+
+      if git diff --quiet -- flake.lock; then
+        echo "Every input is already at its latest revision — nothing to do."
+        exit 0
+      fi
+
+      jq -r --slurpfile old "$tmp/old.lock" -f ${osUpdateLockDiff} flake.lock >"$tmp/inputs.txt"
+      git add flake.lock
+      git commit --quiet -F - <<EOF
+      flake.lock: update all inputs ($today)
+
+      $(cat "$tmp/inputs.txt")
+      EOF
+
+      echo "==> Building nixosConfigurations.$host"
+      attr="$wt#nixosConfigurations.$host.config.system.build.toplevel"
+      if command -v nom >/dev/null; then
+        nom build "$attr" --out-link "$tmp/result"
+      else
+        nix build "$attr" --out-link "$tmp/result" --print-build-logs
+      fi
+      new="$(readlink -f "$tmp/result")"
+
+      echo
+      echo "==> Inputs changed (git diff flake.lock, by rev)"
+      cat "$tmp/inputs.txt"
+      git --no-pager diff --stat HEAD~1 -- flake.lock
+
+      echo
+      echo "==> nvd diff /run/current-system -> $new"
+      nvd diff /run/current-system "$new"
+      nvd --color never diff /run/current-system "$new" >"$tmp/nvd.txt"
+
+      echo
+      printf 'Push %s and open a PR? [y/N] ' "$branch"
+      read -r reply || reply=""
+      case "$reply" in
+        y | Y | yes | YES) ;;
+        *)
+          echo "Discarded — no branch, no PR, your checkout is untouched."
+          exit 0
+          ;;
+      esac
+
+      # A GitHub PR body caps at 65536 chars; keep the nvd part well under.
+      limit=50000
+      {
+        echo "## Summary"
+        echo
+        echo "\`nix flake update\` of every input, generated by \`os-update\` on \`$host\`."
+        echo
+        echo "## Inputs"
+        echo
+        echo '```text'
+        cat "$tmp/inputs.txt"
+        echo '```'
+        echo
+        echo "## Closure diff"
+        echo
+        echo "\`nvd diff /run/current-system <new $host toplevel>\`. The baseline is the system"
+        echo "that was running, so anything activated but not yet on main shows up here too."
+        echo
+        echo '```text'
+        head -c "$limit" "$tmp/nvd.txt"
+        echo '```'
+        if [ "$(wc -c <"$tmp/nvd.txt")" -gt "$limit" ]; then
+          echo
+          echo "_Truncated at $limit bytes — run \`os-diff\` after the rebuild for the full list._"
+        fi
+        echo
+        echo "## Live test"
+        echo
+        echo "- [ ] \`git switch $branch && sudo nixos-rebuild switch --flake .#$host\`"
+        echo "- [ ] Desktop comes back: niri, Noctalia bar, lock (Super+Alt+L) and unlock"
+        echo "- [ ] If the kernel moved: suspend, wait out HibernateDelaySec, confirm a clean resume"
+        echo "- [ ] \`gh pr merge --merge\`"
+      } >"$tmp/pr.md"
+
+      keep_branch=1
+      git push --quiet -u origin "$branch"
+      pr_url="$(gh pr create --base main --head "$branch" \
+        --title "flake.lock: update all inputs ($today)" \
+        --body-file "$tmp/pr.md")"
+
+      cat <<EOF
+
+      PR: $pr_url
+
+      Nothing is activated yet. Next, from $repo:
+        git switch $branch
+        sudo nixos-rebuild switch --flake .#$host     (or: nh os switch)
+      Test it on the real machine, then:
+        gh pr merge --merge $pr_url && git switch main && git pull
+      Bad update? sudo nixos-rebuild --rollback switch, then
+        gh pr close --delete-branch $pr_url
+      EOF
+    '';
+  };
+
+  # os-diff — what did the last rebuild change? nvd diff between the system
+  # generation before the running one and the running one. Defaults are the
+  # generation-aware version of "previous vs current": after a rollback the
+  # running system is not the newest generation, so it diffs against the
+  # generation just below the running one, not the newest two. After a
+  # `nixos-rebuild test` (activated, not a generation) it diffs the newest
+  # generation against the running system.
+  #   os-diff            previous generation -> running system
+  #   os-diff N          generation N        -> running system
+  #   os-diff N M        generation N        -> generation M
+  # (any argument may also be a store path)
+  osDiff = pkgs.writeShellApplication {
+    name = "os-diff";
+    runtimeInputs = [
+      pkgs.nvd
+      pkgs.coreutils
+    ];
+    text = ''
+      profiles=/nix/var/nix/profiles
+      resolve() {
+        case "$1" in
+          *[!0-9]*) readlink -f "$1" ;;
+          *)
+            [ -e "$profiles/system-$1-link" ] || {
+              echo "os-diff: no system generation $1" >&2
+              exit 1
+            }
+            readlink -f "$profiles/system-$1-link"
+            ;;
+        esac
+      }
+
+      cur="$(readlink -f /run/current-system)"
+      case $# in
+        0)
+          mapfile -t gens < <(
+            for l in "$profiles"/system-*-link; do
+              g="''${l##*/system-}"
+              echo "''${g%-link}"
+            done | sort -n
+          )
+          [ "''${#gens[@]}" -gt 0 ] || {
+            echo "os-diff: no system generations found" >&2
+            exit 1
+          }
+          found=""
+          for ((i = ''${#gens[@]} - 1; i >= 0; i--)); do
+            if [ "$(resolve "''${gens[i]}")" = "$cur" ]; then
+              found=$i
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            from="''${gens[-1]}"
+            echo "Running system is not a generation (nixos-rebuild test?): generation $from -> running"
+          elif [ "$found" -gt 0 ]; then
+            from="''${gens[found - 1]}"
+            echo "Generation $from -> ''${gens[found]} (running)"
+          else
+            echo "os-diff: the running system is the oldest generation; nothing to diff against" >&2
+            exit 1
+          fi
+          a="$(resolve "$from")"
+          b="$cur"
+          ;;
+        1)
+          a="$(resolve "$1")"
+          b="$cur"
+          ;;
+        2)
+          a="$(resolve "$1")"
+          b="$(resolve "$2")"
+          ;;
+        *)
+          echo "usage: os-diff [FROM [TO]]  (generation numbers or store paths)" >&2
+          exit 1
+          ;;
+      esac
+      exec nvd diff "$a" "$b"
+    '';
+  };
+
 in
 {
   home.username = "sroberts";
@@ -1342,6 +1654,16 @@ in
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
     tally
+
+    # Update tooling (see os-update / os-diff in the let block; nh itself is
+    # programs.nh in configuration.nix). On PATH as well as in the scripts'
+    # runtimeInputs so they work by hand too:
+    #   nom build .#…          readable build progress (nix-output-monitor)
+    #   nvd diff OLD NEW       package-level diff of two system closures
+    nix-output-monitor
+    nvd
+    osUpdate
+    osDiff
   ];
 
   ############################################################
