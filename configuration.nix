@@ -494,6 +494,30 @@ in
     ];
   };
 
+  # Screen recording backend for Noctalia's official `noctalia/screen_recorder`
+  # plugin (enabled in home.nix, driven by Super+Alt+R / Super+Alt+Shift+R).
+  # The plugin shells out to gpu-screen-recorder, which encodes on the GPU
+  # (VAAPI on the Radeon 780M), so a recording costs almost no CPU.
+  #
+  # The binds record with the plugin's `focused` / `region` sources, which
+  # make gpu-screen-recorder capture the output straight from KMS
+  # (`-w eDP-1`): compositor-agnostic, no portal picker dialog on every
+  # start, and no dependency on niri's PipeWire screencast path. KMS capture
+  # needs CAP_SYS_ADMIN, which gpu-screen-recorder confines to a tiny helper
+  # (`gsr-kms-server`). This module is what creates the setcap wrapper for
+  # that helper in /run/wrappers/bin. Installing the bare package would make
+  # every KMS recording fail, or fall back to a pkexec prompt.
+  #
+  # Why not wf-recorder: it needs wlr-screencopy, which niri supports, but it
+  # has no bar indicator, no shell integration and no replay buffer. It would
+  # also have needed a hand-rolled pidfile toggle script that the plugin
+  # already provides.
+  #
+  # Privacy caveat: KMS reads the scanout buffer, so niri's
+  # `block-out-from "screencast"` window rules do NOT apply to these
+  # recordings. Whatever is on screen is recorded.
+  programs.gpu-screen-recorder.enable = true;
+
   services.gnome.gnome-keyring.enable = true;
   services.accounts-daemon.enable = true;
   programs.dconf.enable = true;
