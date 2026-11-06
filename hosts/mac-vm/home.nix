@@ -1,5 +1,10 @@
 # Per-host home overrides for macOS VM guest
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   # Machine-specific SSH key from secrets/mac-vm.yaml
   sops.secrets."id_ed25519" = {
@@ -11,6 +16,18 @@
   # Public key matching id_ed25519
   home.file.".ssh/id_ed25519.pub".text =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAYQavuQjYZQAxRspxYRObVbvZNY8+vX145cN+O3tFGd gosha20777@Georgys-Air\n";
+
+  # GPU-accelerated kitty. The macOS host runs a patched virglrenderer
+  # (virgl-core-instance-id + virgl-shader-failure-skip-draws), so kitty renders
+  # on virgl and the llvmpipe wrapper from mac-guest-tools.nix is no longer
+  # needed. Keep background_opacity below 1.0 (kitty.nix sets 0.92): it forces
+  # kitty's layers path, whose blit shader does the linear→sRGB encode in
+  # software. vrend does not forward the guest's glEnable(GL_FRAMEBUFFER_SRGB)
+  # (it derives sRGB from the surface format, and the Wayland window surface is
+  # B8G8R8A8_UNORM), so the direct path — used when opacity is 1.0, or when no
+  # image/cursor-trail/progress-bar forces layers — writes linear values and the
+  # window goes dark.
+  programs.kitty.package = pkgs.kitty;
 
   programs.niri.settings = {
     # Pin the virtual display to 16:10 MacBook resolution on 15.3" panel (199.3 PPI).
