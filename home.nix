@@ -527,6 +527,25 @@ let
 
   herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
 
+  # Whisper model for voxtype dictation (services.voxtype below), fetched
+  # reproducibly into the store instead of via `voxtype setup --download` /
+  # the HM module's `loadModels`, which download imperatively into ~/.local
+  # at service start. Same URL + hash as voxtype's own nix/models.nix.
+  #
+  # Why small.en: English-only models are faster AND more accurate for English
+  # than their multilingual twins. On the 780M via Vulkan, small.en
+  # transcribes the 11 s whisper.cpp jfk.wav sample in ~1.7 s (measured), so a
+  # typical dictation clip lands in well under 2 s, and it is noticeably
+  # better than base.en on names, jargon and punctuation. medium.en /
+  # large-v3-turbo (1.5-1.6 GB) roughly triple the latency for a gain that
+  # doesn't matter for short dictation. 466 MB in the store; with
+  # on_demand_loading = false it stays resident in the daemon (the iGPU
+  # shares the 93 GB of system RAM, so that is cheap).
+  voxtypeModel = pkgs.fetchurl {
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
+    hash = "sha256-xhONbVjsyDIgl+D5h8MvG+i7ChhTKj+I9zTRu/nEHl0=";
+  };
+
 in
 {
   home.username = "sroberts";
@@ -1080,6 +1099,24 @@ in
       "Ctrl+Print".screenshot-screen = [ ];
       "Alt+Print".screenshot-window = [ ];
 
+      # Dictation (voxtype, see services.voxtype below). niri binds fire on
+      # key PRESS only — there is no release event to end a push-to-talk —
+      # so this is a toggle: press to start listening, press again to stop,
+      # transcribe locally and type the text into the focused window.
+      # Mod+Ctrl+Shift+X throws the current recording away without typing.
+      # Absolute store paths for the same reason as swayidle's lock command:
+      # don't depend on what PATH niri's spawn environment happens to have.
+      "Mod+Ctrl+X".spawn = [
+        "${config.services.voxtype.package}/bin/voxtype"
+        "record"
+        "toggle"
+      ];
+      "Mod+Ctrl+Shift+X".spawn = [
+        "${config.services.voxtype.package}/bin/voxtype"
+        "record"
+        "cancel"
+      ];
+
       # Session
       "Mod+Shift+E".quit = [ ];
       "Mod+Shift+P".power-off-monitors = [ ];
@@ -1180,6 +1217,71 @@ in
     enable = true;
     events = {
       before-sleep = "${config.programs.noctalia.package}/bin/noctalia msg session lock";
+    };
+  };
+
+  # Local voice dictation — voxtype (the tool behind Omarchy's Super+Ctrl+X
+  # dictation), via home-manager's own services.voxtype module. Fully
+  # offline: whisper.cpp runs in-process against the store-pinned model in
+  # the `let` above; no audio or text leaves the machine.
+  #
+  # Pieces:
+  #   - package: nixpkgs' voxtype-vulkan (cached on cache.nixos.org). Vulkan
+  #     is the reliable GPU path on the RDNA3 780M; the ROCm/hipblas build
+  #     would need HSA_OVERRIDE_GFX_VERSION for gfx1103 and a from-source
+  #     ROCm compile, for no latency win at this model size.
+  #   - The daemon runs as a systemd user unit on graphical-session.target and
+  #     keeps the model loaded, so a toggle only pays transcription time.
+  #   - Mod+Ctrl+X (niri binds above) runs `voxtype record toggle`. The
+  #     daemon owns the state machine, so a second press always means "stop",
+  #     never a second concurrent recording. Audio is captured in memory
+  #     (no temp wav), and max_duration_secs caps a forgotten toggle: at the
+  #     cap it stops and transcribes what it has.
+  #   - Output goes through wtype, which uses zwp_virtual_keyboard_v1 —
+  #     niri implements it (verified in the niri binary). If typing fails
+  #     the text lands on the clipboard instead, with a notification.
+  #     dotool/ydotool are deliberately left out of driver_order: they need
+  #     /dev/uinput access (input group or a root daemon) for no gain here.
+  #   - The evdev hotkey stays OFF: it needs the user in the `input` group,
+  #     i.e. any process of ours could keylog. Compositor binds do the job.
+  services.voxtype = {
+    enable = true;
+    package = pkgs.voxtype-vulkan;
+    settings = {
+      # Required by `voxtype record toggle` (the daemon publishes
+      # idle/recording/transcribing here under $XDG_RUNTIME_DIR/voxtype).
+      state_file = "auto";
+      hotkey.enabled = false;
+      audio = {
+        # "default" is the ALSA default, which PipeWire's ALSA plugin
+        # (services.pipewire.alsa.enable) routes to the default source.
+        device = "default";
+        sample_rate = 16000;
+        # 5 min, up from voxtype's 60 s so long dictation isn't clipped, but
+        # still bounded if the toggle is forgotten.
+        max_duration_secs = 300;
+      };
+      whisper = {
+        model = "${voxtypeModel}";
+        language = "en";
+        on_demand_loading = false;
+      };
+      output = {
+        mode = "type";
+        driver_order = [
+          "wtype"
+          "clipboard"
+        ];
+        fallback_to_clipboard = true;
+        notification = {
+          # "Recording Started" when listening begins, the transcript when
+          # it's done; the overlay OSD also shows a live level meter.
+          on_recording_start = true;
+          on_recording_stop = false;
+          on_transcription = true;
+          on_no_speech = true;
+        };
+      };
     };
   };
 
