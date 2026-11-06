@@ -8,7 +8,7 @@ The first machine (and currently the only one) is `sjr-fw13`, a Framework 13 AMD
 
 | File | What it is |
 |---|---|
-| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, nixos-hardware, niri, noctalia, noctalia-greeter, claude-code-nix, herdr; lanzaboote is commented out — opt in via `secure-boot.md`) and auto-discovers every host under `hosts/` (no host hardcoded). |
+| `flake.nix` | Entry point. Declares all inputs (nixpkgs, home-manager, nixos-hardware, niri, noctalia, noctalia-greeter, claude-code-nix, herdr, nix-index-database; lanzaboote is commented out — opt in via `secure-boot.md`) and auto-discovers every host under `hosts/` (no host hardcoded). |
 | `configuration.nix` | Shared system-level config: bootloader, services, system packages, the `sroberts` user. Host-agnostic. |
 | `home.nix` | User-level (home-manager): CLI tools, shell, Noctalia config, niri input + binds, activation hooks. Shared across hosts. |
 | `hosts/<name>/` | Per-machine: `default.nix` (hostname, `nixos-hardware` model module, swap/resume) + the committed `hardware-configuration.nix` (LUKS UUID, filesystems). See `hosts/README.md`. |

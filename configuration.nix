@@ -510,6 +510,15 @@ in
   programs.zsh.enable = true;
   environment.shells = [ pkgs.zsh ];
 
+  # NixOS's built-in command-not-found looks commands up in the
+  # programs.sqlite that ships with a nixos *channel*; a flake system has no
+  # channel, so it can only ever answer "not found". The zsh handler comes
+  # from nix-index instead (prebuilt database via nix-index-database, set up
+  # in home.nix). Disabled explicitly — not left to whatever nixpkgs defaults
+  # to — so /etc/zshrc can never define a second, broken
+  # command_not_found_handler competing with home-manager's.
+  programs.command-not-found.enable = false;
+
   ############################################################
   # Non-Nix dynamic binaries (mise / pre-built toolchains)
   #

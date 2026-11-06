@@ -542,6 +542,9 @@ in
     # its home-manager side in implicitly; niri-nix keeps them separate, so it
     # is imported explicitly here.
     inputs.niri.homeModules.default
+    # Prebuilt nix-index database + comma; configured under "Shell +
+    # integrations" below (programs.nix-index / programs.nix-index-database).
+    inputs.nix-index-database.homeModules.default
   ];
 
   # home-manager gained its own modules/programs/noctalia/ upstream, which
@@ -1375,6 +1378,30 @@ in
       path+=("$HOME/.local/bin")
     '';
   };
+
+  # nix-index + comma, backed by nix-index-database's prebuilt index (the
+  # module imported above sets programs.nix-index.package to a nix-locate
+  # wrapped around the pinned database, and symlinks that database into
+  # ~/.cache/nix-index/files for anything that reads the default location).
+  #
+  #   - zsh integration installs a command_not_found_handler, so typing a
+  #     command that isn't installed prints which nixpkgs attribute(s)
+  #     provide it instead of a bare "command not found". This is the only
+  #     handler: NixOS's own programs.command-not-found is disabled in
+  #     configuration.nix (it reads a channel-built programs.sqlite that a
+  #     flake system doesn't have).
+  #   - comma: `, cowsay hi` looks the binary up in the index and runs it via
+  #     `nix shell` without installing anything. The module's wrapper bakes
+  #     the database in; don't also add `comma` or `nix-index` to
+  #     home.packages, or they collide with these wrappers.
+  #
+  # The index is as fresh as the flake.lock pin — `nix flake update
+  # nix-index-database` pulls upstream's latest weekly build.
+  programs.nix-index = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+  programs.nix-index-database.comma.enable = true;
 
   programs.zoxide = {
     enable = true;
