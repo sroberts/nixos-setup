@@ -706,6 +706,120 @@ let
       esac
     '';
   };
+
+  # keepawake — keep the machine from SLEEPING while still letting it LOCK.
+  #
+  #   keepawake <cmd…>   run cmd under a sleep inhibitor, released when it exits
+  #   keepawake --toggle indefinite keep-awake on/off (Mod+Alt+I), with a notification
+  #   keepawake --on / --off / --status
+  #
+  # The point is long AI jobs on battery or with the lid shut: on AC nothing
+  # sleeps anyway (suspendUnlessOnAc + HandleLidSwitchExternalPower), so this
+  # matters when unplugged — the 15-min idle suspend and a battery lid-close
+  # suspend would both freeze the job.
+  #
+  # What it inhibits, and why exactly that:
+  #   sleep              logind refuses Suspend/Hibernate/SuspendThenHibernate.
+  #                      The 15-min idle step's `systemctl suspend-then-hibernate`
+  #                      fails once with "Operation denied due to active block
+  #                      inhibitor" (systemd 262, logind-shutdown.c: a strong
+  #                      `block` lock rejects outright, no polkit prompt — and
+  #                      systemctl skips its own client-side check when not on a
+  #                      tty). Benign: Noctalia's idle manager runs a behavior's
+  #                      command ONCE per idle period (phase Waiting → Idled,
+  #                      re-armed only on input), so there is no retry loop.
+  #   handle-lid-switch  logind skips HandleLidSwitch entirely (logind-action.c,
+  #                      "If the key handling is inhibited, don't do anything").
+  #                      That check ignores inhibitors from INACTIVE sessions, but
+  #                      a process in the user manager (a systemd-run unit, a
+  #                      ghostty window's app scope) has no session at all, which
+  #                      logind counts as active everywhere — so it holds.
+  #                      niri's switch-events.lid-close still LOCKS.
+  #
+  # It deliberately does NOT take `idle`. Noctalia's ScreenSaverService watches
+  # logind's BlockInhibited and, if it contains `idle`, suppresses EVERY idle
+  # behavior — lock and screen-off included (idle_manager.cpp, "suppressed
+  # (screensaver inhibit locks=…)"). That is also why this is not Noctalia's
+  # own caffeine (`noctalia msg caffeine-toggle`): caffeine takes exactly that
+  # logind `idle` block (logind_service.cpp, who="noctalia" why="Caffeine"),
+  # falling back to a Wayland idle inhibitor, and either one stops the 10-min
+  # lock from ever firing. Here the session still locks at 10 min and blanks
+  # at 11; only the sleep step is held off.
+  #
+  # The toggle is a transient USER unit (keepawake.service) rather than a
+  # backgrounded process: it is addressable by name for on/off/status, survives
+  # the terminal or bind that started it, and `--collect` stops a failed run
+  # from wedging the unit name for the next start. Not persistent: it ends at
+  # logout/reboot, which is the safe default for "don't let this laptop sleep".
+  keepawake = pkgs.writeShellApplication {
+    name = "keepawake";
+    runtimeInputs = [
+      pkgs.systemd
+      pkgs.libnotify
+    ];
+    text = ''
+      what="sleep:handle-lid-switch"
+      unit="keepawake.service"
+
+      is_on() { systemctl --user is-active --quiet "$unit"; }
+
+      notify() {
+        # Best effort: no notification daemon (e.g. over ssh) is not an error.
+        notify-send --app-name=keepawake "$@" 2>/dev/null || true
+      }
+
+      turn_on() {
+        if is_on; then
+          echo "keepawake: already on"
+          return 0
+        fi
+        systemctl --user reset-failed "$unit" 2>/dev/null || true
+        systemd-run --user --quiet --collect --unit="$unit" \
+          --description="keepawake: block sleep + lid-switch suspend (lock still runs)" \
+          systemd-inhibit --what="$what" --who=keepawake \
+            --why="keep-awake toggle (Mod+Alt+I)" --mode=block \
+            sleep infinity
+        echo "keepawake: on"
+        notify "Keep-awake on" "No sleep or lid-close suspend. The screen still locks."
+      }
+
+      turn_off() {
+        if ! is_on; then
+          echo "keepawake: already off"
+          return 0
+        fi
+        systemctl --user stop "$unit"
+        echo "keepawake: off"
+        notify "Keep-awake off" "Normal idle sleep and lid-close suspend restored."
+      }
+
+      usage() {
+        echo "usage: keepawake <cmd…> | --toggle | --on | --off | --status" >&2
+        exit 2
+      }
+
+      case "''${1:-}" in
+        "") usage ;;
+        --toggle)
+          if is_on; then turn_off; else turn_on; fi
+          exit 0
+          ;;
+        --on) turn_on; exit 0 ;;
+        --off) turn_off; exit 0 ;;
+        --status)
+          if is_on; then echo "keepawake: on"; else echo "keepawake: off"; fi
+          exit 0
+          ;;
+        --) shift ;; # `keepawake -- -cmd` runs a command whose name starts with -
+        -*) usage ;;
+      esac
+
+      [ "$#" -gt 0 ] || usage
+      # Wrapper mode. systemd-inhibit exits with the command's own status, so
+      # this is transparent in scripts and `&&` chains.
+      exec systemd-inhibit --what="$what" --who=keepawake --why="$*" --mode=block "$@"
+    '';
+  };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
   #
   # The TUI and the app do not share configuration: the TUI reads
@@ -1604,6 +1718,16 @@ in
         ];
       };
 
+      # Keep-awake toggle (Omarchy-style idle toggle, but sleep-only): holds a
+      # logind sleep + lid-switch block in a transient keepawake.service until
+      # pressed again. The 10-min lock and 11-min screen-off still fire — see
+      # the keepawake script in the let block for why this is not Noctalia's
+      # caffeine. Absolute store path so the bind never depends on niri's PATH.
+      "Mod+Alt+I".spawn = [
+        "${keepawake}/bin/keepawake"
+        "--toggle"
+      ];
+
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
       "XF86AudioRaiseVolume" = {
         _props.hotkey-overlay-title = "Volume Up";
@@ -1698,6 +1822,8 @@ in
   #     after HibernateDelaySec (3h, configuration.nix) — hibernate at 3h 15m
   #     total. On AC it exits 0 without sleeping, so a plugged-in machine
   #     stays up indefinitely. The lock step above still runs either way.
+  #     A `keepawake` sleep inhibitor (let block; Mod+Alt+I) makes logind
+  #     refuse this step on battery too, without touching lock/screen-off.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
   # before a sleep Noctalia didn't initiate — namely a lid close on battery
@@ -1748,6 +1874,10 @@ in
     yara-x # binary is `yr`
     gum
     crush # charmbracelet/crush
+
+    # keepawake (let block) — `keepawake <cmd…>` holds off sleep and
+    # lid-close suspend while a long job runs, without blocking the lock.
+    keepawake
 
     # wishlist — SSH directory TUI. Two entry points on purpose:
     #   wishlist     plain; lists ~/.ssh/config only.
