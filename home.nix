@@ -527,6 +527,25 @@ let
 
   herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
 
+  # Whisper model for voxtype dictation (services.voxtype below), fetched
+  # reproducibly into the store instead of via `voxtype setup --download` /
+  # the HM module's `loadModels`, which download imperatively into ~/.local
+  # at service start. Same URL + hash as voxtype's own nix/models.nix.
+  #
+  # Why small.en: English-only models are faster AND more accurate for English
+  # than their multilingual twins. On the 780M via Vulkan, small.en
+  # transcribes the 11 s whisper.cpp jfk.wav sample in ~1.7 s (measured), so a
+  # typical dictation clip lands in well under 2 s, and it is noticeably
+  # better than base.en on names, jargon and punctuation. medium.en /
+  # large-v3-turbo (1.5-1.6 GB) roughly triple the latency for a gain that
+  # doesn't matter for short dictation. 466 MB in the store; with
+  # on_demand_loading = false it stays resident in the daemon (the iGPU
+  # shares the 93 GB of system RAM, so that is cheap).
+  voxtypeModel = pkgs.fetchurl {
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
+    hash = "sha256-xhONbVjsyDIgl+D5h8MvG+i7ChhTKj+I9zTRu/nEHl0=";
+  };
+
 in
 {
   home.username = "sroberts";
@@ -1080,6 +1099,11 @@ in
       "Ctrl+Print".screenshot-screen = [ ];
       "Alt+Print".screenshot-window = [ ];
 
+      # Dictation has no niri bind: it is hold-Right-Ctrl, read by voxtype's
+      # own evdev listener (services.voxtype below). niri binds fire on key
+      # PRESS only and can't bind a bare modifier, so they can't do
+      # push-to-talk.
+
       # Session
       "Mod+Shift+E".quit = [ ];
       "Mod+Shift+P".power-off-monitors = [ ];
@@ -1180,6 +1204,82 @@ in
     enable = true;
     events = {
       before-sleep = "${config.programs.noctalia.package}/bin/noctalia msg session lock";
+    };
+  };
+
+  # Local voice dictation — voxtype (the tool behind Omarchy's Super+Ctrl+X
+  # dictation), via home-manager's own services.voxtype module. Fully
+  # offline: whisper.cpp runs in-process against the store-pinned model in
+  # the `let` above; no audio or text leaves the machine.
+  #
+  # Pieces:
+  #   - package: nixpkgs' voxtype-vulkan (cached on cache.nixos.org). Vulkan
+  #     is the reliable GPU path on the RDNA3 780M; the ROCm/hipblas build
+  #     would need HSA_OVERRIDE_GFX_VERSION for gfx1103 and a from-source
+  #     ROCm compile, for no latency win at this model size.
+  #   - The daemon runs as a systemd user unit on graphical-session.target and
+  #     keeps the model loaded, so a toggle only pays transcription time.
+  #   - Push-to-talk on RIGHT CTRL: hold to record, release to transcribe
+  #     and type. Same key OpenWhispr used before it was removed. Audio is
+  #     captured in memory (no temp wav), and max_duration_secs caps a stuck
+  #     key: at the cap it stops and transcribes what it has.
+  #   - Output goes through wtype, which uses zwp_virtual_keyboard_v1 —
+  #     niri implements it (verified in the niri binary). If typing fails
+  #     the text lands on the clipboard instead, with a notification.
+  #     dotool/ydotool are deliberately left out of driver_order: they need
+  #     /dev/uinput access (input group or a root daemon) for no gain here.
+  #   - The key is read by voxtype's built-in evdev listener, not a niri
+  #     bind. niri binds fire on key PRESS only (no release event, so no
+  #     hold-to-talk), and niri can't bind a bare modifier key. evdev needs the
+  #     `input` group (users.users.sroberts in configuration.nix). That
+  #     means any process of ours could read raw keyboard events — the same
+  #     trade-off OpenWhispr's listener already made.
+  #   - Right Ctrl is still an ordinary modifier, so Right-Ctrl+<key> shortcuts
+  #     also start a recording. Released quickly with no speech, it produces
+  #     no text; on_no_speech is off so those taps don't post a notification.
+  services.voxtype = {
+    enable = true;
+    package = pkgs.voxtype-vulkan;
+    settings = {
+      # The daemon publishes idle/recording/transcribing here under
+      # $XDG_RUNTIME_DIR/voxtype (`voxtype status`, `voxtype record …`).
+      state_file = "auto";
+      hotkey = {
+        enabled = true;
+        # evdev key name (linux/input-event-codes.h KEY_RIGHTCTRL).
+        key = "RIGHTCTRL";
+        mode = "push_to_talk";
+      };
+      audio = {
+        # "default" is the ALSA default, which PipeWire's ALSA plugin
+        # (services.pipewire.alsa.enable) routes to the default source.
+        device = "default";
+        sample_rate = 16000;
+        # 5 min, up from voxtype's 60 s so long dictation isn't clipped, but
+        # still bounded if the toggle is forgotten.
+        max_duration_secs = 300;
+      };
+      whisper = {
+        model = "${voxtypeModel}";
+        language = "en";
+        on_demand_loading = false;
+      };
+      output = {
+        mode = "type";
+        driver_order = [
+          "wtype"
+          "clipboard"
+        ];
+        fallback_to_clipboard = true;
+        notification = {
+          # "Recording Started" when listening begins, the transcript when
+          # it's done; the overlay OSD also shows a live level meter.
+          on_recording_start = true;
+          on_recording_stop = false;
+          on_transcription = true;
+          on_no_speech = false;
+        };
+      };
     };
   };
 
@@ -1728,60 +1828,6 @@ in
       ${pkgs.coreutils}/bin/mkdir -p "$DEST"
       ${pkgs.coreutils}/bin/install -m 0644 \
         ${./assets/skills/framework/SKILL.md} "$DEST/SKILL.md"
-    '';
-  };
-
-  # OpenWhispr push-to-talk key. The app is installed and permissioned by
-  # upstream's NixOS module (see programs.openwhispr in configuration.nix),
-  # which also sets DICTATION_KEY session-wide — but that variable alone is
-  # not enough to be durable.
-  #
-  # src/helpers/environment.js loads the app's own config with
-  #   require("dotenv").config({ path: <userData>/.env, override: true })
-  # and its comment says so outright: "App config (.env in userData) takes
-  # precedence over system env vars". So the moment that file exists it beats
-  # environment.sessionVariables. The app writes it itself, including when it
-  # migrates a hotkey out of localStorage, so it WILL exist after first run.
-  # Declaring the key therefore means asserting it in that file too.
-  #
-  # Consequence to know: changing the push-to-talk key in OpenWhispr's own UI
-  # will not survive a rebuild. The key lives in configuration.nix (and here);
-  # change it there, not in the app.
-  #
-  # This REWRITES only the DICTATION_KEY line and preserves every other line.
-  # That matters more than usual: the same .env holds BYOK provider API keys
-  # until the app migrates them into the system keyring, so a clobber would
-  # destroy credentials. The file is left 0600 for the same reason, and its
-  # contents are never echoed.
-  #
-  # Electron's userData is ~/.config/<productName>; electron-builder.json sets
-  # productName = "OpenWhispr" while package.json name is "open-whispr", so
-  # both spellings are handled — whichever directory exists is fixed up, and
-  # the OpenWhispr one is created so a fresh profile is deterministic too.
-  home.activation.openwhisprHotkey = {
-    after = [ "writeBoundary" ];
-    before = [ ];
-    data = ''
-      set_key() {
-        D="$1"
-        F="$D/.env"
-        ${pkgs.coreutils}/bin/mkdir -p "$D"
-        if [ ! -e "$F" ]; then
-          ${pkgs.coreutils}/bin/install -m 0600 /dev/null "$F"
-          echo 'DICTATION_KEY=RightControl' >> "$F"
-        elif ${pkgs.gnugrep}/bin/grep -q '^DICTATION_KEY=' "$F"; then
-          ${pkgs.gnused}/bin/sed -i 's/^DICTATION_KEY=.*/DICTATION_KEY=RightControl/' "$F"
-        else
-          echo 'DICTATION_KEY=RightControl' >> "$F"
-        fi
-        ${pkgs.coreutils}/bin/chmod 0600 "$F"
-      }
-
-      set_key "$HOME/.config/OpenWhispr"
-      # Only fix up the alternate spelling if the app actually made it.
-      if [ -d "$HOME/.config/open-whispr" ]; then
-        set_key "$HOME/.config/open-whispr"
-      fi
     '';
   };
 
@@ -2420,15 +2466,6 @@ in
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
-      - [ ] OpenWhispr first run: pick and download a speech model in the app (the
-            model files live under ~/.config/OpenWhispr — not in the Nix store, so a
-            reinstall re-downloads them). Push-to-talk is right control, set
-            declaratively via DICTATION_KEY; changing it in the app's own UI will NOT
-            survive a rebuild, because the activation hook rewrites that line.
-            NOTE: auto-paste needs the `ydotool` and `uinput` groups, which a running
-            session does NOT pick up — log out and back in (or reboot) after the first
-            rebuild that added them, or text injection silently fails while dictation
-            itself appears to work. Check with `id -nG | tr " " "\n" | grep -E "ydotool|uinput|input"`.
       - [ ] wishlist Tailscale discovery: run `wishlist-ts-setup`. It points you at
             https://login.tailscale.com/admin/settings/oauth to generate an OAuth
             client (tick ONLY `devices:read`), then prompts for the id and secret and

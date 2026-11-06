@@ -227,49 +227,6 @@ in
   ############################################################
   # Framework 13 AMD power & firmware
   ############################################################
-  ############################################################
-  # OpenWhispr — push-to-talk voice dictation
-  ############################################################
-  # Upstream's own NixOS module (wired in flake.nix). `enable` installs the
-  # app and turns on everything Wayland text-injection needs, which is the
-  # part that is easy to get wrong: programs.ydotool.enable (the ydotoold
-  # daemon + its group-gated socket) and hardware.uinput.enable (the uinput
-  # kernel module + its udev rule, which programs.ydotool does NOT do).
-  #
-  # `users` is the module's own option, and it grants exactly two group
-  # memberships: config.programs.ydotool.group (to reach the ydotoold socket)
-  # and "uinput" (OpenWhispr's linux-fast-paste backend opens /dev/uinput
-  # directly). Setting them here rather than in users.users keeps them next to
-  # the thing that needs them.
-  #
-  # Note the third permission is ALREADY satisfied and is not listed: the
-  # push-to-talk key listener reads /dev/input/event* via evdev, which needs
-  # the `input` group — sroberts has had it since the original install (see
-  # users.users.sroberts.extraGroups below). Without it the listener prints
-  # NO_PERMISSION and the hotkey silently never fires.
-  programs.openwhispr = {
-    enable = true;
-    users = [ "sroberts" ];
-  };
-
-  # Push-to-talk key. "RightControl" is upstream's canonical spelling
-  # (src/utils/hotkeyValidator.ts normalizes any right-ctrl variant to it, and
-  # resources/linux-key-listener.c maps it to KEY_RIGHTCTRL).
-  #
-  # A BARE modifier is only accepted as a hotkey when it is a right-side one —
-  # hotkeyValidator rejects a lone left modifier with LEFT_MODIFIER_ONLY — so
-  # right control is the blessed configuration here, not a workaround.
-  #
-  # This is set session-wide rather than in home.nix because the app is
-  # launched from the Noctalia launcher, not a login shell, so
-  # home.sessionVariables (which lands in ~/.profile) would not reach it.
-  #
-  # IMPORTANT, and the reason home.nix ALSO asserts this: the app reads
-  # ~/.config/OpenWhispr/.env with dotenv `override: true`
-  # (src/helpers/environment.js), so once that file exists it outranks this
-  # variable. This covers a fresh profile; the home.nix activation hook covers
-  # every run after the app has written its own .env.
-  environment.sessionVariables.DICTATION_KEY = "RightControl";
 
   services.fwupd.enable = true;
   services.power-profiles-daemon.enable = true; # NOT tlp on Ryzen 7040
@@ -635,6 +592,9 @@ in
       "networkmanager"
       "docker"
       "video"
+      # evdev access for voxtype's Right Ctrl push-to-talk listener
+      # (services.voxtype in home.nix). Note what it grants: any process
+      # running as this user can read raw keyboard events.
       "input"
     ];
 
