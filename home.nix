@@ -527,6 +527,158 @@ let
 
   herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
 
+  ############################################################
+  # Web apps (Omarchy-style): Chromium `--app=URL` windows
+  ############################################################
+  # Each entry becomes its own launcher entry (xdg.desktopEntries, in the
+  # body below) that opens a chrome-less Chromium window on one site. This
+  # replaces Chromium's "Install page as app" PWA shortcuts, which Chromium
+  # writes imperatively into ~/.local/share/applications/chrome-<extid>-*.desktop
+  # — keyed by a random-looking extension id, with the icon fetched at click
+  # time — so they never survived a reinstall. Adding a web app is one line
+  # here; the icon is pinned by hash, so nothing is downloaded at runtime.
+  #
+  # Fields:
+  #   name   — launcher label.
+  #   url    — public site, opened as-is.
+  #   tailnetHost + path — self-hosted site on the tailnet instead of `url`.
+  #            The full URL is https://<tailnetHost>.<MagicDNS suffix><path>,
+  #            with the suffix read from tailscaled at LAUNCH time. It is not
+  #            written down because THIS REPO IS PUBLIC and a tailnet name is
+  #            a private identifier for a live network (same reasoning as
+  #            wishlist-ts above). The host labels themselves are just
+  #            service names.
+  #   icon   — a store path; pinned-commit raw URLs so the hash stays valid.
+  #            Most come from homarr-labs/dashboard-icons; Fizzy's is its own
+  #            app icon from basecamp/fizzy.
+  #   actions — optional right-click shortcuts (name → path on the same host).
+  #
+  # Window identity (for niri window rules / launch-or-focus): Chromium names
+  # an `--app=URL` window's Wayland app-id
+  #     chrome-<host>_<path>-<profile>
+  # with '/' (and any other path-illegal char) replaced by '_'. Source:
+  # web_app::GenerateApplicationNameFromURL() builds "<host>_<path>", and
+  # shell_integration_linux::GetXdgAppIdForWebApp() feeds that through
+  # GetShortcutFileName() ("chrome-" + app + "-" + profile dir, illegal chars
+  # → '_'). The installed-PWA window that this replaces shows the same shape
+  # (`niri msg windows` → "chrome-<extid>-Default"). So https://claude.ai/
+  # opens as `chrome-claude.ai__-Default`. The QUERY string is not part of
+  # the app-id, but the PATH is — which is why every action below stays on
+  # its app's start path (a different path would be a different app-id, i.e.
+  # a window that launch-or-focus and window rules would not recognise).
+  # Tailnet apps' app-ids contain the tailnet suffix
+  # (`chrome-rss.<tailnet>.ts.net__-Default`), so they can't carry an exact
+  # StartupWMClass here; match them with a regex like ^chrome-rss\..*__-Default$.
+  webApps = {
+    # Migrated from the hand-installed PWA shortcuts:
+    claude = {
+      name = "Claude";
+      url = "https://claude.ai/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/claude-ai.svg";
+        hash = "sha256-nmYj6cA0YsUfDPcfJOOL7I5uG5MJI2PmPfWApvCk2+A=";
+      };
+    };
+    yarr = {
+      name = "yarr!";
+      tailnetHost = "rss";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/yarr.svg";
+        hash = "sha256-TCLbkkxG5XdG1VMxfQqwcpne9Ds0ZMXdrhZ//qSQQqw=";
+      };
+      actions = {
+        Starred = "/?view=starred";
+        Triage = "/?view=triage";
+        Unread = "/?view=unread";
+      };
+    };
+    # The old Fizzy PWA also had "Latest Activity" (/1/) and "Notifications"
+    # (/1/notifications) shortcuts. Both are different PATHS, so as `--app`
+    # windows they would get different app-ids from the main window; they
+    # are deliberately not carried over — both are one click inside Fizzy.
+    fizzy = {
+      name = "Fizzy";
+      tailnetHost = "todo";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/basecamp/fizzy/4031d98b7b1790ef6ae4e7fd32fbe418d8e36fb6/public/app-icon.png";
+        hash = "sha256-OP+g9lAC4rIvrxl+LHxtTHxm4zTtu+/Y1G3gwNQ5jpM=";
+      };
+    };
+    # Added:
+    gmail = {
+      name = "Gmail";
+      url = "https://mail.google.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/gmail.svg";
+        hash = "sha256-3rk6+CjZExIr4mLNwHxcq2tWCajoLIhbfYQbc1+uFn4=";
+      };
+    };
+    google-calendar = {
+      name = "Google Calendar";
+      url = "https://calendar.google.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/google-calendar.svg";
+        hash = "sha256-V+WWbplBZ/GMcplK94aTwcm3o9My1zzLeEBZOVGjlJo=";
+      };
+    };
+    # The white ("-light") octocat: the plain one is black and disappears on
+    # Noctalia's dark launcher.
+    github = {
+      name = "GitHub";
+      url = "https://github.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/github-light.svg";
+        hash = "sha256-/z0Yv50GoifM/VVpdLL880T4Mz/lKGOlJcvV5D/eoAQ=";
+      };
+    };
+  };
+
+  # The one launcher every web-app entry execs:
+  #   webapp-launch <https-url>
+  #   webapp-launch --tailnet <host> <path>
+  # It pins `--profile-directory=Default` so the app-id suffix is always
+  # "-Default" (and the windows share the main profile's logins and the
+  # policy-installed extensions). pkgs.chromium is the same derivation
+  # configuration.nix installs system-wide — one nixpkgs in the closure — so
+  # this is not a second Chromium. Errors go to notify-send because it runs
+  # from a launcher with no terminal to print to.
+  webappLaunch = pkgs.writeShellApplication {
+    name = "webapp-launch";
+    runtimeInputs = with pkgs; [
+      chromium
+      tailscale
+      jq
+      libnotify
+    ];
+    text = ''
+      fail() {
+        echo "webapp-launch: $*" >&2
+        notify-send --app-name=webapp-launch "Web app failed to open" "$*" || true
+        exit 1
+      }
+
+      if [ "''${1:-}" = "--tailnet" ]; then
+        [ "$#" -eq 3 ] || fail "usage: webapp-launch --tailnet <host> <path>"
+        host=$2
+        path=$3
+        # Override for testing or a non-MagicDNS setup.
+        suffix="''${WEBAPP_TAILNET:-}"
+        if [ -z "$suffix" ]; then
+          suffix=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix // empty')
+        fi
+        [ -n "$suffix" ] || fail "could not read the tailnet name from tailscaled — is Tailscale up? (\`tailscale status\`)"
+        url="https://$host.$suffix$path"
+      else
+        [ "$#" -eq 1 ] || fail "usage: webapp-launch <url> | --tailnet <host> <path>"
+        url=$1
+      fi
+
+      exec chromium --profile-directory=Default --app="$url"
+    '';
+  };
+
 in
 {
   home.username = "sroberts";
@@ -1237,6 +1389,9 @@ in
     wishlist
     wishlistTailscale
     wishlistTailscaleSetup
+    # On PATH too (the desktop entries call it by store path) so binds,
+    # launch-or-focus and the shell can open a web app the same way.
+    webappLaunch
     glow
     gh
     railway
@@ -2099,6 +2254,45 @@ in
       "x-scheme-handler/claude-cli" = "claude-code-url-handler.desktop";
     };
   };
+
+  # Web apps — one launcher entry per `webApps` attr in the let block (see
+  # the comment there for the app-id convention). Files land at
+  # ~/.local/share/applications/webapp-<key>.desktop. Exec args are
+  # double-quoted because the desktop-entry spec reserves '?' (yarr's
+  # actions) and requires quoting around reserved characters.
+  xdg.desktopEntries = lib.mapAttrs' (
+    key: app:
+    let
+      # Public apps: split `url` so actions can reuse the host. Lazy, so
+      # never forced for tailnet apps (which have no `url`).
+      host = lib.head (lib.match "https://([^/]+)/.*" app.url);
+      startPath = app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
+      launch =
+        p:
+        if app ? tailnetHost then
+          ''${lib.getExe webappLaunch} --tailnet "${app.tailnetHost}" "${p}"''
+        else
+          ''${lib.getExe webappLaunch} "https://${host}${p}"'';
+    in
+    lib.nameValuePair "webapp-${key}" {
+      inherit (app) name;
+      genericName = "Web App";
+      exec = launch startPath;
+      icon = "${app.icon}";
+      terminal = false;
+      categories = [ "Network" ];
+      # Lets docks/launchers tie the running window back to this entry.
+      # Only knowable at eval time for public URLs; tailnet app-ids embed the
+      # tailnet suffix, which this public repo never writes down.
+      settings = lib.optionalAttrs (!(app ? tailnetHost)) {
+        StartupWMClass = "chrome-${host}${lib.replaceStrings [ "/" ] [ "_" ] "_${startPath}"}-Default";
+      };
+      actions = lib.mapAttrs (actionName: actionPath: {
+        name = actionName;
+        exec = launch actionPath;
+      }) (app.actions or { });
+    }
+  ) webApps;
 
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
