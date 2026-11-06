@@ -209,6 +209,11 @@ in
   #
   # HandleLidSwitchDocked stays at its "ignore" default, so an external
   # display keeps the session alive with the lid shut regardless of power.
+  #
+  # To keep a long job alive on BATTERY with the lid shut, run it under
+  # `keepawake <cmd…>` or toggle Mod+Alt+I (home.nix): a logind
+  # handle-lid-switch block inhibitor makes logind skip this setting, while
+  # niri still locks on lid close.
   services.logind.settings.Login = {
     HandleLidSwitch = "suspend-then-hibernate";
     HandleLidSwitchExternalPower = "ignore";
