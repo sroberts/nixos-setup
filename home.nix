@@ -1131,6 +1131,11 @@ in
         # it's added below. Compare against `[bar.main]` in upstream's
         # example.toml after a noctalia bump.
         end = [
+          # Screen-recording indicator from the noctalia/screen_recorder
+          # plugin (see `plugins` below). hide_inactive keeps it invisible
+          # until a recording starts, so it only takes bar space while it has
+          # something to say. Clicking it stops the recording.
+          "screen_recorder"
           "media"
           "tray"
           "notifications"
@@ -1142,6 +1147,10 @@ in
           "session"
         ];
       };
+
+      # Bar-widget instance for the recorder indicator listed in `end` above.
+      # Plugin widgets are referenced by "<author>/<plugin>:<entry>".
+      widget.screen_recorder.type = "noctalia/screen_recorder:recorder";
 
       # Battery: glyph only, no percentage label. display_mode stays at the
       # default "glyph" (vs "graphic", the filled battery shape); show_label
@@ -1275,6 +1284,69 @@ in
         # editing this line does NOT change a machine that's already been
         # set up. Use `noctalia msg wallpaper-set <path>` for that.
         default.path = "~/Pictures/Wallpapers/wp12390197-dark-blue-aesthetic-laptop-wallpapers.jpg";
+      };
+
+      # Screenshot annotation (Super+Alt+S). This is Noctalia's own region
+      # capture and annotation editor, not satty. v5 ships the editor natively
+      # (arrows, boxes, text, numbering, blur, crop), themed with the shell
+      # palette. That leaves no grim | slurp | satty pipeline to keep working.
+      #
+      # annotate = true sends every capture Noctalia takes through the editor.
+      # Only the Super+Alt+S bind goes through Noctalia, because the plain
+      # Print / Ctrl+Print / Alt+Print binds are niri's native screenshot
+      # actions and never reach this setting. In the editor, Enter / Done
+      # applies the output policy: save_to_file and copy_to_clipboard, which
+      # both default to true, so the annotated PNG lands on disk AND on the
+      # clipboard. The directory is pinned to niri's own screenshot folder
+      # so both kinds of capture end up in one place. Noctalia's default
+      # would be ~/Pictures.
+      shell.screenshot = {
+        annotate = true;
+        directory = "~/Pictures/Screenshots";
+      };
+
+      # Screen recording (Super+Alt+R / Super+Alt+Shift+R) through Noctalia's
+      # OFFICIAL screen_recorder plugin rather than a hand-rolled
+      # gpu-screen-recorder / wf-recorder toggle script. The plugin runs a
+      # headless service for the whole session that owns the recorder
+      # process. It provides start/stop toggling, a "Recording saved"
+      # notification carrying the file path, the bar indicator above, and a
+      # control-center tile. The binds below drive it through
+      # `noctalia msg plugin noctalia/screen_recorder:service all toggle <source>`.
+      # The recorder itself, plus the setcap KMS helper it needs, comes from
+      # programs.gpu-screen-recorder in configuration.nix. slurp (region
+      # picker) is in home.packages.
+      #
+      # NOT Nix-pinned: plugin code comes from the built-in `official` git
+      # source (github.com/noctalia-dev/official-plugins). Noctalia clones it
+      # into ~/.local/state/noctalia/plugins on first enable and keeps it
+      # updated (plugins.auto_update, default "all"). That is the same model
+      # as the community theme templates above. Plugins whose newer version
+      # needs a plugin API this Noctalia lacks are held back automatically,
+      # so a noctalia bump and a plugin update can't drift into
+      # incompatibility.
+      #
+      # Same base-vs-override rule as theme.templates. Toggling the plugin
+      # off in Settings -> Plugins writes `[plugins].enabled` to
+      # ~/.local/state/noctalia/settings.toml, and that wins over this list.
+      plugins.enabled = [ "noctalia/screen_recorder" ];
+
+      # Plugin-level settings for the recorder. Key names come from the
+      # plugin's plugin.toml manifest, not the docs. Unset keys keep the
+      # plugin defaults: h264, GPU encoder, 60 fps VFR, QP 25, cursor shown.
+      plugin_settings."noctalia/screen_recorder" = {
+        # Default source when recording is started from the bar widget or
+        # control-center tile. The binds pass their source explicitly.
+        # `focused` = the output under focus, captured over KMS. The plugin's
+        # own default is `portal`, which pops the xdg-desktop-portal picker on
+        # every start.
+        video_source = "focused";
+        # Spelled out although it is the plugin default.
+        directory = "~/Videos/Recordings";
+        # Desktop audio (the default PipeWire sink's monitor), no mic.
+        audio_source = "default_output";
+        # Indicator only while recording. See the bar `end` list.
+        hide_inactive = true;
       };
 
       # v5 folds the polkit agent into native config; this replaces v4's
@@ -1693,6 +1765,39 @@ in
       "Print".screenshot = [ ];
       "Ctrl+Print".screenshot-screen = [ ];
       "Alt+Print".screenshot-window = [ ];
+      # Region capture into Noctalia's annotation editor. Done saves to
+      # ~/Pictures/Screenshots and copies to the clipboard. See
+      # programs.noctalia.settings.shell.screenshot.
+      "Mod+Alt+S".spawn = [
+        "noctalia"
+        "msg"
+        "screenshot-region"
+      ];
+
+      # Screen recording via the noctalia/screen_recorder plugin. Each bind is
+      # a toggle: it starts a recording when idle and stops the current one
+      # otherwise. The trailing word is the capture source for a START.
+      # `focused` records the focused output. `region` opens a slurp picker
+      # first. Recordings go to ~/Videos/Recordings, and stopping posts a
+      # notification with the path.
+      "Mod+Alt+R".spawn = [
+        "noctalia"
+        "msg"
+        "plugin"
+        "noctalia/screen_recorder:service"
+        "all"
+        "toggle"
+        "focused"
+      ];
+      "Mod+Alt+Shift+R".spawn = [
+        "noctalia"
+        "msg"
+        "plugin"
+        "noctalia/screen_recorder:service"
+        "all"
+        "toggle"
+        "region"
+      ];
 
       # Colour picker: click any pixel, its #rrggbb lands on the clipboard
       # and a notification shows hex + rgb(). Escape cancels silently. See
@@ -1950,6 +2055,10 @@ in
     # Also on Mod+Shift+C; on PATH too so `pick-color` works from a shell
     # (it prints the hex on stdout as well as copying it).
     pickColor
+    # Region picker for the screen recorder's `region` source
+    # (Super+Alt+Shift+R). The noctalia/screen_recorder plugin shells out to
+    # `slurp` on PATH.
+    slurp
     matugen
     cava
     xwayland-satellite
