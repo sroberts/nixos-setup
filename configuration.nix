@@ -68,6 +68,21 @@ in
     dates = "weekly";
     options = "--delete-older-than 30d";
   };
+  # nh — friendlier front end for nixos-rebuild (`nh os switch` builds with
+  # nix-output-monitor, shows a package diff, then elevates). `flake` sets
+  # NH_FLAKE, so `nh os switch` needs no `.#<host>` and `os-update` (home.nix)
+  # reads the same variable to find the repo — one place says where the
+  # checkout lives.
+  #
+  # nh.clean stays OFF on purpose: nix.gc above already collects weekly, and
+  # running two GC timers is exactly what the nh module warns about. nix.gc's
+  # age-based `--delete-older-than 30d` is the policy this repo wants (it
+  # pairs with systemd-boot.configurationLimit below), so there is nothing to
+  # gain by swapping it for `nh clean all --keep-since`.
+  programs.nh = {
+    enable = true;
+    flake = "${config.users.users.sroberts.home}/nixos-setup";
+  };
   nixpkgs.config.allowUnfree = true; # lmstudio, typora, 1password, spotify
   system.stateVersion = "26.05";
 

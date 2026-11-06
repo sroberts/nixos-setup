@@ -50,7 +50,13 @@ sudo nixos-rebuild test --flake .#<host>
 # Build for next boot, don't activate now
 sudo nixos-rebuild boot --flake .#<host>
 
-# Update all inputs (writes flake.lock)
+# Update all inputs on a branch, build, show what changes (nvd), open a PR
+os-update
+
+# What did the last rebuild change?
+os-diff
+
+# Update all inputs by hand (writes flake.lock)
 nix flake update
 
 # Update one input (Nix 2.19+)
