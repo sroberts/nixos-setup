@@ -517,7 +517,7 @@ let
           "Lock" "Lock the session now" \
           "Show keybinds" "niri hotkey overlay (also Mod+Shift+/)" \
           "Power profile" "Currently: $profile" \
-          "Toggle caffeine" "Keep awake: block idle lock / screen-off / sleep" \
+          "Toggle keep-awake" "Block sleep for long jobs; still locks + screen-off" \
           "Run backup now" "restic to the USB drive (asks for admin auth)" \
           "Open nixos-setup" "Terminal in ~/nixos-setup" \
           "Suspend" "Suspend, hibernating after the usual delay" \
@@ -548,12 +548,18 @@ let
             *) notify "Unknown power profile: $new" ;;
           esac
           ;;
-        "Toggle caffeine")
-          # Noctalia exposes no caffeine status query (`noctalia msg status`
-          # omits it), so the notification can only say it flipped; the
-          # bar's caffeine widget, if present, shows which way.
-          noctalia msg caffeine-toggle
-          notify "Caffeine toggled"
+        "Toggle keep-awake")
+          # NOT Noctalia's caffeine: `caffeine-toggle` takes a logind `idle`
+          # inhibitor, and Noctalia's idle manager skips EVERY idle step while
+          # one is held — including the lock. keepawake (feat/keepawake, #134)
+          # holds only sleep:handle-lid-switch, so the session still locks and
+          # blanks. Resolved from PATH at runtime (writeShellApplication
+          # prepends runtimeInputs, it doesn't replace PATH), so this menu
+          # doesn't hard-depend on that branch landing first.
+          if command -v keepawake >/dev/null 2>&1; then
+            exec keepawake --toggle
+          fi
+          notify "keepawake is not installed"
           ;;
         "Run backup now")
           # The unit is gated on ConditionPathIsMountPoint=/mnt/backup
@@ -1068,7 +1074,7 @@ in
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".show-hotkey-overlay = [ ];
-      # System menu — lock / power profile / caffeine / backup / session
+      # System menu — lock / power profile / keep-awake / backup / session
       # actions in one fuzzy list. See systemMenu in the let block.
       "Mod+Alt+Space" = {
         _props.hotkey-overlay-title = "System Menu";
