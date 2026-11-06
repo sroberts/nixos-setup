@@ -2575,10 +2575,21 @@ in
     # terminal emulators) launch zsh as a non-login interactive shell, so
     # .zprofile never sources; .zshrc does. `typeset -U path` dedupes if a
     # parent shell already appended it.
-    initContent = ''
-      typeset -U path
-      path+=("$HOME/.local/bin")
-    '';
+    initContent = lib.mkMerge [
+      ''
+        typeset -U path
+        path+=("$HOME/.local/bin")
+      ''
+
+      # direnv's hook, pinned AFTER mise's `activate` (default order 1000) —
+      # see programs.direnv below for why the order is load-bearing. Owned
+      # here instead of via programs.direnv.enableZshIntegration, whose line
+      # sits at the same default priority as mise's, so which came first was
+      # an accident of module order rather than something the config said.
+      (lib.mkAfter ''
+        eval "$(${lib.getExe config.programs.direnv.package} hook zsh)"
+      '')
+    ];
   };
 
   # nix-index + comma, backed by nix-index-database's prebuilt index (the
@@ -2771,6 +2782,61 @@ in
         python.compile = false;
         node.compile = false;
       };
+    };
+  };
+
+  # direnv + nix-direnv — per-project Nix dev shells, loaded on `cd`.
+  #
+  # A project with a flake.nix devShell and an `.envrc` containing `use flake`
+  # gets that shell's tools + env on entry and drops them on exit. Scaffold one
+  # with `nix flake init -t ~/nixos-setup#<python|node|rust|go>` (the
+  # `templates` output in flake.nix). nix-direnv replaces direnv's built-in
+  # `use flake` with a cached one: the evaluated env is kept in .direnv/ and
+  # GC-rooted, so re-entering is instant and `nix-collect-garbage` doesn't
+  # pull the shell out from under an open project. (.direnv/ is already in
+  # the restic excludes in configuration.nix.)
+  #
+  # Coexistence with mise (above) — both hook zsh's prompt and both edit PATH,
+  # so the split is by intent: mise owns the *global* default toolchains
+  # (python/node/go everywhere), direnv owns *per-project* Nix shells. Inside
+  # a direnv-loaded project the devShell's python/node/go must win over
+  # mise's, and that rests on two things:
+  #   1. mise's `activate_aggressive` stays at its default (false), so mise
+  #      leaves PATH entries added after its activation ahead of its own tool
+  #      dirs instead of re-prepending itself. Leave it alone or devShells get
+  #      silently shadowed.
+  #   2. direnv's precmd hook runs AFTER mise's on every prompt (mise's docs:
+  #      a prompt hook that runs after mise's decides the final order). That
+  #      is why the hook line lives in programs.zsh.initContent under
+  #      lib.mkAfter rather than enableZshIntegration — see above.
+  # Don't also put a mise.toml in a
+  # direnv project — two tools managing one directory's toolchain is
+  # ambiguous by construction. (`programs.direnv.mise.enable` — the reverse
+  # wiring, `use mise` inside .envrc — is deliberately off for the same
+  # reason.)
+  #
+  # Quieter prompt: direnv normally prints every exported var name on each
+  # load ("direnv: export +AR +AS +CC …" — dozens for a Nix shell).
+  # hide_env_diff drops that list but keeps the one-line "loading" notice, so
+  # it's still obvious when an env changed. warn_timeout raises the "taking a
+  # while" nag from 5s to 30s, since the FIRST load of a flake shell
+  # legitimately builds/fetches; cached loads are instant regardless. State is
+  # surfaced in the prompt by starship's direnv module instead (enabled in
+  # the starshipConfigSeed below).
+  #
+  # enableGitIntegration (off by default in home-manager) adds `.direnv/` to
+  # programs.git's global ignores, so a project scaffolded without a template
+  # .gitignore never commits the cache either.
+  programs.direnv = {
+    enable = true;
+    # The zsh hook is added by hand in programs.zsh.initContent (ordered
+    # after mise); letting the module add it too would hook twice.
+    enableZshIntegration = false;
+    enableGitIntegration = true;
+    nix-direnv.enable = true;
+    config.global = {
+      hide_env_diff = true;
+      warn_timeout = "30s";
     };
   };
 
@@ -3165,6 +3231,14 @@ in
         [username]
         style_user = "overlay1"
         style_root = "text bold"
+
+        # Off by default in starship. In a directory with an .envrc it shows
+        # "direnv loaded/allowed" (or "not allowed" for an .envrc that still
+        # needs `direnv allow`) — see programs.direnv. The prompt-side
+        # replacement for the env-diff spam hide_env_diff suppresses.
+        [direnv]
+        disabled = false
+        style = "overlay1"
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"

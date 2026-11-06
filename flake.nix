@@ -205,5 +205,59 @@
       # and CI enforces it (`nix fmt --check` in .github/workflows/check.yml),
       # so running this is a no-op unless you introduced drift.
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
+
+      # Per-project dev environments — the Nix-native take on Omarchy's
+      # dev-env installer / Bluefin's devcontainers. Instead of installing a
+      # language toolchain globally, each project carries its own flake.nix
+      # devShell, and direnv + nix-direnv (programs.direnv in home.nix) load it
+      # on `cd`. Scaffold one into the current directory with:
+      #
+      #   nix flake init -t ~/nixos-setup#python    # or node / rust / go
+      #
+      # Each template is a minimal flake.nix devShell + an `.envrc` (`use
+      # flake`) + a .gitignore that already excludes `.direnv/`. The template
+      # flakes are standalone (their own nixpkgs input, their own flake.lock
+      # on first use) — they do NOT follow this repo's nixpkgs, so a project
+      # stays reproducible when cloned onto a machine without this config.
+      #
+      # Referenced by local path, never as `github:sroberts/nixos-setup` —
+      # same reason this repo is never a flake input (see CONTRIBUTING.md).
+      templates =
+        let
+          # Shared hint printed after `nix flake init`. In a git repo, flakes
+          # only see tracked files, so flake.nix must be `git add`ed before
+          # `direnv allow` can evaluate it. Nix renders this as Markdown (and
+          # reflows plain lines), hence the fenced block.
+          welcomeText = ''
+            Dev shell scaffolded. Next:
+
+            ```sh
+            git add flake.nix .envrc .gitignore   # flakes only see tracked files
+            direnv allow                          # load the shell now and on every cd
+            ```
+          '';
+        in
+        {
+          python = {
+            path = ./templates/python;
+            description = "Python dev shell: python3 + uv (uv pinned to the Nix interpreter)";
+            inherit welcomeText;
+          };
+          node = {
+            path = ./templates/node;
+            description = "Node.js dev shell: nodejs + pnpm";
+            inherit welcomeText;
+          };
+          rust = {
+            path = ./templates/rust;
+            description = "Rust dev shell: cargo, rustc, rust-analyzer, clippy, rustfmt";
+            inherit welcomeText;
+          };
+          go = {
+            path = ./templates/go;
+            description = "Go dev shell: go + gopls";
+            inherit welcomeText;
+          };
+        };
     };
 }
