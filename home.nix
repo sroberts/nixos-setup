@@ -453,6 +453,149 @@ let
       exec systemctl suspend-then-hibernate
     '';
   };
+
+  # System menu (Mod+Alt+Space) — one key to a fuzzy list of session/system
+  # actions, after Omarchy's menu. The picker is Noctalia's own launcher in
+  # dmenu mode (`noctalia dmenu`, src/launcher/dmenu_cli.cpp): it reads
+  # newline-separated items on stdin, shows them in the SAME launcher panel as
+  # Mod+Space — same palette, same fuzzy matcher — and prints the pick on
+  # stdout, exiting 1 with no output on cancel. That beats a second picker
+  # like fuzzel, which is exactly the separately-themed launcher that was
+  # dropped from Mod+D as redundant.
+  #
+  # Item format: `title<TAB>subtitle`. Noctalia renders the subtitle as a
+  # second line, fuzzy-matches over both, and returns the RAW line — so the
+  # dispatch below strips everything from the tab on and matches the title.
+  # Typing something that matches nothing returns the typed text verbatim;
+  # the `*)` arm reports that rather than guessing.
+  #
+  # Deliberately absent: anything needing sudo. "Run backup now" starts a
+  # SYSTEM unit, which systemd's polkit policy allows an active local session
+  # to do only after admin auth (auth_admin_keep) — so it raises Noctalia's
+  # native polkit agent (fingerprint or password), not a sudo prompt. That is
+  # why it is in and a rebuild entry is not.
+  #
+  # Every binary comes from runtimeInputs, all pinned to the same store paths
+  # the session runs (noctalia, niri, ghostty, power-profiles-daemon), so the
+  # menu never depends on niri's spawn PATH.
+  systemMenu = pkgs.writeShellApplication {
+    name = "system-menu";
+    runtimeInputs = [
+      config.programs.noctalia.package
+      osConfig.programs.niri.package
+      config.programs.ghostty.package
+      osConfig.services.power-profiles-daemon.package
+      pkgs.systemd
+      pkgs.util-linux # mountpoint
+    ];
+    text = ''
+      notify() {
+        noctalia msg notification-show "System" "$1" >/dev/null 2>&1 || true
+      }
+
+      # pick PROMPT — read items on stdin, print the chosen TITLE (subtitle
+      # stripped). Non-zero exit on cancel, which callers turn into a no-op.
+      pick() {
+        local choice
+        choice=$(noctalia dmenu --prompt "$1") || return 1
+        [ -n "$choice" ] || return 1
+        printf '%s\n' "''${choice%%$'\t'*}"
+      }
+
+      # Second-chance prompt for the actions that end the session. A stray
+      # Enter in a fuzzy list shouldn't be able to reboot the machine.
+      confirm() {
+        local answer
+        answer=$(printf '%s\n' "Cancel" "$1" | pick "$1?") || return 1
+        [ "$answer" = "$1" ]
+      }
+
+      profile=$(powerprofilesctl get 2>/dev/null || echo unknown)
+
+      choice=$(
+        printf '%s\t%s\n' \
+          "Lock" "Lock the session now" \
+          "Show keybinds" "niri hotkey overlay (also Mod+Shift+/)" \
+          "Power profile" "Currently: $profile" \
+          "Toggle caffeine" "Keep awake: block idle lock / screen-off / sleep" \
+          "Run backup now" "restic to the USB drive (asks for admin auth)" \
+          "Open nixos-setup" "Terminal in ~/nixos-setup" \
+          "Suspend" "Suspend, hibernating after the usual delay" \
+          "Log out" "Quit niri" \
+          "Reboot" "Restart the machine" \
+          "Power off" "Shut down the machine" |
+          pick "System"
+      ) || exit 0
+
+      case "$choice" in
+        "Lock")
+          exec noctalia msg session lock
+          ;;
+        "Show keybinds")
+          exec niri msg action show-hotkey-overlay
+          ;;
+        "Power profile")
+          # Through Noctalia rather than powerprofilesctl so its bar widget
+          # and OSD stay in step with the change.
+          new=$(
+            printf '%s\n' performance balanced power-saver | pick "Power profile ($profile)"
+          ) || exit 0
+          case "$new" in
+            performance | balanced | power-saver)
+              noctalia msg power-set "$new"
+              notify "Power profile: $new"
+              ;;
+            *) notify "Unknown power profile: $new" ;;
+          esac
+          ;;
+        "Toggle caffeine")
+          # Noctalia exposes no caffeine status query (`noctalia msg status`
+          # omits it), so the notification can only say it flipped; the
+          # bar's caffeine widget, if present, shows which way.
+          noctalia msg caffeine-toggle
+          notify "Caffeine toggled"
+          ;;
+        "Run backup now")
+          # The unit is gated on ConditionPathIsMountPoint=/mnt/backup
+          # (configuration.nix), so without the drive `systemctl start`
+          # "succeeds" by skipping. Check first so that isn't reported as a
+          # backup. Blocking start, so the result notification is real.
+          if ! mountpoint -q /mnt/backup; then
+            notify "Backup skipped: backup drive is not mounted"
+            exit 0
+          fi
+          notify "Backup started"
+          if systemctl start restic-backups-home.service; then
+            notify "Backup finished"
+          else
+            notify "Backup failed — see: journalctl -u restic-backups-home"
+          fi
+          ;;
+        "Open nixos-setup")
+          exec ghostty --working-directory="$HOME/nixos-setup"
+          ;;
+        "Suspend")
+          # suspend-then-hibernate, not plain suspend: the same escalation as
+          # the idle timer and a battery lid close, so a menu-suspended laptop
+          # can't drain flat. swayidle's before-sleep hook locks first.
+          exec systemctl suspend-then-hibernate
+          ;;
+        "Log out")
+          # niri shows its own "really exit?" dialog, so no confirm() here.
+          exec niri msg action quit
+          ;;
+        "Reboot")
+          confirm "Reboot" && exec systemctl reboot
+          ;;
+        "Power off")
+          confirm "Power off" && exec systemctl poweroff
+          ;;
+        *)
+          notify "Unknown action: $choice"
+          ;;
+      esac
+    '';
+  };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
   #
   # The TUI and the app do not share configuration: the TUI reads
@@ -908,26 +1051,58 @@ in
       "lock"
     ];
 
+    # Keybind cheat sheet = niri's own hotkey overlay (Mod+Shift+/). It lists
+    # a fixed set of built-in actions plus EVERY spawn bind — and a spawn bind
+    # is shown as its raw argv ("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+")
+    # unless the bind carries a `hotkey-overlay-title` property. So every
+    # spawn bind below sets one, as a KDL property via `_props`, e.g.
+    #   "Mod+T" = { _props.hotkey-overlay-title = "Open Terminal"; spawn = "ghostty"; };
+    # renders `Mod+T hotkey-overlay-title="Open Terminal" { spawn "ghostty"; }`.
+    # Add a title when you add a spawn bind, or the overlay shows the argv.
+    #
+    # skip-at-startup: niri otherwise pops the overlay on every login. With
+    # the overlay one key away (and listed in the Mod+Alt+Space system menu)
+    # the startup splash is just something to dismiss.
+    hotkey-overlay.skip-at-startup = { };
+
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".show-hotkey-overlay = [ ];
-      "Mod+T".spawn = "ghostty";
-      "Mod+Return".spawn = "ghostty";
+      # System menu — lock / power profile / caffeine / backup / session
+      # actions in one fuzzy list. See systemMenu in the let block.
+      "Mod+Alt+Space" = {
+        _props.hotkey-overlay-title = "System Menu";
+        spawn = "${systemMenu}/bin/system-menu";
+      };
+      "Mod+T" = {
+        _props.hotkey-overlay-title = "Open Terminal";
+        spawn = "ghostty";
+      };
+      "Mod+Return" = {
+        _props.hotkey-overlay-title = "Open Terminal";
+        spawn = "ghostty";
+      };
       # App launcher — Noctalia's, toggled over IPC. v5: `panel-toggle <id>`.
-      "Mod+Space".spawn = [
-        "noctalia"
-        "msg"
-        "panel-toggle"
-        "launcher"
-      ];
+      "Mod+Space" = {
+        _props.hotkey-overlay-title = "App Launcher";
+        spawn = [
+          "noctalia"
+          "msg"
+          "panel-toggle"
+          "launcher"
+        ];
+      };
       # Mod+D is an alias for the same launcher — fuzzel used to live here as
       # a second, separately-themed launcher; it was dropped as redundant.
-      "Mod+D".spawn = [
-        "noctalia"
-        "msg"
-        "panel-toggle"
-        "launcher"
-      ];
+      "Mod+D" = {
+        _props.hotkey-overlay-title = "App Launcher";
+        spawn = [
+          "noctalia"
+          "msg"
+          "panel-toggle"
+          "launcher"
+        ];
+      };
 
       # Window
       "Mod+Q".close-window = [ ];
@@ -1088,62 +1263,92 @@ in
       # Lock. Noctalia does NOT subscribe to logind's Lock signal, so
       # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
       # which raises its WlSessionLock directly.
-      "Super+Alt+L".spawn = [
-        "noctalia"
-        "msg"
-        "session"
-        "lock"
-      ];
+      "Super+Alt+L" = {
+        _props.hotkey-overlay-title = "Lock Screen";
+        spawn = [
+          "noctalia"
+          "msg"
+          "session"
+          "lock"
+        ];
+      };
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
-      "XF86AudioRaiseVolume".spawn = [
-        "wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%+"
-      ];
-      "XF86AudioLowerVolume".spawn = [
-        "wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%-"
-      ];
-      "XF86AudioMute".spawn = [
-        "wpctl"
-        "set-mute"
-        "@DEFAULT_AUDIO_SINK@"
-        "toggle"
-      ];
-      "XF86AudioMicMute".spawn = [
-        "wpctl"
-        "set-mute"
-        "@DEFAULT_AUDIO_SOURCE@"
-        "toggle"
-      ];
-      "XF86AudioPlay".spawn = [
-        "playerctl"
-        "play-pause"
-      ];
-      "XF86AudioNext".spawn = [
-        "playerctl"
-        "next"
-      ];
-      "XF86AudioPrev".spawn = [
-        "playerctl"
-        "previous"
-      ];
+      "XF86AudioRaiseVolume" = {
+        _props.hotkey-overlay-title = "Volume Up";
+        spawn = [
+          "wpctl"
+          "set-volume"
+          "@DEFAULT_AUDIO_SINK@"
+          "5%+"
+        ];
+      };
+      "XF86AudioLowerVolume" = {
+        _props.hotkey-overlay-title = "Volume Down";
+        spawn = [
+          "wpctl"
+          "set-volume"
+          "@DEFAULT_AUDIO_SINK@"
+          "5%-"
+        ];
+      };
+      "XF86AudioMute" = {
+        _props.hotkey-overlay-title = "Mute Speakers";
+        spawn = [
+          "wpctl"
+          "set-mute"
+          "@DEFAULT_AUDIO_SINK@"
+          "toggle"
+        ];
+      };
+      "XF86AudioMicMute" = {
+        _props.hotkey-overlay-title = "Mute Microphone";
+        spawn = [
+          "wpctl"
+          "set-mute"
+          "@DEFAULT_AUDIO_SOURCE@"
+          "toggle"
+        ];
+      };
+      "XF86AudioPlay" = {
+        _props.hotkey-overlay-title = "Play / Pause";
+        spawn = [
+          "playerctl"
+          "play-pause"
+        ];
+      };
+      "XF86AudioNext" = {
+        _props.hotkey-overlay-title = "Next Track";
+        spawn = [
+          "playerctl"
+          "next"
+        ];
+      };
+      "XF86AudioPrev" = {
+        _props.hotkey-overlay-title = "Previous Track";
+        spawn = [
+          "playerctl"
+          "previous"
+        ];
+      };
 
       # Brightness — Framework keyboard top row.
-      "XF86MonBrightnessUp".spawn = [
-        "brightnessctl"
-        "s"
-        "5%+"
-      ];
-      "XF86MonBrightnessDown".spawn = [
-        "brightnessctl"
-        "s"
-        "5%-"
-      ];
+      "XF86MonBrightnessUp" = {
+        _props.hotkey-overlay-title = "Brightness Up";
+        spawn = [
+          "brightnessctl"
+          "s"
+          "5%+"
+        ];
+      };
+      "XF86MonBrightnessDown" = {
+        _props.hotkey-overlay-title = "Brightness Down";
+        spawn = [
+          "brightnessctl"
+          "s"
+          "5%-"
+        ];
+      };
     };
   };
 
