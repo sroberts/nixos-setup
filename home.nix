@@ -453,6 +453,53 @@ let
       exec systemctl suspend-then-hibernate
     '';
   };
+  # Screen colour picker, bound to Mod+Shift+C below (Omarchy ships the same
+  # idea on hyprpicker). No extra picker tool: niri has one built in —
+  # `niri msg pick-color` hands the pointer to the compositor, which samples
+  # the pixel under the next click. That works across every output and app
+  # with no layer-shell overlay of our own.
+  #
+  # `--json` is used rather than scraping the human output ("Picked color:
+  # rgb(…)" / "Hex: #…"), because the human text is not a stable interface.
+  # The JSON is `{"rgb":[r,g,b]}` with each channel a FLOAT in 0.0–1.0, or
+  # literally `null` when the pick is cancelled with Escape (niri-ipc's
+  # `PickedColor(Option<PickedColor>)`). The 0–255 conversion below mirrors
+  # niri's own client exactly — clamp to [0,1], ×255, round — so the hex we
+  # copy matches what `niri msg pick-color` would print.
+  #
+  # Cancel is a clean exit 0 with no notification and the clipboard left
+  # untouched: pressing Escape is a deliberate "never mind", not an error.
+  #
+  # niri comes from osConfig so the client speaks the same IPC version as the
+  # running compositor (a nixpkgs niri here could drift from niri-unstable).
+  pickColor = pkgs.writeShellApplication {
+    name = "pick-color";
+    runtimeInputs = [
+      osConfig.programs.niri.package
+      pkgs.jq
+      pkgs.wl-clipboard
+      pkgs.libnotify
+    ];
+    text = ''
+      json=$(niri msg --json pick-color)
+
+      if [ "$json" = "null" ]; then
+        exit 0
+      fi
+
+      # One jq pass emits "r g b" as 0–255 integers.
+      read -r r g b < <(
+        jq -r '.rgb | map(if . < 0 then 0 elif . > 1 then 1 else . end * 255 | round) | @sh' <<<"$json"
+      )
+
+      hex=$(printf '#%02x%02x%02x' "$r" "$g" "$b")
+      rgb="rgb($r, $g, $b)"
+
+      printf '%s' "$hex" | wl-copy
+      notify-send --app-name="Colour picker" "$hex" "$rgb — hex copied to clipboard"
+      printf '%s\n' "$hex"
+    '';
+  };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
   #
   # The TUI and the app do not share configuration: the TUI reads
@@ -1080,6 +1127,12 @@ in
       "Ctrl+Print".screenshot-screen = [ ];
       "Alt+Print".screenshot-window = [ ];
 
+      # Colour picker: click any pixel, its #rrggbb lands on the clipboard
+      # and a notification shows hex + rgb(). Escape cancels silently. See
+      # pickColor in the let block. Absolute store path so the bind doesn't
+      # depend on niri's spawn PATH.
+      "Mod+Shift+C".spawn = "${pickColor}/bin/pick-color";
+
       # Session
       "Mod+Shift+E".quit = [ ];
       "Mod+Shift+P".power-off-monitors = [ ];
@@ -1278,6 +1331,9 @@ in
     (writeShellScriptBin "pbpaste" ''exec ${wl-clipboard}/bin/wl-paste --no-newline "$@"'')
     brightnessctl
     playerctl
+    # Also on Mod+Shift+C; on PATH too so `pick-color` works from a shell
+    # (it prints the hex on stdout as well as copying it).
+    pickColor
     matugen
     cava
     xwayland-satellite
