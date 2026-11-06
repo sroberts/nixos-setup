@@ -181,8 +181,9 @@ in
   # new machine sets them up.
 
   # Idle escalation timing (Noctalia in home.nix triggers the actions, via
-  # programs.noctalia.settings.idle.behavior): lock @ 10 min, then
-  # `systemctl suspend-then-hibernate` @ 15 min. That
+  # programs.noctalia.settings.idle.behavior): lock @ 10 min, screens off
+  # @ 11 min, then `systemctl suspend-then-hibernate` @ 15 min — the last
+  # step on battery only (suspendUnlessOnAc). That
   # suspends to RAM and, HibernateDelaySec later, wakes and hibernates to
   # disk — so hibernate lands at 3h 15m total idle. The long delay favors
   # quick lid-open resume for the common short-break case; hibernate still
@@ -197,7 +198,9 @@ in
   # HandleLidSwitch's value, which is how a plugged-in lid close used to
   # suspend. This matches the idle path, where suspendUnlessOnAc (home.nix)
   # skips the sleep step on AC — between the two, nothing puts this machine
-  # to sleep while it has wall power.
+  # to sleep while it has wall power. It still LOCKS on lid close (niri's
+  # switch-events.lid-close in home.nix) and still turns its screens off on
+  # idle, so "awake for long jobs" never means "open and lit".
   #
   # Consequence worth knowing: on AC with the lid shut and no external
   # display, the session stays live on a blanked internal panel. It still

@@ -762,17 +762,48 @@ in
 
       # Idle escalation, native to Noctalia's idle manager. Named behaviors
       # under [idle.behavior.*]: a 10-min lock, then suspend-then-hibernate at
-      # 15 min. `noctalia:session lock` is the internal action; the bare
-      # systemctl command is run as a user command. See services.swayidle
+      # 15 min. The lock uses the NATIVE `action = "lock"`. Do not write
+      # `command = "noctalia:session lock"`: that is v4 syntax, and v5 has no
+      # `noctalia:` prefix. resolveIdleBehaviorActions
+      # (src/config/config_types.cpp) runs any `command` through the shell,
+      # where `noctalia:session` is not found. The idle manager still logs
+      # "triggered" and the pre-action fade still dims the screen, but nothing
+      # locks. The sleep step's script runs as a user command. See services.swayidle
       # below for the one job (lock-on-lid-close) this can't cover.
       #
       # The sleep step goes through suspendUnlessOnAc (see the let block) so
-      # it is a no-op while plugged in. The LOCK step is intentionally NOT
-      # gated — plugged in or not, an idle session still locks.
+      # it is a no-op while plugged in. The LOCK and SCREEN-OFF steps are
+      # intentionally NOT gated — plugged in or not, an idle session still
+      # locks and its panels still go dark. That is the AC policy: stay awake
+      # for long-running jobs, but never sit unlocked or lit.
+      #
+      # screen_off is Noctalia's NATIVE action (not a hand-rolled command):
+      # on niri it sends PowerOffMonitors over IPC
+      # (src/compositors/niri/niri_output_backend.cpp) and its resume action
+      # is PowerOnMonitors, which the idle manager runs on input AND when it
+      # re-arms an idled behavior at unlock (idle_manager.cpp, "otherwise
+      # screen_off's display-off is never undone"). A `command` calling
+      # `niri msg action power-off-monitors` would have no such undo path.
+      #
+      # 660 s is upstream's own default for this behavior, a minute after the
+      # lock (defaultIdleBehaviors in src/config/config_types.cpp).
+      #
+      # locked_timeout = 60: while the session is ALREADY locked, the panels
+      # go dark after 60 s of idle instead of 11 min. On lock the idle manager
+      # re-arms waiting behaviors with their locked timeout, so this covers
+      # both a manual Super+Alt+L and the lid-close lock below. Key names are
+      # from the schema (src/config/schema/config_schema.cpp), not
+      # example.toml, which has gone stale before.
       idle.behavior = {
         lock = {
           timeout = 600;
-          command = "noctalia:session lock";
+          action = "lock";
+          enabled = true;
+        };
+        screen-off = {
+          timeout = 660;
+          locked_timeout = 60;
+          action = "screen_off";
           enabled = true;
         };
         hibernate = {
@@ -859,6 +890,24 @@ in
     # IPC surface (`noctalia msg <command…>`); Mod+Space toggles the
     # launcher below. Add settings/clipboard/etc. the same way —
     # `noctalia msg --help` lists every command.
+    # Lock on lid close, whatever the power source. On battery logind
+    # suspends on lid close and swayidle's before-sleep hook already locks —
+    # but on AC HandleLidSwitchExternalPower = "ignore" (configuration.nix),
+    # so nothing sleeps and before-sleep never fires. Without this a closed,
+    # plugged-in laptop sat UNLOCKED until the 10-min idle lock. On battery
+    # the two locks race harmlessly: locking an already-locked session is a
+    # no-op.
+    #
+    # Absolute store path for the same reason as swayidle's hook: switch
+    # actions spawn with niri's environment, and resolving noctalia by store
+    # path removes any dependence on PATH.
+    switch-events.lid-close.spawn = [
+      "${config.programs.noctalia.package}/bin/noctalia"
+      "msg"
+      "session"
+      "lock"
+    ];
+
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".show-hotkey-overlay = [ ];
@@ -1101,9 +1150,12 @@ in
   # The idle escalation is driven entirely by Noctalia's own idle manager,
   # configured declaratively via programs.noctalia.settings.idle.behavior above:
   #
-  #   - LOCK (10 min): [idle.behavior.lock] timeout=600, `noctalia:session lock`.
+  #   - LOCK (10 min): [idle.behavior.lock] timeout=600, native action="lock".
   #     Locks via WlSessionLock — the ONLY path that works, since Noctalia
   #     ignores logind's Lock signal, so `loginctl lock-session` is a no-op.
+  #   - SCREEN OFF (11 min, or 60 s once locked): [idle.behavior.screen-off],
+  #     Noctalia's native screen_off action. Not power-gated, so a plugged-in
+  #     machine still goes dark; panels come back on input.
   #   - SUSPEND-THEN-HIBERNATE (15 min): [idle.behavior.hibernate] timeout=900
   #     running `suspend-unless-on-ac` as a user command. On battery that is
   #     `systemctl suspend-then-hibernate`: suspends to RAM, then hibernates
@@ -1112,8 +1164,9 @@ in
   #     stays up indefinitely. The lock step above still runs either way.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
-  # before a sleep Noctalia didn't initiate — namely a lid close (logind's
-  # HandleLidSwitch). Its before-sleep hook holds a logind sleep inhibitor and
+  # before a sleep Noctalia didn't initiate — namely a lid close on battery
+  # (logind's HandleLidSwitch). A lid close on AC causes no sleep at all, so
+  # that case is covered by niri's switch-events.lid-close bind instead. Its before-sleep hook holds a logind sleep inhibitor and
   # raises Noctalia's lock via IPC ahead of ANY suspend/hibernate, so the
   # screen is never left unlocked on resume. No timeouts here — they live in
   # Noctalia.
