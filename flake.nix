@@ -113,6 +113,23 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # nix-index-database — a prebuilt nix-index database (file → package
+    # index of nixpkgs), rebuilt weekly upstream, plus a home-manager module
+    # that wires it into `nix-locate`, zsh's command_not_found_handler and a
+    # `comma` wrapper (see home.nix). The alternative is running `nix-index`
+    # locally, which takes the better part of an hour and has to be redone
+    # by hand to stay current.
+    #
+    # The database is pinned by flake.lock like any other input, so it only
+    # moves when this input does: `nix flake update nix-index-database` (or
+    # a plain `nix flake update`) picks up the newest weekly build. Following
+    # our nixpkgs only affects the nix-index/comma binaries it wraps — the
+    # database itself is a fixed-output download from upstream's releases.
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # ── SECURE BOOT ────────────────────────────────────────────────
     # Uncomment to enable lanzaboote. Do this ONLY after the system is
     # installed and booting (see secure-boot.md). Enabling it before
