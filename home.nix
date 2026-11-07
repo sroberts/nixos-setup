@@ -1243,6 +1243,7 @@ in
     lazydocker
     btop
     fastfetch
+    figlet # ASCII-art banners: `figlet NixOS`
     jq
     fd
     ripgrep # crush prefers `rg` for greps; unfound falls back to slower search
