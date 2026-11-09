@@ -1877,6 +1877,64 @@ in
     '';
   };
 
+  # herdr-app "Issues" layout — jankeesvw/herdr-issues (MIT), pinned by rev.
+  # Herdr's own `main` layout plus a GitHub issues side panel beside Files and
+  # Changes, with an Issues button at the end of the tab bar. Switch to it with
+  # `ctrl-shift-l` or `herdr-app do layout.switch --name main-issues`; the
+  # shipped `main` stays as it was.
+  #
+  # What the mod does at runtime (upstream behaviour, read before pinning):
+  # runs `gh` (repo view, issue list/view/comment/close/reopen/edit, label
+  # list, api user + timeline) on the space's machine; reads the focused LOCAL
+  # terminal with `hc read --lines 300` every 3s to find `#123` mentions;
+  # `curl`s GitHub avatars and issue images into ~/.config/herdr-app/data/
+  # issues/ (github.com images with the `gh auth token`, sent only to
+  # github.com); opens links with xdg-open. It changes issues only on a button
+  # press in the issue dialog. Needs `gh auth login` (already a TODO.md item).
+  #
+  # COPIED, not linked into the store: Herdr writes to personal layouts (the
+  # theme menu sets the root `theme`), and its recipe notes a symlinked mod
+  # folder neither draws images nor docks. Each rebuild resets both to the pin
+  # — same "declared wins" stance as herdrAppSettings above — and only rewrites
+  # when the content differs, so an unchanged rebuild doesn't hot-reload the
+  # mod. Bump: change `rev`, set `hash = lib.fakeHash`, rebuild for the real one.
+  home.activation.herdrIssuesLayout =
+    let
+      src = pkgs.fetchFromGitHub {
+        owner = "jankeesvw";
+        repo = "herdr-issues";
+        rev = "15ffaad00d37efe17ef952109a3198fe299ecb67";
+        hash = "sha256-zj3BoGuCSdY0AoV5KI0oS0EEm0AtVtmHlIi0yEMsH/I=";
+      };
+    in
+    {
+      after = [ "herdrAppSettings" ];
+      before = [ ];
+      data = ''
+        HOME_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/herdr-app"
+        MOD="$HOME_DIR/mods/issues"
+        LAYOUT="$HOME_DIR/layouts/main-issues.json"
+
+        ${pkgs.coreutils}/bin/install -d -m 0755 "$HOME_DIR/mods" "$HOME_DIR/layouts"
+
+        if ! ${pkgs.diffutils}/bin/diff -rq ${src}/mods/issues "$MOD" >/dev/null 2>&1; then
+          TMP=$(${pkgs.coreutils}/bin/mktemp -d "$HOME_DIR/mods/.issues.XXXXXX")
+          if ${pkgs.coreutils}/bin/cp -r --no-preserve=mode,ownership ${src}/mods/issues/. "$TMP/"; then
+            ${pkgs.coreutils}/bin/chmod 0755 "$TMP"
+            ${pkgs.coreutils}/bin/rm -rf "$MOD"
+            ${pkgs.coreutils}/bin/mv "$TMP" "$MOD"
+          else
+            ${pkgs.coreutils}/bin/rm -rf "$TMP"
+            echo "herdr-app: could not copy the issues mod; left $MOD alone" >&2
+          fi
+        fi
+
+        if ! ${pkgs.diffutils}/bin/cmp -s ${src}/layouts/main-issues.json "$LAYOUT"; then
+          ${pkgs.coreutils}/bin/install -m 0644 ${src}/layouts/main-issues.json "$LAYOUT"
+        fi
+      '';
+    };
+
   home.activation.wallpapers = {
     after = [ "writeBoundary" ];
     before = [ ];
