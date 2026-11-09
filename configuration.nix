@@ -652,6 +652,17 @@ in
     linger = true;
   };
 
+  # LocalSend (AirDrop-style file sharing on the local network). The module
+  # installs the app (so it is not in systemPackages below) and, with
+  # openFirewall (its default, spelled out here), opens port 53317 on TCP and
+  # UDP on every interface: UDP multicast for discovery and TCP for the
+  # transfer. That covers Wi-Fi/LAN as well as the tailnet. Nothing is
+  # listening on that port unless the LocalSend window is open.
+  programs.localsend = {
+    enable = true;
+    openFirewall = true;
+  };
+
   ############################################################
   # System-wide GUI applications
   ############################################################
@@ -661,7 +672,6 @@ in
     chromium
     discord
     firefox
-    localsend
     nautilus
     obsidian
     lmstudio
