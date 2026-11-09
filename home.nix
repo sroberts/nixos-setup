@@ -1949,21 +1949,6 @@ in
     '';
   };
 
-  # btop temperature scale — Fahrenheit.
-  #
-  # Deliberately NOT programs.btop.settings. Noctalia's builtin `btop`
-  # template writes `color_theme = "noctalia"` into this same btop.conf (see
-  # the builtin_ids note above), so home-manager can't own the file as a
-  # read-only store symlink without breaking theming — the same collision
-  # that bit bat and fuzzel.
-  #
-  # So instead of owning btop.conf, enforce the one line. btop rewrites the
-  # whole file on exit, keeping its own defaults and Noctalia's theme line
-  # intact; we only ever touch temp_scale. Idempotent, so reruns are no-ops.
-  #
-  # On a fresh $HOME btop.conf doesn't exist yet (btop writes it on first
-  # run), so seed a minimal file with just this key — btop fills in the rest
-  # of its defaults around it.
   # Claude Code status line — vendored from
   # github.com/daniel3303/ClaudeCodeStatusLine (v1.4.4), patched so its
   # colours come from Noctalia's live palette instead of being hardcoded.
@@ -2009,6 +1994,21 @@ in
     '';
   };
 
+  # btop temperature scale — Fahrenheit.
+  #
+  # Deliberately NOT programs.btop.settings. Noctalia's builtin `btop`
+  # template writes `color_theme = "noctalia"` into this same btop.conf (see
+  # the builtin_ids note above), so home-manager can't own the file as a
+  # read-only store symlink without breaking theming — the same collision
+  # that bit bat and fuzzel.
+  #
+  # So instead of owning btop.conf, enforce the one line. btop rewrites the
+  # whole file on exit, keeping its own defaults and Noctalia's theme line
+  # intact; we only ever touch temp_scale. Idempotent, so reruns are no-ops.
+  #
+  # On a fresh $HOME btop.conf doesn't exist yet (btop writes it on first
+  # run), so seed a minimal file with just this key — btop fills in the rest
+  # of its defaults around it.
   home.activation.btopFahrenheit = {
     after = [ "writeBoundary" ];
     before = [ ];
