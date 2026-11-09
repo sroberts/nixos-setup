@@ -62,6 +62,7 @@ install, and `power-profiles-daemon` (not TLP) on Ryzen 7040.
 | Disk (default) | LUKS-encrypted ext4 + swap-with-hibernate (via Calamares) | Encrypted root + hibernation-sized swap, no LVM |
 | Disk (appendix path) | LUKS2 + LVM, 92 GiB swap | Same encryption + hibernation, with LVM for multi-volume management |
 | Bootloader | systemd-boot → lanzaboote (post-install) | Layered Secure Boot signing; see `secure-boot.md` |
+| Dev environments | Per-project flake devShells loaded by direnv + nix-direnv (`nix flake init -t ~/nixos-setup#python` etc.); mise for global default toolchains | Project toolchains pinned by the project's own `flake.lock`, loaded on `cd`, nothing installed globally |
 
 If you have a Ryzen AI 300 (not 7040), swap the hardware module to
 `framework-amd-ai-300-series` in this host's `default.nix`. For
@@ -308,8 +309,8 @@ What doesn't carry:
 ```bash
 cd ~/nixos-setup
 git pull                                      # grab changes from any machine
-nix flake update                              # bump all inputs
-# Or: nix flake update noctalia               # bump one input
+os-update                                     # bump all inputs on a branch, build, nvd diff, open a PR
+# Or by hand: nix flake update [noctalia]     # bump all inputs / one input
 sudo nixos-rebuild switch --flake .#<host>    # <host> is the hostname / hosts/<dir>
 
 # commit your edits (per-host hardware configs under hosts/ are tracked too)

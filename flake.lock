@@ -105,6 +105,26 @@
         "url": "https://codeberg.org/BANanaD3V/niri-nix"
       }
     },
+    "nix-index-database": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793543282,
+        "narHash": "sha256-PHtGxKYM99f8WhGR5YD7iiCiwemKa2wUD4yVI2oALFg=",
+        "owner": "nix-community",
+        "repo": "nix-index-database",
+        "rev": "cee0f879d338cf08f814210fa6c2b280594ade0a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "nix-index-database",
+        "type": "github"
+      }
+    },
     "nixos-hardware": {
       "inputs": {
         "nixpkgs": "nixpkgs"
@@ -194,26 +214,6 @@
         "type": "github"
       }
     },
-    "openwhispr": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1793640703,
-        "narHash": "sha256-PB/xhu+NVx5Ic46mMXfF8UyWIP/xH6JTg14/aEJ+3h4=",
-        "owner": "OpenWhispr",
-        "repo": "openwhispr",
-        "rev": "66c10ee73c16fd2ef2e9616f0cc18ae39304a629",
-        "type": "github"
-      },
-      "original": {
-        "owner": "OpenWhispr",
-        "repo": "openwhispr",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "claude-code-nix": "claude-code-nix",
@@ -221,11 +221,11 @@
         "herdr-gpui": "herdr-gpui",
         "home-manager": "home-manager",
         "niri": "niri",
+        "nix-index-database": "nix-index-database",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
         "noctalia": "noctalia",
-        "noctalia-greeter": "noctalia-greeter",
-        "openwhispr": "openwhispr"
+        "noctalia-greeter": "noctalia-greeter"
       }
     },
     "rust-overlay": {

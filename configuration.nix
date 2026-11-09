@@ -68,6 +68,21 @@ in
     dates = "weekly";
     options = "--delete-older-than 30d";
   };
+  # nh — friendlier front end for nixos-rebuild (`nh os switch` builds with
+  # nix-output-monitor, shows a package diff, then elevates). `flake` sets
+  # NH_FLAKE, so `nh os switch` needs no `.#<host>` and `os-update` (home.nix)
+  # reads the same variable to find the repo — one place says where the
+  # checkout lives.
+  #
+  # nh.clean stays OFF on purpose: nix.gc above already collects weekly, and
+  # running two GC timers is exactly what the nh module warns about. nix.gc's
+  # age-based `--delete-older-than 30d` is the policy this repo wants (it
+  # pairs with systemd-boot.configurationLimit below), so there is nothing to
+  # gain by swapping it for `nh clean all --keep-since`.
+  programs.nh = {
+    enable = true;
+    flake = "${config.users.users.sroberts.home}/nixos-setup";
+  };
   nixpkgs.config.allowUnfree = true; # lmstudio, typora, 1password, spotify
   system.stateVersion = "26.05";
 
@@ -209,6 +224,11 @@ in
   #
   # HandleLidSwitchDocked stays at its "ignore" default, so an external
   # display keeps the session alive with the lid shut regardless of power.
+  #
+  # To keep a long job alive on BATTERY with the lid shut, run it under
+  # `keepawake <cmd…>` or toggle Mod+Alt+I (home.nix): a logind
+  # handle-lid-switch block inhibitor makes logind skip this setting, while
+  # niri still locks on lid close.
   services.logind.settings.Login = {
     HandleLidSwitch = "suspend-then-hibernate";
     HandleLidSwitchExternalPower = "ignore";
@@ -227,49 +247,6 @@ in
   ############################################################
   # Framework 13 AMD power & firmware
   ############################################################
-  ############################################################
-  # OpenWhispr — push-to-talk voice dictation
-  ############################################################
-  # Upstream's own NixOS module (wired in flake.nix). `enable` installs the
-  # app and turns on everything Wayland text-injection needs, which is the
-  # part that is easy to get wrong: programs.ydotool.enable (the ydotoold
-  # daemon + its group-gated socket) and hardware.uinput.enable (the uinput
-  # kernel module + its udev rule, which programs.ydotool does NOT do).
-  #
-  # `users` is the module's own option, and it grants exactly two group
-  # memberships: config.programs.ydotool.group (to reach the ydotoold socket)
-  # and "uinput" (OpenWhispr's linux-fast-paste backend opens /dev/uinput
-  # directly). Setting them here rather than in users.users keeps them next to
-  # the thing that needs them.
-  #
-  # Note the third permission is ALREADY satisfied and is not listed: the
-  # push-to-talk key listener reads /dev/input/event* via evdev, which needs
-  # the `input` group — sroberts has had it since the original install (see
-  # users.users.sroberts.extraGroups below). Without it the listener prints
-  # NO_PERMISSION and the hotkey silently never fires.
-  programs.openwhispr = {
-    enable = true;
-    users = [ "sroberts" ];
-  };
-
-  # Push-to-talk key. "RightControl" is upstream's canonical spelling
-  # (src/utils/hotkeyValidator.ts normalizes any right-ctrl variant to it, and
-  # resources/linux-key-listener.c maps it to KEY_RIGHTCTRL).
-  #
-  # A BARE modifier is only accepted as a hotkey when it is a right-side one —
-  # hotkeyValidator rejects a lone left modifier with LEFT_MODIFIER_ONLY — so
-  # right control is the blessed configuration here, not a workaround.
-  #
-  # This is set session-wide rather than in home.nix because the app is
-  # launched from the Noctalia launcher, not a login shell, so
-  # home.sessionVariables (which lands in ~/.profile) would not reach it.
-  #
-  # IMPORTANT, and the reason home.nix ALSO asserts this: the app reads
-  # ~/.config/OpenWhispr/.env with dotenv `override: true`
-  # (src/helpers/environment.js), so once that file exists it outranks this
-  # variable. This covers a fresh profile; the home.nix activation hook covers
-  # every run after the app has written its own .env.
-  environment.sessionVariables.DICTATION_KEY = "RightControl";
 
   services.fwupd.enable = true;
   services.power-profiles-daemon.enable = true; # NOT tlp on Ryzen 7040
@@ -494,6 +471,30 @@ in
     ];
   };
 
+  # Screen recording backend for Noctalia's official `noctalia/screen_recorder`
+  # plugin (enabled in home.nix, driven by Super+Alt+R / Super+Alt+Shift+R).
+  # The plugin shells out to gpu-screen-recorder, which encodes on the GPU
+  # (VAAPI on the Radeon 780M), so a recording costs almost no CPU.
+  #
+  # The binds record with the plugin's `focused` / `region` sources, which
+  # make gpu-screen-recorder capture the output straight from KMS
+  # (`-w eDP-1`): compositor-agnostic, no portal picker dialog on every
+  # start, and no dependency on niri's PipeWire screencast path. KMS capture
+  # needs CAP_SYS_ADMIN, which gpu-screen-recorder confines to a tiny helper
+  # (`gsr-kms-server`). This module is what creates the setcap wrapper for
+  # that helper in /run/wrappers/bin. Installing the bare package would make
+  # every KMS recording fail, or fall back to a pkexec prompt.
+  #
+  # Why not wf-recorder: it needs wlr-screencopy, which niri supports, but it
+  # has no bar indicator, no shell integration and no replay buffer. It would
+  # also have needed a hand-rolled pidfile toggle script that the plugin
+  # already provides.
+  #
+  # Privacy caveat: KMS reads the scanout buffer, so niri's
+  # `block-out-from "screencast"` window rules do NOT apply to these
+  # recordings. Whatever is on screen is recorded.
+  programs.gpu-screen-recorder.enable = true;
+
   services.gnome.gnome-keyring.enable = true;
   services.accounts-daemon.enable = true;
   programs.dconf.enable = true;
@@ -509,6 +510,15 @@ in
   ############################################################
   programs.zsh.enable = true;
   environment.shells = [ pkgs.zsh ];
+
+  # NixOS's built-in command-not-found looks commands up in the
+  # programs.sqlite that ships with a nixos *channel*; a flake system has no
+  # channel, so it can only ever answer "not found". The zsh handler comes
+  # from nix-index instead (prebuilt database via nix-index-database, set up
+  # in home.nix). Disabled explicitly — not left to whatever nixpkgs defaults
+  # to — so /etc/zshrc can never define a second, broken
+  # command_not_found_handler competing with home-manager's.
+  programs.command-not-found.enable = false;
 
   ############################################################
   # Non-Nix dynamic binaries (mise / pre-built toolchains)
@@ -635,6 +645,9 @@ in
       "networkmanager"
       "docker"
       "video"
+      # evdev access for voxtype's Right Ctrl push-to-talk listener
+      # (services.voxtype in home.nix). Note what it grants: any process
+      # running as this user can read raw keyboard events.
       "input"
     ];
 

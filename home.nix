@@ -453,6 +453,373 @@ let
       exec systemctl suspend-then-hibernate
     '';
   };
+  # Screen colour picker, bound to Mod+Shift+C below (Omarchy ships the same
+  # idea on hyprpicker). No extra picker tool: niri has one built in —
+  # `niri msg pick-color` hands the pointer to the compositor, which samples
+  # the pixel under the next click. That works across every output and app
+  # with no layer-shell overlay of our own.
+  #
+  # `--json` is used rather than scraping the human output ("Picked color:
+  # rgb(…)" / "Hex: #…"), because the human text is not a stable interface.
+  # The JSON is `{"rgb":[r,g,b]}` with each channel a FLOAT in 0.0–1.0, or
+  # literally `null` when the pick is cancelled with Escape (niri-ipc's
+  # `PickedColor(Option<PickedColor>)`). The 0–255 conversion below mirrors
+  # niri's own client exactly — clamp to [0,1], ×255, round — so the hex we
+  # copy matches what `niri msg pick-color` would print.
+  #
+  # Cancel is a clean exit 0 with no notification and the clipboard left
+  # untouched: pressing Escape is a deliberate "never mind", not an error.
+  #
+  # niri comes from osConfig so the client speaks the same IPC version as the
+  # running compositor (a nixpkgs niri here could drift from niri-unstable).
+  pickColor = pkgs.writeShellApplication {
+    name = "pick-color";
+    runtimeInputs = [
+      osConfig.programs.niri.package
+      pkgs.jq
+      pkgs.wl-clipboard
+      pkgs.libnotify
+    ];
+    text = ''
+      json=$(niri msg --json pick-color)
+
+      if [ "$json" = "null" ]; then
+        exit 0
+      fi
+
+      # One jq pass emits "r g b" as 0–255 integers.
+      read -r r g b < <(
+        jq -r '.rgb | map(if . < 0 then 0 elif . > 1 then 1 else . end * 255 | round) | @sh' <<<"$json"
+      )
+
+      hex=$(printf '#%02x%02x%02x' "$r" "$g" "$b")
+      rgb="rgb($r, $g, $b)"
+
+      printf '%s' "$hex" | wl-copy
+      notify-send --app-name="Colour picker" "$hex" "$rgb — hex copied to clipboard"
+      printf '%s\n' "$hex"
+    '';
+  };
+
+  # launch-or-focus <app-id-regex> <command…> — the Omarchy-style "jump to
+  # the app if it's open, start it if it isn't" that niri has no native
+  # action for. Bound to Mod+Shift+<letter> in the niri binds below.
+  #
+  # The regex is matched case-insensitively against each window's `.app_id`
+  # from `niri msg -j windows`. Case-insensitive and anchored by the caller
+  # because Electron apps report a different app_id depending on whether they
+  # run as native Wayland (lowercase desktop-file name, e.g. `slack`) or
+  # through XWayland (WM_CLASS, e.g. `Slack`); one pattern covers both.
+  #
+  # Several matching windows cycle: if one of them is already focused, focus
+  # the next match by window id (wrapping), so repeated presses walk through
+  # every Chromium window. If none is focused, jump to the most recently
+  # focused match (`focus_timestamp`) — that's the window you were last in,
+  # not an arbitrary one.
+  #
+  # No match → `niri msg action spawn`, so niri itself launches the command
+  # with its own environment and the app is fully detached from this script
+  # (no orphaned shell, no inherited stdio).
+  launchOrFocus = pkgs.writeShellApplication {
+    name = "launch-or-focus";
+    # The niri that is actually running, so the IPC client and server match.
+    runtimeInputs = [
+      osConfig.programs.niri.package
+      pkgs.jq
+    ];
+    text = ''
+      if [ "$#" -lt 2 ]; then
+        echo "usage: launch-or-focus <app-id-regex> <command> [args…]" >&2
+        exit 2
+      fi
+      pattern="$1"
+      shift
+
+      target="$(niri msg -j windows | jq -r --arg re "$pattern" '
+        [ .[] | select((.app_id // "") | test($re; "i")) ] as $m
+        | if ($m | length) == 0 then empty
+          else
+            ($m | sort_by(.id)) as $s
+            | ($s | map(.is_focused) | index(true)) as $i
+            | if $i == null then
+                $m
+                | max_by(.focus_timestamp // { secs: 0, nanos: 0 } | [.secs, .nanos])
+                | .id
+              else
+                $s[($i + 1) % ($s | length)].id
+              end
+          end
+      ')"
+
+      if [ -n "$target" ]; then
+        exec niri msg action focus-window --id "$target"
+      fi
+      exec niri msg action spawn -- "$@"
+    '';
+  };
+
+  # System menu (Mod+Alt+Space) — one key to a fuzzy list of session/system
+  # actions, after Omarchy's menu. The picker is Noctalia's own launcher in
+  # dmenu mode (`noctalia dmenu`, src/launcher/dmenu_cli.cpp): it reads
+  # newline-separated items on stdin, shows them in the SAME launcher panel as
+  # Mod+Space — same palette, same fuzzy matcher — and prints the pick on
+  # stdout, exiting 1 with no output on cancel. That beats a second picker
+  # like fuzzel, which is exactly the separately-themed launcher that was
+  # dropped from Mod+D as redundant.
+  #
+  # Item format: `title<TAB>subtitle`. Noctalia renders the subtitle as a
+  # second line, fuzzy-matches over both, and returns the RAW line — so the
+  # dispatch below strips everything from the tab on and matches the title.
+  # Typing something that matches nothing returns the typed text verbatim;
+  # the `*)` arm reports that rather than guessing.
+  #
+  # Deliberately absent: anything needing sudo. "Run backup now" starts a
+  # SYSTEM unit, which systemd's polkit policy allows an active local session
+  # to do only after admin auth (auth_admin_keep) — so it raises Noctalia's
+  # native polkit agent (fingerprint or password), not a sudo prompt. That is
+  # why it is in and a rebuild entry is not.
+  #
+  # Every binary comes from runtimeInputs, all pinned to the same store paths
+  # the session runs (noctalia, niri, ghostty, power-profiles-daemon), so the
+  # menu never depends on niri's spawn PATH.
+  systemMenu = pkgs.writeShellApplication {
+    name = "system-menu";
+    runtimeInputs = [
+      config.programs.noctalia.package
+      osConfig.programs.niri.package
+      config.programs.ghostty.package
+      osConfig.services.power-profiles-daemon.package
+      pkgs.systemd
+      pkgs.util-linux # mountpoint
+    ];
+    text = ''
+      notify() {
+        noctalia msg notification-show "System" "$1" >/dev/null 2>&1 || true
+      }
+
+      # pick PROMPT — read items on stdin, print the chosen TITLE (subtitle
+      # stripped). Non-zero exit on cancel, which callers turn into a no-op.
+      pick() {
+        local choice
+        choice=$(noctalia dmenu --prompt "$1") || return 1
+        [ -n "$choice" ] || return 1
+        printf '%s\n' "''${choice%%$'\t'*}"
+      }
+
+      # Second-chance prompt for the actions that end the session. A stray
+      # Enter in a fuzzy list shouldn't be able to reboot the machine.
+      confirm() {
+        local answer
+        answer=$(printf '%s\n' "Cancel" "$1" | pick "$1?") || return 1
+        [ "$answer" = "$1" ]
+      }
+
+      profile=$(powerprofilesctl get 2>/dev/null || echo unknown)
+
+      choice=$(
+        printf '%s\t%s\n' \
+          "Lock" "Lock the session now" \
+          "Show keybinds" "niri hotkey overlay (also Mod+Shift+/)" \
+          "Power profile" "Currently: $profile" \
+          "Toggle keep-awake" "Block sleep for long jobs; still locks + screen-off" \
+          "Run backup now" "restic to the USB drive (asks for admin auth)" \
+          "Open nixos-setup" "Terminal in ~/nixos-setup" \
+          "Suspend" "Suspend, hibernating after the usual delay" \
+          "Log out" "Quit niri" \
+          "Reboot" "Restart the machine" \
+          "Power off" "Shut down the machine" |
+          pick "System"
+      ) || exit 0
+
+      case "$choice" in
+        "Lock")
+          exec noctalia msg session lock
+          ;;
+        "Show keybinds")
+          exec niri msg action show-hotkey-overlay
+          ;;
+        "Power profile")
+          # Through Noctalia rather than powerprofilesctl so its bar widget
+          # and OSD stay in step with the change.
+          new=$(
+            printf '%s\n' performance balanced power-saver | pick "Power profile ($profile)"
+          ) || exit 0
+          case "$new" in
+            performance | balanced | power-saver)
+              noctalia msg power-set "$new"
+              notify "Power profile: $new"
+              ;;
+            *) notify "Unknown power profile: $new" ;;
+          esac
+          ;;
+        "Toggle keep-awake")
+          # NOT Noctalia's caffeine: `caffeine-toggle` takes a logind `idle`
+          # inhibitor, and Noctalia's idle manager skips EVERY idle step while
+          # one is held — including the lock. keepawake (feat/keepawake, #134)
+          # holds only sleep:handle-lid-switch, so the session still locks and
+          # blanks. Resolved from PATH at runtime (writeShellApplication
+          # prepends runtimeInputs, it doesn't replace PATH), so this menu
+          # doesn't hard-depend on that branch landing first.
+          if command -v keepawake >/dev/null 2>&1; then
+            exec keepawake --toggle
+          fi
+          notify "keepawake is not installed"
+          ;;
+        "Run backup now")
+          # The unit is gated on ConditionPathIsMountPoint=/mnt/backup
+          # (configuration.nix), so without the drive `systemctl start`
+          # "succeeds" by skipping. Check first so that isn't reported as a
+          # backup. Blocking start, so the result notification is real.
+          if ! mountpoint -q /mnt/backup; then
+            notify "Backup skipped: backup drive is not mounted"
+            exit 0
+          fi
+          notify "Backup started"
+          if systemctl start restic-backups-home.service; then
+            notify "Backup finished"
+          else
+            notify "Backup failed — see: journalctl -u restic-backups-home"
+          fi
+          ;;
+        "Open nixos-setup")
+          exec ghostty --working-directory="$HOME/nixos-setup"
+          ;;
+        "Suspend")
+          # suspend-then-hibernate, not plain suspend: the same escalation as
+          # the idle timer and a battery lid close, so a menu-suspended laptop
+          # can't drain flat. swayidle's before-sleep hook locks first.
+          exec systemctl suspend-then-hibernate
+          ;;
+        "Log out")
+          # niri shows its own "really exit?" dialog, so no confirm() here.
+          exec niri msg action quit
+          ;;
+        "Reboot")
+          confirm "Reboot" && exec systemctl reboot
+          ;;
+        "Power off")
+          confirm "Power off" && exec systemctl poweroff
+          ;;
+        *)
+          notify "Unknown action: $choice"
+          ;;
+      esac
+    '';
+  };
+
+  # keepawake — keep the machine from SLEEPING while still letting it LOCK.
+  #
+  #   keepawake <cmd…>   run cmd under a sleep inhibitor, released when it exits
+  #   keepawake --toggle indefinite keep-awake on/off (Mod+Alt+I), with a notification
+  #   keepawake --on / --off / --status
+  #
+  # The point is long AI jobs on battery or with the lid shut: on AC nothing
+  # sleeps anyway (suspendUnlessOnAc + HandleLidSwitchExternalPower), so this
+  # matters when unplugged — the 15-min idle suspend and a battery lid-close
+  # suspend would both freeze the job.
+  #
+  # What it inhibits, and why exactly that:
+  #   sleep              logind refuses Suspend/Hibernate/SuspendThenHibernate.
+  #                      The 15-min idle step's `systemctl suspend-then-hibernate`
+  #                      fails once with "Operation denied due to active block
+  #                      inhibitor" (systemd 262, logind-shutdown.c: a strong
+  #                      `block` lock rejects outright, no polkit prompt — and
+  #                      systemctl skips its own client-side check when not on a
+  #                      tty). Benign: Noctalia's idle manager runs a behavior's
+  #                      command ONCE per idle period (phase Waiting → Idled,
+  #                      re-armed only on input), so there is no retry loop.
+  #   handle-lid-switch  logind skips HandleLidSwitch entirely (logind-action.c,
+  #                      "If the key handling is inhibited, don't do anything").
+  #                      That check ignores inhibitors from INACTIVE sessions, but
+  #                      a process in the user manager (a systemd-run unit, a
+  #                      ghostty window's app scope) has no session at all, which
+  #                      logind counts as active everywhere — so it holds.
+  #                      niri's switch-events.lid-close still LOCKS.
+  #
+  # It deliberately does NOT take `idle`. Noctalia's ScreenSaverService watches
+  # logind's BlockInhibited and, if it contains `idle`, suppresses EVERY idle
+  # behavior — lock and screen-off included (idle_manager.cpp, "suppressed
+  # (screensaver inhibit locks=…)"). That is also why this is not Noctalia's
+  # own caffeine (`noctalia msg caffeine-toggle`): caffeine takes exactly that
+  # logind `idle` block (logind_service.cpp, who="noctalia" why="Caffeine"),
+  # falling back to a Wayland idle inhibitor, and either one stops the 10-min
+  # lock from ever firing. Here the session still locks at 10 min and blanks
+  # at 11; only the sleep step is held off.
+  #
+  # The toggle is a transient USER unit (keepawake.service) rather than a
+  # backgrounded process: it is addressable by name for on/off/status, survives
+  # the terminal or bind that started it, and `--collect` stops a failed run
+  # from wedging the unit name for the next start. Not persistent: it ends at
+  # logout/reboot, which is the safe default for "don't let this laptop sleep".
+  keepawake = pkgs.writeShellApplication {
+    name = "keepawake";
+    runtimeInputs = [
+      pkgs.systemd
+      pkgs.libnotify
+    ];
+    text = ''
+      what="sleep:handle-lid-switch"
+      unit="keepawake.service"
+
+      is_on() { systemctl --user is-active --quiet "$unit"; }
+
+      notify() {
+        # Best effort: no notification daemon (e.g. over ssh) is not an error.
+        notify-send --app-name=keepawake "$@" 2>/dev/null || true
+      }
+
+      turn_on() {
+        if is_on; then
+          echo "keepawake: already on"
+          return 0
+        fi
+        systemctl --user reset-failed "$unit" 2>/dev/null || true
+        systemd-run --user --quiet --collect --unit="$unit" \
+          --description="keepawake: block sleep + lid-switch suspend (lock still runs)" \
+          systemd-inhibit --what="$what" --who=keepawake \
+            --why="keep-awake toggle (Mod+Alt+I)" --mode=block \
+            sleep infinity
+        echo "keepawake: on"
+        notify "Keep-awake on" "No sleep or lid-close suspend. The screen still locks."
+      }
+
+      turn_off() {
+        if ! is_on; then
+          echo "keepawake: already off"
+          return 0
+        fi
+        systemctl --user stop "$unit"
+        echo "keepawake: off"
+        notify "Keep-awake off" "Normal idle sleep and lid-close suspend restored."
+      }
+
+      usage() {
+        echo "usage: keepawake <cmd…> | --toggle | --on | --off | --status" >&2
+        exit 2
+      }
+
+      case "''${1:-}" in
+        "") usage ;;
+        --toggle)
+          if is_on; then turn_off; else turn_on; fi
+          exit 0
+          ;;
+        --on) turn_on; exit 0 ;;
+        --off) turn_off; exit 0 ;;
+        --status)
+          if is_on; then echo "keepawake: on"; else echo "keepawake: off"; fi
+          exit 0
+          ;;
+        --) shift ;; # `keepawake -- -cmd` runs a command whose name starts with -
+        -*) usage ;;
+      esac
+
+      [ "$#" -gt 0 ] || usage
+      # Wrapper mode. systemd-inhibit exits with the command's own status, so
+      # this is transparent in scripts and `&&` chains.
+      exec systemd-inhibit --what="$what" --who=keepawake --why="$*" --mode=block "$@"
+    '';
+  };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
   #
   # The TUI and the app do not share configuration: the TUI reads
@@ -527,6 +894,489 @@ let
 
   herdrAppSettingsJson = pkgs.writeText "herdr-app-settings.json" (builtins.toJSON herdrAppSettings);
 
+  ############################################################
+  # Web apps (Omarchy-style): Chromium `--app=URL` windows
+  ############################################################
+  # Each entry becomes its own launcher entry (xdg.desktopEntries, in the
+  # body below) that opens a chrome-less Chromium window on one site. This
+  # replaces Chromium's "Install page as app" PWA shortcuts, which Chromium
+  # writes imperatively into ~/.local/share/applications/chrome-<extid>-*.desktop
+  # — keyed by a random-looking extension id, with the icon fetched at click
+  # time — so they never survived a reinstall. Adding a web app is one line
+  # here; the icon is pinned by hash, so nothing is downloaded at runtime.
+  #
+  # Fields:
+  #   name   — launcher label.
+  #   url    — public site, opened as-is.
+  #   tailnetHost + path — self-hosted site on the tailnet instead of `url`.
+  #            The full URL is https://<tailnetHost>.<MagicDNS suffix><path>,
+  #            with the suffix read from tailscaled at LAUNCH time. It is not
+  #            written down because THIS REPO IS PUBLIC and a tailnet name is
+  #            a private identifier for a live network (same reasoning as
+  #            wishlist-ts above). The host labels themselves are just
+  #            service names.
+  #   icon   — a store path; pinned-commit raw URLs so the hash stays valid.
+  #            Most come from homarr-labs/dashboard-icons; Fizzy's is its own
+  #            app icon from basecamp/fizzy.
+  #   actions — optional right-click shortcuts (name → path on the same host).
+  #
+  # Window identity (for niri window rules / launch-or-focus): Chromium names
+  # an `--app=URL` window's Wayland app-id
+  #     chrome-<host>_<path>-<profile>
+  # with '/' (and any other path-illegal char) replaced by '_'. Source:
+  # web_app::GenerateApplicationNameFromURL() builds "<host>_<path>", and
+  # shell_integration_linux::GetXdgAppIdForWebApp() feeds that through
+  # GetShortcutFileName() ("chrome-" + app + "-" + profile dir, illegal chars
+  # → '_'). The installed-PWA window that this replaces shows the same shape
+  # (`niri msg windows` → "chrome-<extid>-Default"). So https://claude.ai/
+  # opens as `chrome-claude.ai__-Default`. The QUERY string is not part of
+  # the app-id, but the PATH is — which is why every action below stays on
+  # its app's start path (a different path would be a different app-id, i.e.
+  # a window that launch-or-focus and window rules would not recognise).
+  # Tailnet apps' app-ids contain the tailnet suffix
+  # (`chrome-rss.<tailnet>.ts.net__-Default`), so they can't carry an exact
+  # StartupWMClass here; match them with a regex like ^chrome-rss\..*__-Default$.
+  webApps = {
+    # Migrated from the hand-installed PWA shortcuts:
+    claude = {
+      name = "Claude";
+      url = "https://claude.ai/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/claude-ai.svg";
+        hash = "sha256-nmYj6cA0YsUfDPcfJOOL7I5uG5MJI2PmPfWApvCk2+A=";
+      };
+    };
+    yarr = {
+      name = "yarr!";
+      tailnetHost = "rss";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/yarr.svg";
+        hash = "sha256-TCLbkkxG5XdG1VMxfQqwcpne9Ds0ZMXdrhZ//qSQQqw=";
+      };
+      actions = {
+        Starred = "/?view=starred";
+        Triage = "/?view=triage";
+        Unread = "/?view=unread";
+      };
+    };
+    # The old Fizzy PWA also had "Latest Activity" (/1/) and "Notifications"
+    # (/1/notifications) shortcuts. Both are different PATHS, so as `--app`
+    # windows they would get different app-ids from the main window; they
+    # are deliberately not carried over — both are one click inside Fizzy.
+    fizzy = {
+      name = "Fizzy";
+      tailnetHost = "todo";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/basecamp/fizzy/4031d98b7b1790ef6ae4e7fd32fbe418d8e36fb6/public/app-icon.png";
+        hash = "sha256-OP+g9lAC4rIvrxl+LHxtTHxm4zTtu+/Y1G3gwNQ5jpM=";
+      };
+    };
+    # Added:
+    gmail = {
+      name = "Gmail";
+      url = "https://mail.google.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/gmail.svg";
+        hash = "sha256-3rk6+CjZExIr4mLNwHxcq2tWCajoLIhbfYQbc1+uFn4=";
+      };
+    };
+    google-calendar = {
+      name = "Google Calendar";
+      url = "https://calendar.google.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/google-calendar.svg";
+        hash = "sha256-V+WWbplBZ/GMcplK94aTwcm3o9My1zzLeEBZOVGjlJo=";
+      };
+    };
+    # The white ("-light") octocat: the plain one is black and disappears on
+    # Noctalia's dark launcher.
+    github = {
+      name = "GitHub";
+      url = "https://github.com/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/github-light.svg";
+        hash = "sha256-/z0Yv50GoifM/VVpdLL880T4Mz/lKGOlJcvV5D/eoAQ=";
+      };
+    };
+  };
+
+  # The one launcher every web-app entry execs:
+  #   webapp-launch <https-url>
+  #   webapp-launch --tailnet <host> <path>
+  # It pins `--profile-directory=Default` so the app-id suffix is always
+  # "-Default" (and the windows share the main profile's logins and the
+  # policy-installed extensions). pkgs.chromium is the same derivation
+  # configuration.nix installs system-wide — one nixpkgs in the closure — so
+  # this is not a second Chromium. Errors go to notify-send because it runs
+  # from a launcher with no terminal to print to.
+  webappLaunch = pkgs.writeShellApplication {
+    name = "webapp-launch";
+    runtimeInputs = with pkgs; [
+      chromium
+      tailscale
+      jq
+      libnotify
+    ];
+    text = ''
+      fail() {
+        echo "webapp-launch: $*" >&2
+        notify-send --app-name=webapp-launch "Web app failed to open" "$*" || true
+        exit 1
+      }
+
+      if [ "''${1:-}" = "--tailnet" ]; then
+        [ "$#" -eq 3 ] || fail "usage: webapp-launch --tailnet <host> <path>"
+        host=$2
+        path=$3
+        # Override for testing or a non-MagicDNS setup.
+        suffix="''${WEBAPP_TAILNET:-}"
+        if [ -z "$suffix" ]; then
+          suffix=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix // empty')
+        fi
+        [ -n "$suffix" ] || fail "could not read the tailnet name from tailscaled — is Tailscale up? (\`tailscale status\`)"
+        url="https://$host.$suffix$path"
+      else
+        [ "$#" -eq 1 ] || fail "usage: webapp-launch <url> | --tailnet <host> <path>"
+        url=$1
+      fi
+
+      exec chromium --profile-directory=Default --app="$url"
+    '';
+  };
+
+  # Whisper model for voxtype dictation (services.voxtype below), fetched
+  # reproducibly into the store instead of via `voxtype setup --download` /
+  # the HM module's `loadModels`, which download imperatively into ~/.local
+  # at service start. Same URL + hash as voxtype's own nix/models.nix.
+  #
+  # Why small.en: English-only models are faster AND more accurate for English
+  # than their multilingual twins. On the 780M via Vulkan, small.en
+  # transcribes the 11 s whisper.cpp jfk.wav sample in ~1.7 s (measured), so a
+  # typical dictation clip lands in well under 2 s, and it is noticeably
+  # better than base.en on names, jargon and punctuation. medium.en /
+  # large-v3-turbo (1.5-1.6 GB) roughly triple the latency for a gain that
+  # doesn't matter for short dictation. 466 MB in the store; with
+  # on_demand_loading = false it stays resident in the daemon (the iGPU
+  # shares the 93 GB of system RAM, so that is cheap).
+  voxtypeModel = pkgs.fetchurl {
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
+    hash = "sha256-xhONbVjsyDIgl+D5h8MvG+i7ChhTKj+I9zTRu/nEHl0=";
+  };
+
+  # os-update — one command to bump every flake input and SEE what that does
+  # before anything is activated. Same idea as Omarchy's `omarchy-update`,
+  # reshaped for this repo's two hard rules: every change goes branch -> PR ->
+  # merge (CONTRIBUTING.md), and the user runs `sudo nixos-rebuild` by hand.
+  # So the script stops at "built, diffed, PR open" and prints the rebuild
+  # command instead of running it. Rollback is NixOS generations, so there is
+  # no separate snapshot step.
+  #
+  # Flow: refuse on a dirty tree -> fetch origin -> new branch
+  # chore/flake-update-YYYY-MM-DD from origin/main in a TEMPORARY git
+  # worktree -> `nix flake update` -> commit flake.lock -> `nom build` the
+  # host toplevel -> `nvd diff /run/current-system <new>` + an input-rev
+  # table -> y/N -> push + `gh pr create` with both in the PR body.
+  #
+  # Why a temporary worktree instead of switching branches in ~/nixos-setup:
+  # the update, the (long) build and a "no" answer never touch the user's
+  # checkout — whatever branch it is on stays put, and a declined or failed
+  # run leaves no branch and no half-updated flake.lock behind (the EXIT
+  # trap removes both). Only an accepted run keeps the branch; the worktree
+  # is removed even then, because git refuses to check out a branch in a
+  # second place while a worktree holds it.
+  #
+  # Why still refuse on a dirty tree, given the worktree is isolated: the
+  # NEXT step is the user running `git switch <branch>` in ~/nixos-setup to
+  # rebuild from it, and that is what local edits would block (or worse, get
+  # carried along into the test build). Only tracked changes count —
+  # untracked files (agent worktrees under .claude/, stray notes) do not
+  # stop a switch, so they don't stop this either.
+  #
+  # The repo path comes from NH_FLAKE (set by programs.nh.flake in
+  # configuration.nix), so there is one place that says where the repo
+  # lives; $HOME/nixos-setup is the fallback for a shell that predates the
+  # rebuild that introduced the variable.
+  #
+  # The script's own commit is authored by whoever runs it (plain `git
+  # commit`, the user's own identity) — no tool attribution lines.
+  osUpdateLockDiff = pkgs.writeText "os-update-lock-diff.jq" ''
+    # Input-rev table between two flake.lock files: one line per locked node
+    # whose rev (or narHash, for inputs without a rev) changed.
+    def short: if . == null then "-" else .[0:7] end;
+    def day: if . == null then "?" else todate[0:10] end;
+    $old[0].nodes as $o
+    | .nodes
+    | to_entries[]
+    | select(.value.locked != null)
+    | .key as $k
+    | .value.locked as $n
+    | ($o[$k].locked // {}) as $p
+    | select(($p.rev // $p.narHash) != ($n.rev // $n.narHash))
+    | "\($k)  \($p.rev | short) (\($p.lastModified | day)) -> \($n.rev | short) (\($n.lastModified | day))"
+  '';
+
+  osUpdate = pkgs.writeShellApplication {
+    name = "os-update";
+    runtimeInputs = [
+      pkgs.git
+      pkgs.gh
+      pkgs.nix
+      pkgs.nvd
+      pkgs.nix-output-monitor
+      pkgs.jq
+      pkgs.coreutils
+    ];
+    text = ''
+      usage() {
+        cat <<'EOF'
+      os-update [HOST] — bump every flake input on a branch, build it, show
+      what changes against the running system, and (on yes) open a PR.
+
+      HOST defaults to this machine's hostname and must exist under hosts/.
+      Nothing is activated: the script prints the rebuild command for you.
+      EOF
+      }
+      die() {
+        echo "os-update: $*" >&2
+        exit 1
+      }
+
+      case "''${1:-}" in
+        -h | --help)
+          usage
+          exit 0
+          ;;
+      esac
+
+      repo="''${NH_FLAKE:-$HOME/nixos-setup}"
+      host="''${1:-$(uname -n)}"
+
+      git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+        die "$repo is not a git checkout (set NH_FLAKE)"
+      [ -d "$repo/hosts/$host" ] || die "no hosts/$host in $repo"
+      [ -e /run/current-system ] || die "/run/current-system missing — not a NixOS system?"
+
+      if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then
+        git -C "$repo" status --short --untracked-files=no >&2
+        die "uncommitted changes in $repo — commit or stash them first"
+      fi
+
+      echo "==> Fetching origin"
+      git -C "$repo" fetch --quiet --prune origin
+
+      # One branch per day; a second run the same day gets -2, -3, ...
+      today="$(date +%F)"
+      branch="chore/flake-update-$today"
+      n=2
+      while git -C "$repo" show-ref --quiet --verify "refs/heads/$branch" ||
+        git -C "$repo" show-ref --quiet --verify "refs/remotes/origin/$branch"; do
+        branch="chore/flake-update-$today-$n"
+        n=$((n + 1))
+      done
+
+      tmp="$(mktemp -d -t os-update.XXXXXX)"
+      wt="$tmp/nixos-setup"
+      keep_branch=0
+      cleanup() {
+        git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1 || true
+        git -C "$repo" worktree prune || true
+        if [ "$keep_branch" = 0 ]; then
+          git -C "$repo" branch -D "$branch" >/dev/null 2>&1 || true
+        fi
+        rm -rf "$tmp"
+      }
+      trap cleanup EXIT
+
+      echo "==> Worktree for $branch (from origin/main) at $wt"
+      git -C "$repo" worktree add --quiet --no-track -b "$branch" "$wt" origin/main
+      cd "$wt"
+      git show HEAD:flake.lock >"$tmp/old.lock"
+
+      echo "==> nix flake update"
+      nix flake update
+
+      if git diff --quiet -- flake.lock; then
+        echo "Every input is already at its latest revision — nothing to do."
+        exit 0
+      fi
+
+      jq -r --slurpfile old "$tmp/old.lock" -f ${osUpdateLockDiff} flake.lock >"$tmp/inputs.txt"
+      git add flake.lock
+      git commit --quiet -F - <<EOF
+      flake.lock: update all inputs ($today)
+
+      $(cat "$tmp/inputs.txt")
+      EOF
+
+      echo "==> Building nixosConfigurations.$host"
+      attr="$wt#nixosConfigurations.$host.config.system.build.toplevel"
+      if command -v nom >/dev/null; then
+        nom build "$attr" --out-link "$tmp/result"
+      else
+        nix build "$attr" --out-link "$tmp/result" --print-build-logs
+      fi
+      new="$(readlink -f "$tmp/result")"
+
+      echo
+      echo "==> Inputs changed (git diff flake.lock, by rev)"
+      cat "$tmp/inputs.txt"
+      git --no-pager diff --stat HEAD~1 -- flake.lock
+
+      echo
+      echo "==> nvd diff /run/current-system -> $new"
+      nvd diff /run/current-system "$new"
+      nvd --color never diff /run/current-system "$new" >"$tmp/nvd.txt"
+
+      echo
+      printf 'Push %s and open a PR? [y/N] ' "$branch"
+      read -r reply || reply=""
+      case "$reply" in
+        y | Y | yes | YES) ;;
+        *)
+          echo "Discarded — no branch, no PR, your checkout is untouched."
+          exit 0
+          ;;
+      esac
+
+      # A GitHub PR body caps at 65536 chars; keep the nvd part well under.
+      limit=50000
+      {
+        echo "## Summary"
+        echo
+        echo "\`nix flake update\` of every input, generated by \`os-update\` on \`$host\`."
+        echo
+        echo "## Inputs"
+        echo
+        echo '```text'
+        cat "$tmp/inputs.txt"
+        echo '```'
+        echo
+        echo "## Closure diff"
+        echo
+        echo "\`nvd diff /run/current-system <new $host toplevel>\`. The baseline is the system"
+        echo "that was running, so anything activated but not yet on main shows up here too."
+        echo
+        echo '```text'
+        head -c "$limit" "$tmp/nvd.txt"
+        echo '```'
+        if [ "$(wc -c <"$tmp/nvd.txt")" -gt "$limit" ]; then
+          echo
+          echo "_Truncated at $limit bytes — run \`os-diff\` after the rebuild for the full list._"
+        fi
+        echo
+        echo "## Live test"
+        echo
+        echo "- [ ] \`git switch $branch && sudo nixos-rebuild switch --flake .#$host\`"
+        echo "- [ ] Desktop comes back: niri, Noctalia bar, lock (Super+Alt+L) and unlock"
+        echo "- [ ] If the kernel moved: suspend, wait out HibernateDelaySec, confirm a clean resume"
+        echo "- [ ] \`gh pr merge --merge\`"
+      } >"$tmp/pr.md"
+
+      keep_branch=1
+      git push --quiet -u origin "$branch"
+      pr_url="$(gh pr create --base main --head "$branch" \
+        --title "flake.lock: update all inputs ($today)" \
+        --body-file "$tmp/pr.md")"
+
+      cat <<EOF
+
+      PR: $pr_url
+
+      Nothing is activated yet. Next, from $repo:
+        git switch $branch
+        sudo nixos-rebuild switch --flake .#$host     (or: nh os switch)
+      Test it on the real machine, then:
+        gh pr merge --merge $pr_url && git switch main && git pull
+      Bad update? sudo nixos-rebuild --rollback switch, then
+        gh pr close --delete-branch $pr_url
+      EOF
+    '';
+  };
+
+  # os-diff — what did the last rebuild change? nvd diff between the system
+  # generation before the running one and the running one. Defaults are the
+  # generation-aware version of "previous vs current": after a rollback the
+  # running system is not the newest generation, so it diffs against the
+  # generation just below the running one, not the newest two. After a
+  # `nixos-rebuild test` (activated, not a generation) it diffs the newest
+  # generation against the running system.
+  #   os-diff            previous generation -> running system
+  #   os-diff N          generation N        -> running system
+  #   os-diff N M        generation N        -> generation M
+  # (any argument may also be a store path)
+  osDiff = pkgs.writeShellApplication {
+    name = "os-diff";
+    runtimeInputs = [
+      pkgs.nvd
+      pkgs.coreutils
+    ];
+    text = ''
+      profiles=/nix/var/nix/profiles
+      resolve() {
+        case "$1" in
+          *[!0-9]*) readlink -f "$1" ;;
+          *)
+            [ -e "$profiles/system-$1-link" ] || {
+              echo "os-diff: no system generation $1" >&2
+              exit 1
+            }
+            readlink -f "$profiles/system-$1-link"
+            ;;
+        esac
+      }
+
+      cur="$(readlink -f /run/current-system)"
+      case $# in
+        0)
+          mapfile -t gens < <(
+            for l in "$profiles"/system-*-link; do
+              g="''${l##*/system-}"
+              echo "''${g%-link}"
+            done | sort -n
+          )
+          [ "''${#gens[@]}" -gt 0 ] || {
+            echo "os-diff: no system generations found" >&2
+            exit 1
+          }
+          found=""
+          for ((i = ''${#gens[@]} - 1; i >= 0; i--)); do
+            if [ "$(resolve "''${gens[i]}")" = "$cur" ]; then
+              found=$i
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            from="''${gens[-1]}"
+            echo "Running system is not a generation (nixos-rebuild test?): generation $from -> running"
+          elif [ "$found" -gt 0 ]; then
+            from="''${gens[found - 1]}"
+            echo "Generation $from -> ''${gens[found]} (running)"
+          else
+            echo "os-diff: the running system is the oldest generation; nothing to diff against" >&2
+            exit 1
+          fi
+          a="$(resolve "$from")"
+          b="$cur"
+          ;;
+        1)
+          a="$(resolve "$1")"
+          b="$cur"
+          ;;
+        2)
+          a="$(resolve "$1")"
+          b="$(resolve "$2")"
+          ;;
+        *)
+          echo "usage: os-diff [FROM [TO]]  (generation numbers or store paths)" >&2
+          exit 1
+          ;;
+      esac
+      exec nvd diff "$a" "$b"
+    '';
+  };
+
 in
 {
   home.username = "sroberts";
@@ -542,6 +1392,9 @@ in
     # its home-manager side in implicitly; niri-nix keeps them separate, so it
     # is imported explicitly here.
     inputs.niri.homeModules.default
+    # Prebuilt nix-index database + comma; configured under "Shell +
+    # integrations" below (programs.nix-index / programs.nix-index-database).
+    inputs.nix-index-database.homeModules.default
   ];
 
   # home-manager gained its own modules/programs/noctalia/ upstream, which
@@ -609,6 +1462,11 @@ in
         # it's added below. Compare against `[bar.main]` in upstream's
         # example.toml after a noctalia bump.
         end = [
+          # Screen-recording indicator from the noctalia/screen_recorder
+          # plugin (see `plugins` below). hide_inactive keeps it invisible
+          # until a recording starts, so it only takes bar space while it has
+          # something to say. Clicking it stops the recording.
+          "screen_recorder"
           "media"
           "tray"
           "notifications"
@@ -620,6 +1478,10 @@ in
           "session"
         ];
       };
+
+      # Bar-widget instance for the recorder indicator listed in `end` above.
+      # Plugin widgets are referenced by "<author>/<plugin>:<entry>".
+      widget.screen_recorder.type = "noctalia/screen_recorder:recorder";
 
       # Battery: glyph only, no percentage label. display_mode stays at the
       # default "glyph" (vs "graphic", the filled battery shape); show_label
@@ -753,6 +1615,69 @@ in
         # editing this line does NOT change a machine that's already been
         # set up. Use `noctalia msg wallpaper-set <path>` for that.
         default.path = "~/Pictures/Wallpapers/wp12390197-dark-blue-aesthetic-laptop-wallpapers.jpg";
+      };
+
+      # Screenshot annotation (Super+Alt+S). This is Noctalia's own region
+      # capture and annotation editor, not satty. v5 ships the editor natively
+      # (arrows, boxes, text, numbering, blur, crop), themed with the shell
+      # palette. That leaves no grim | slurp | satty pipeline to keep working.
+      #
+      # annotate = true sends every capture Noctalia takes through the editor.
+      # Only the Super+Alt+S bind goes through Noctalia, because the plain
+      # Print / Ctrl+Print / Alt+Print binds are niri's native screenshot
+      # actions and never reach this setting. In the editor, Enter / Done
+      # applies the output policy: save_to_file and copy_to_clipboard, which
+      # both default to true, so the annotated PNG lands on disk AND on the
+      # clipboard. The directory is pinned to niri's own screenshot folder
+      # so both kinds of capture end up in one place. Noctalia's default
+      # would be ~/Pictures.
+      shell.screenshot = {
+        annotate = true;
+        directory = "~/Pictures/Screenshots";
+      };
+
+      # Screen recording (Super+Alt+R / Super+Alt+Shift+R) through Noctalia's
+      # OFFICIAL screen_recorder plugin rather than a hand-rolled
+      # gpu-screen-recorder / wf-recorder toggle script. The plugin runs a
+      # headless service for the whole session that owns the recorder
+      # process. It provides start/stop toggling, a "Recording saved"
+      # notification carrying the file path, the bar indicator above, and a
+      # control-center tile. The binds below drive it through
+      # `noctalia msg plugin noctalia/screen_recorder:service all toggle <source>`.
+      # The recorder itself, plus the setcap KMS helper it needs, comes from
+      # programs.gpu-screen-recorder in configuration.nix. slurp (region
+      # picker) is in home.packages.
+      #
+      # NOT Nix-pinned: plugin code comes from the built-in `official` git
+      # source (github.com/noctalia-dev/official-plugins). Noctalia clones it
+      # into ~/.local/state/noctalia/plugins on first enable and keeps it
+      # updated (plugins.auto_update, default "all"). That is the same model
+      # as the community theme templates above. Plugins whose newer version
+      # needs a plugin API this Noctalia lacks are held back automatically,
+      # so a noctalia bump and a plugin update can't drift into
+      # incompatibility.
+      #
+      # Same base-vs-override rule as theme.templates. Toggling the plugin
+      # off in Settings -> Plugins writes `[plugins].enabled` to
+      # ~/.local/state/noctalia/settings.toml, and that wins over this list.
+      plugins.enabled = [ "noctalia/screen_recorder" ];
+
+      # Plugin-level settings for the recorder. Key names come from the
+      # plugin's plugin.toml manifest, not the docs. Unset keys keep the
+      # plugin defaults: h264, GPU encoder, 60 fps VFR, QP 25, cursor shown.
+      plugin_settings."noctalia/screen_recorder" = {
+        # Default source when recording is started from the bar widget or
+        # control-center tile. The binds pass their source explicitly.
+        # `focused` = the output under focus, captured over KMS. The plugin's
+        # own default is `portal`, which pops the xdg-desktop-portal picker on
+        # every start.
+        video_source = "focused";
+        # Spelled out although it is the plugin default.
+        directory = "~/Videos/Recordings";
+        # Desktop audio (the default PipeWire sink's monitor), no mic.
+        audio_source = "default_output";
+        # Indicator only while recording. See the bar `end` list.
+        hide_inactive = true;
       };
 
       # v5 folds the polkit agent into native config; this replaces v4's
@@ -908,26 +1833,118 @@ in
       "lock"
     ];
 
+    # Keybind cheat sheet = niri's own hotkey overlay (Mod+Shift+/). It lists
+    # a fixed set of built-in actions plus EVERY spawn bind — and a spawn bind
+    # is shown as its raw argv ("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+")
+    # unless the bind carries a `hotkey-overlay-title` property. So every
+    # spawn bind below sets one, as a KDL property via `_props`, e.g.
+    #   "Mod+T" = { _props.hotkey-overlay-title = "Open Terminal"; spawn = "ghostty"; };
+    # renders `Mod+T hotkey-overlay-title="Open Terminal" { spawn "ghostty"; }`.
+    # Add a title when you add a spawn bind, or the overlay shows the argv.
+    #
+    # skip-at-startup: niri otherwise pops the overlay on every login. With
+    # the overlay one key away (and listed in the Mod+Alt+Space system menu)
+    # the startup splash is just something to dismiss.
+    hotkey-overlay.skip-at-startup = { };
+
     binds = {
       # Help + spawn
       "Mod+Shift+Slash".show-hotkey-overlay = [ ];
-      "Mod+T".spawn = "ghostty";
-      "Mod+Return".spawn = "ghostty";
+      # System menu — lock / power profile / keep-awake / backup / session
+      # actions in one fuzzy list. See systemMenu in the let block.
+      "Mod+Alt+Space" = {
+        _props.hotkey-overlay-title = "System Menu";
+        spawn = "${systemMenu}/bin/system-menu";
+      };
+      "Mod+T" = {
+        _props.hotkey-overlay-title = "Open Terminal";
+        spawn = "ghostty";
+      };
+      "Mod+Return" = {
+        _props.hotkey-overlay-title = "Open Terminal";
+        spawn = "ghostty";
+      };
       # App launcher — Noctalia's, toggled over IPC. v5: `panel-toggle <id>`.
-      "Mod+Space".spawn = [
-        "noctalia"
-        "msg"
-        "panel-toggle"
-        "launcher"
-      ];
+      "Mod+Space" = {
+        _props.hotkey-overlay-title = "App Launcher";
+        spawn = [
+          "noctalia"
+          "msg"
+          "panel-toggle"
+          "launcher"
+        ];
+      };
       # Mod+D is an alias for the same launcher — fuzzel used to live here as
       # a second, separately-themed launcher; it was dropped as redundant.
-      "Mod+D".spawn = [
-        "noctalia"
-        "msg"
-        "panel-toggle"
-        "launcher"
-      ];
+      "Mod+D" = {
+        _props.hotkey-overlay-title = "App Launcher";
+        spawn = [
+          "noctalia"
+          "msg"
+          "panel-toggle"
+          "launcher"
+        ];
+      };
+
+      # Launch-or-focus app binds (Omarchy-style Mod+Shift+<letter>): focus
+      # the app if a window of it is open — cycling through them on repeat
+      # presses — otherwise start it. See `launchOrFocus` in the let block.
+      # The first argument is a case-insensitive, anchored app_id regex;
+      # the rest is the launch command. app_ids come from `niri msg -j
+      # windows` where the app was open, else from the package's desktop
+      # file (StartupWMClass) — the alternations cover the Wayland vs.
+      # XWayland naming split Electron apps have. `hotkey-overlay-title`
+      # names each bind in the Mod+Shift+Slash overlay (spawn binds would
+      # otherwise show the raw store-path command line).
+      "Mod+Shift+B" = {
+        _props.hotkey-overlay-title = "Browser (Chromium)";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^chromium(-browser)?$"
+          "chromium"
+        ];
+      };
+      "Mod+Shift+O" = {
+        _props.hotkey-overlay-title = "Obsidian";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^(md\\.obsidian\\.)?obsidian$"
+          "obsidian"
+        ];
+      };
+      "Mod+Shift+S" = {
+        _props.hotkey-overlay-title = "Slack";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^slack$"
+          "slack"
+        ];
+      };
+      "Mod+Shift+G" = {
+        _props.hotkey-overlay-title = "Signal";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^signal(-desktop)?$"
+          "signal-desktop"
+        ];
+      };
+      "Mod+Shift+M" = {
+        _props.hotkey-overlay-title = "Spotify";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^spotify$"
+          "spotify"
+        ];
+      };
+      "Mod+Shift+N" = {
+        _props.hotkey-overlay-title = "Files (Nautilus)";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^org\\.gnome\\.nautilus$"
+          "nautilus"
+          "--new-window"
+        ];
+      };
 
       # Window
       "Mod+Q".close-window = [ ];
@@ -1079,6 +2096,62 @@ in
       "Print".screenshot = [ ];
       "Ctrl+Print".screenshot-screen = [ ];
       "Alt+Print".screenshot-window = [ ];
+      # Region capture into Noctalia's annotation editor. Done saves to
+      # ~/Pictures/Screenshots and copies to the clipboard. See
+      # programs.noctalia.settings.shell.screenshot.
+      "Mod+Alt+S" = {
+        _props.hotkey-overlay-title = "Annotate Screenshot (region)";
+        spawn = [
+          "noctalia"
+          "msg"
+          "screenshot-region"
+        ];
+      };
+
+      # Screen recording via the noctalia/screen_recorder plugin. Each bind is
+      # a toggle: it starts a recording when idle and stops the current one
+      # otherwise. The trailing word is the capture source for a START.
+      # `focused` records the focused output. `region` opens a slurp picker
+      # first. Recordings go to ~/Videos/Recordings, and stopping posts a
+      # notification with the path.
+      "Mod+Alt+R" = {
+        _props.hotkey-overlay-title = "Toggle Screen Recording";
+        spawn = [
+          "noctalia"
+          "msg"
+          "plugin"
+          "noctalia/screen_recorder:service"
+          "all"
+          "toggle"
+          "focused"
+        ];
+      };
+      "Mod+Alt+Shift+R" = {
+        _props.hotkey-overlay-title = "Toggle Region Recording";
+        spawn = [
+          "noctalia"
+          "msg"
+          "plugin"
+          "noctalia/screen_recorder:service"
+          "all"
+          "toggle"
+          "region"
+        ];
+      };
+
+      # Colour picker: click any pixel, its #rrggbb lands on the clipboard
+      # and a notification shows hex + rgb(). Escape cancels silently. See
+      # pickColor in the let block. Absolute store path so the bind doesn't
+      # depend on niri's spawn PATH.
+      "Mod+Shift+C" = {
+        _props.hotkey-overlay-title = "Colour Picker";
+        spawn = "${pickColor}/bin/pick-color";
+      };
+
+      # Dictation has no niri bind: it is hold-Right-Ctrl, read by voxtype's
+      # own evdev listener (services.voxtype below). niri binds fire on key
+      # PRESS only and can't bind a bare modifier, so they can't do
+      # push-to-talk.
 
       # Session
       "Mod+Shift+E".quit = [ ];
@@ -1088,62 +2161,105 @@ in
       # Lock. Noctalia does NOT subscribe to logind's Lock signal, so
       # `loginctl lock-session` is a no-op here — lock through Noctalia's IPC,
       # which raises its WlSessionLock directly.
-      "Super+Alt+L".spawn = [
-        "noctalia"
-        "msg"
-        "session"
-        "lock"
-      ];
+      "Super+Alt+L" = {
+        _props.hotkey-overlay-title = "Lock Screen";
+        spawn = [
+          "noctalia"
+          "msg"
+          "session"
+          "lock"
+        ];
+      };
+
+      # Keep-awake toggle (Omarchy-style idle toggle, but sleep-only): holds a
+      # logind sleep + lid-switch block in a transient keepawake.service until
+      # pressed again. The 10-min lock and 11-min screen-off still fire — see
+      # the keepawake script in the let block for why this is not Noctalia's
+      # caffeine. Absolute store path so the bind never depends on niri's PATH.
+      "Mod+Alt+I" = {
+        _props.hotkey-overlay-title = "Toggle Keep-Awake";
+        spawn = [
+          "${keepawake}/bin/keepawake"
+          "--toggle"
+        ];
+      };
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
-      "XF86AudioRaiseVolume".spawn = [
-        "wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%+"
-      ];
-      "XF86AudioLowerVolume".spawn = [
-        "wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%-"
-      ];
-      "XF86AudioMute".spawn = [
-        "wpctl"
-        "set-mute"
-        "@DEFAULT_AUDIO_SINK@"
-        "toggle"
-      ];
-      "XF86AudioMicMute".spawn = [
-        "wpctl"
-        "set-mute"
-        "@DEFAULT_AUDIO_SOURCE@"
-        "toggle"
-      ];
-      "XF86AudioPlay".spawn = [
-        "playerctl"
-        "play-pause"
-      ];
-      "XF86AudioNext".spawn = [
-        "playerctl"
-        "next"
-      ];
-      "XF86AudioPrev".spawn = [
-        "playerctl"
-        "previous"
-      ];
+      "XF86AudioRaiseVolume" = {
+        _props.hotkey-overlay-title = "Volume Up";
+        spawn = [
+          "wpctl"
+          "set-volume"
+          "@DEFAULT_AUDIO_SINK@"
+          "5%+"
+        ];
+      };
+      "XF86AudioLowerVolume" = {
+        _props.hotkey-overlay-title = "Volume Down";
+        spawn = [
+          "wpctl"
+          "set-volume"
+          "@DEFAULT_AUDIO_SINK@"
+          "5%-"
+        ];
+      };
+      "XF86AudioMute" = {
+        _props.hotkey-overlay-title = "Mute Speakers";
+        spawn = [
+          "wpctl"
+          "set-mute"
+          "@DEFAULT_AUDIO_SINK@"
+          "toggle"
+        ];
+      };
+      "XF86AudioMicMute" = {
+        _props.hotkey-overlay-title = "Mute Microphone";
+        spawn = [
+          "wpctl"
+          "set-mute"
+          "@DEFAULT_AUDIO_SOURCE@"
+          "toggle"
+        ];
+      };
+      "XF86AudioPlay" = {
+        _props.hotkey-overlay-title = "Play / Pause";
+        spawn = [
+          "playerctl"
+          "play-pause"
+        ];
+      };
+      "XF86AudioNext" = {
+        _props.hotkey-overlay-title = "Next Track";
+        spawn = [
+          "playerctl"
+          "next"
+        ];
+      };
+      "XF86AudioPrev" = {
+        _props.hotkey-overlay-title = "Previous Track";
+        spawn = [
+          "playerctl"
+          "previous"
+        ];
+      };
 
       # Brightness — Framework keyboard top row.
-      "XF86MonBrightnessUp".spawn = [
-        "brightnessctl"
-        "s"
-        "5%+"
-      ];
-      "XF86MonBrightnessDown".spawn = [
-        "brightnessctl"
-        "s"
-        "5%-"
-      ];
+      "XF86MonBrightnessUp" = {
+        _props.hotkey-overlay-title = "Brightness Up";
+        spawn = [
+          "brightnessctl"
+          "s"
+          "5%+"
+        ];
+      };
+      "XF86MonBrightnessDown" = {
+        _props.hotkey-overlay-title = "Brightness Down";
+        spawn = [
+          "brightnessctl"
+          "s"
+          "5%-"
+        ];
+      };
     };
   };
 
@@ -1162,6 +2278,8 @@ in
   #     after HibernateDelaySec (3h, configuration.nix) — hibernate at 3h 15m
   #     total. On AC it exits 0 without sleeping, so a plugged-in machine
   #     stays up indefinitely. The lock step above still runs either way.
+  #     A `keepawake` sleep inhibitor (let block; Mod+Alt+I) makes logind
+  #     refuse this step on battery too, without touching lock/screen-off.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
   # before a sleep Noctalia didn't initiate — namely a lid close on battery
@@ -1180,6 +2298,82 @@ in
     enable = true;
     events = {
       before-sleep = "${config.programs.noctalia.package}/bin/noctalia msg session lock";
+    };
+  };
+
+  # Local voice dictation — voxtype (the tool behind Omarchy's Super+Ctrl+X
+  # dictation), via home-manager's own services.voxtype module. Fully
+  # offline: whisper.cpp runs in-process against the store-pinned model in
+  # the `let` above; no audio or text leaves the machine.
+  #
+  # Pieces:
+  #   - package: nixpkgs' voxtype-vulkan (cached on cache.nixos.org). Vulkan
+  #     is the reliable GPU path on the RDNA3 780M; the ROCm/hipblas build
+  #     would need HSA_OVERRIDE_GFX_VERSION for gfx1103 and a from-source
+  #     ROCm compile, for no latency win at this model size.
+  #   - The daemon runs as a systemd user unit on graphical-session.target and
+  #     keeps the model loaded, so a toggle only pays transcription time.
+  #   - Push-to-talk on RIGHT CTRL: hold to record, release to transcribe
+  #     and type. Same key OpenWhispr used before it was removed. Audio is
+  #     captured in memory (no temp wav), and max_duration_secs caps a stuck
+  #     key: at the cap it stops and transcribes what it has.
+  #   - Output goes through wtype, which uses zwp_virtual_keyboard_v1 —
+  #     niri implements it (verified in the niri binary). If typing fails
+  #     the text lands on the clipboard instead, with a notification.
+  #     dotool/ydotool are deliberately left out of driver_order: they need
+  #     /dev/uinput access (input group or a root daemon) for no gain here.
+  #   - The key is read by voxtype's built-in evdev listener, not a niri
+  #     bind. niri binds fire on key PRESS only (no release event, so no
+  #     hold-to-talk), and niri can't bind a bare modifier key. evdev needs the
+  #     `input` group (users.users.sroberts in configuration.nix). That
+  #     means any process of ours could read raw keyboard events — the same
+  #     trade-off OpenWhispr's listener already made.
+  #   - Right Ctrl is still an ordinary modifier, so Right-Ctrl+<key> shortcuts
+  #     also start a recording. Released quickly with no speech, it produces
+  #     no text; on_no_speech is off so those taps don't post a notification.
+  services.voxtype = {
+    enable = true;
+    package = pkgs.voxtype-vulkan;
+    settings = {
+      # The daemon publishes idle/recording/transcribing here under
+      # $XDG_RUNTIME_DIR/voxtype (`voxtype status`, `voxtype record …`).
+      state_file = "auto";
+      hotkey = {
+        enabled = true;
+        # evdev key name (linux/input-event-codes.h KEY_RIGHTCTRL).
+        key = "RIGHTCTRL";
+        mode = "push_to_talk";
+      };
+      audio = {
+        # "default" is the ALSA default, which PipeWire's ALSA plugin
+        # (services.pipewire.alsa.enable) routes to the default source.
+        device = "default";
+        sample_rate = 16000;
+        # 5 min, up from voxtype's 60 s so long dictation isn't clipped, but
+        # still bounded if the toggle is forgotten.
+        max_duration_secs = 300;
+      };
+      whisper = {
+        model = "${voxtypeModel}";
+        language = "en";
+        on_demand_loading = false;
+      };
+      output = {
+        mode = "type";
+        driver_order = [
+          "wtype"
+          "clipboard"
+        ];
+        fallback_to_clipboard = true;
+        notification = {
+          # "Recording Started" when listening begins, the transcript when
+          # it's done; the overlay OSD also shows a live level meter.
+          on_recording_start = true;
+          on_recording_stop = false;
+          on_transcription = true;
+          on_no_speech = false;
+        };
+      };
     };
   };
 
@@ -1213,6 +2407,10 @@ in
     gum
     crush # charmbracelet/crush
 
+    # keepawake (let block) — `keepawake <cmd…>` holds off sleep and
+    # lid-close suspend while a long job runs, without blocking the lock.
+    keepawake
+
     # wishlist — SSH directory TUI. Two entry points on purpose:
     #   wishlist     plain; lists ~/.ssh/config only.
     #   wishlist-ts  adds Tailscale discovery (the wrapper in the let block).
@@ -1237,6 +2435,9 @@ in
     wishlist
     wishlistTailscale
     wishlistTailscaleSetup
+    # On PATH too (the desktop entries call it by store path) so binds,
+    # launch-or-focus and the shell can open a web app the same way.
+    webappLaunch
     glow
     gh
     railway
@@ -1279,6 +2480,13 @@ in
     (writeShellScriptBin "pbpaste" ''exec ${wl-clipboard}/bin/wl-paste --no-newline "$@"'')
     brightnessctl
     playerctl
+    # Also on Mod+Shift+C; on PATH too so `pick-color` works from a shell
+    # (it prints the hex on stdout as well as copying it).
+    pickColor
+    # Region picker for the screen recorder's `region` source
+    # (Super+Alt+Shift+R). The noctalia/screen_recorder plugin shells out to
+    # `slurp` on PATH.
+    slurp
     matugen
     cava
     xwayland-satellite
@@ -1343,6 +2551,16 @@ in
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
     tally
+
+    # Update tooling (see os-update / os-diff in the let block; nh itself is
+    # programs.nh in configuration.nix). On PATH as well as in the scripts'
+    # runtimeInputs so they work by hand too:
+    #   nom build .#…          readable build progress (nix-output-monitor)
+    #   nvd diff OLD NEW       package-level diff of two system closures
+    nix-output-monitor
+    nvd
+    osUpdate
+    osDiff
   ];
 
   ############################################################
@@ -1371,11 +2589,46 @@ in
     # terminal emulators) launch zsh as a non-login interactive shell, so
     # .zprofile never sources; .zshrc does. `typeset -U path` dedupes if a
     # parent shell already appended it.
-    initContent = ''
-      typeset -U path
-      path+=("$HOME/.local/bin")
-    '';
+    initContent = lib.mkMerge [
+      ''
+        typeset -U path
+        path+=("$HOME/.local/bin")
+      ''
+
+      # direnv's hook, pinned AFTER mise's `activate` (default order 1000) —
+      # see programs.direnv below for why the order is load-bearing. Owned
+      # here instead of via programs.direnv.enableZshIntegration, whose line
+      # sits at the same default priority as mise's, so which came first was
+      # an accident of module order rather than something the config said.
+      (lib.mkAfter ''
+        eval "$(${lib.getExe config.programs.direnv.package} hook zsh)"
+      '')
+    ];
   };
+
+  # nix-index + comma, backed by nix-index-database's prebuilt index (the
+  # module imported above sets programs.nix-index.package to a nix-locate
+  # wrapped around the pinned database, and symlinks that database into
+  # ~/.cache/nix-index/files for anything that reads the default location).
+  #
+  #   - zsh integration installs a command_not_found_handler, so typing a
+  #     command that isn't installed prints which nixpkgs attribute(s)
+  #     provide it instead of a bare "command not found". This is the only
+  #     handler: NixOS's own programs.command-not-found is disabled in
+  #     configuration.nix (it reads a channel-built programs.sqlite that a
+  #     flake system doesn't have).
+  #   - comma: `, cowsay hi` looks the binary up in the index and runs it via
+  #     `nix shell` without installing anything. The module's wrapper bakes
+  #     the database in; don't also add `comma` or `nix-index` to
+  #     home.packages, or they collide with these wrappers.
+  #
+  # The index is as fresh as the flake.lock pin — `nix flake update
+  # nix-index-database` pulls upstream's latest weekly build.
+  programs.nix-index = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+  programs.nix-index-database.comma.enable = true;
 
   programs.zoxide = {
     enable = true;
@@ -1546,6 +2799,61 @@ in
     };
   };
 
+  # direnv + nix-direnv — per-project Nix dev shells, loaded on `cd`.
+  #
+  # A project with a flake.nix devShell and an `.envrc` containing `use flake`
+  # gets that shell's tools + env on entry and drops them on exit. Scaffold one
+  # with `nix flake init -t ~/nixos-setup#<python|node|rust|go>` (the
+  # `templates` output in flake.nix). nix-direnv replaces direnv's built-in
+  # `use flake` with a cached one: the evaluated env is kept in .direnv/ and
+  # GC-rooted, so re-entering is instant and `nix-collect-garbage` doesn't
+  # pull the shell out from under an open project. (.direnv/ is already in
+  # the restic excludes in configuration.nix.)
+  #
+  # Coexistence with mise (above) — both hook zsh's prompt and both edit PATH,
+  # so the split is by intent: mise owns the *global* default toolchains
+  # (python/node/go everywhere), direnv owns *per-project* Nix shells. Inside
+  # a direnv-loaded project the devShell's python/node/go must win over
+  # mise's, and that rests on two things:
+  #   1. mise's `activate_aggressive` stays at its default (false), so mise
+  #      leaves PATH entries added after its activation ahead of its own tool
+  #      dirs instead of re-prepending itself. Leave it alone or devShells get
+  #      silently shadowed.
+  #   2. direnv's precmd hook runs AFTER mise's on every prompt (mise's docs:
+  #      a prompt hook that runs after mise's decides the final order). That
+  #      is why the hook line lives in programs.zsh.initContent under
+  #      lib.mkAfter rather than enableZshIntegration — see above.
+  # Don't also put a mise.toml in a
+  # direnv project — two tools managing one directory's toolchain is
+  # ambiguous by construction. (`programs.direnv.mise.enable` — the reverse
+  # wiring, `use mise` inside .envrc — is deliberately off for the same
+  # reason.)
+  #
+  # Quieter prompt: direnv normally prints every exported var name on each
+  # load ("direnv: export +AR +AS +CC …" — dozens for a Nix shell).
+  # hide_env_diff drops that list but keeps the one-line "loading" notice, so
+  # it's still obvious when an env changed. warn_timeout raises the "taking a
+  # while" nag from 5s to 30s, since the FIRST load of a flake shell
+  # legitimately builds/fetches; cached loads are instant regardless. State is
+  # surfaced in the prompt by starship's direnv module instead (enabled in
+  # the starshipConfigSeed below).
+  #
+  # enableGitIntegration (off by default in home-manager) adds `.direnv/` to
+  # programs.git's global ignores, so a project scaffolded without a template
+  # .gitignore never commits the cache either.
+  programs.direnv = {
+    enable = true;
+    # The zsh hook is added by hand in programs.zsh.initContent (ordered
+    # after mise); letting the module add it too would hook twice.
+    enableZshIntegration = false;
+    enableGitIntegration = true;
+    nix-direnv.enable = true;
+    config.global = {
+      hide_env_diff = true;
+      warn_timeout = "30s";
+    };
+  };
+
   # GTK theming. adw-gtk3-dark is a libadwaita-style GTK3 port — it's
   # exactly what Noctalia's gtk-refresh.py expects to switch to (script
   # hardcodes "adw-gtk3" / "adw-gtk3-dark" as the target via gsettings).
@@ -1583,8 +2891,20 @@ in
     };
   };
 
+  # The global gitignore used to be a hand-written file. Its one pattern now
+  # lives in programs.git.ignores above. force = true lets the first switch
+  # replace that unmanaged file instead of aborting with "would be clobbered".
+  # Nothing is lost: the file only ever held that one pattern.
+  xdg.configFile."git/ignore".force = true;
+
   programs.git = {
     enable = true;
+    # Global gitignore (~/.config/git/ignore). Once anything sets git ignores
+    # (programs.direnv's enableGitIntegration adds `.direnv/`), home-manager
+    # owns this file, so every global pattern has to be declared here.
+    # Claude Code's per-user, per-repo permission overrides must never be
+    # committed. This was a hand-written ~/.config/git/ignore before.
+    ignores = [ "**/.claude/settings.local.json" ];
     settings = {
       user = {
         name = "Scott J Roberts";
@@ -1729,60 +3049,6 @@ in
       ${pkgs.coreutils}/bin/mkdir -p "$DEST"
       ${pkgs.coreutils}/bin/install -m 0644 \
         ${./assets/skills/framework/SKILL.md} "$DEST/SKILL.md"
-    '';
-  };
-
-  # OpenWhispr push-to-talk key. The app is installed and permissioned by
-  # upstream's NixOS module (see programs.openwhispr in configuration.nix),
-  # which also sets DICTATION_KEY session-wide — but that variable alone is
-  # not enough to be durable.
-  #
-  # src/helpers/environment.js loads the app's own config with
-  #   require("dotenv").config({ path: <userData>/.env, override: true })
-  # and its comment says so outright: "App config (.env in userData) takes
-  # precedence over system env vars". So the moment that file exists it beats
-  # environment.sessionVariables. The app writes it itself, including when it
-  # migrates a hotkey out of localStorage, so it WILL exist after first run.
-  # Declaring the key therefore means asserting it in that file too.
-  #
-  # Consequence to know: changing the push-to-talk key in OpenWhispr's own UI
-  # will not survive a rebuild. The key lives in configuration.nix (and here);
-  # change it there, not in the app.
-  #
-  # This REWRITES only the DICTATION_KEY line and preserves every other line.
-  # That matters more than usual: the same .env holds BYOK provider API keys
-  # until the app migrates them into the system keyring, so a clobber would
-  # destroy credentials. The file is left 0600 for the same reason, and its
-  # contents are never echoed.
-  #
-  # Electron's userData is ~/.config/<productName>; electron-builder.json sets
-  # productName = "OpenWhispr" while package.json name is "open-whispr", so
-  # both spellings are handled — whichever directory exists is fixed up, and
-  # the OpenWhispr one is created so a fresh profile is deterministic too.
-  home.activation.openwhisprHotkey = {
-    after = [ "writeBoundary" ];
-    before = [ ];
-    data = ''
-      set_key() {
-        D="$1"
-        F="$D/.env"
-        ${pkgs.coreutils}/bin/mkdir -p "$D"
-        if [ ! -e "$F" ]; then
-          ${pkgs.coreutils}/bin/install -m 0600 /dev/null "$F"
-          echo 'DICTATION_KEY=RightControl' >> "$F"
-        elif ${pkgs.gnugrep}/bin/grep -q '^DICTATION_KEY=' "$F"; then
-          ${pkgs.gnused}/bin/sed -i 's/^DICTATION_KEY=.*/DICTATION_KEY=RightControl/' "$F"
-        else
-          echo 'DICTATION_KEY=RightControl' >> "$F"
-        fi
-        ${pkgs.coreutils}/bin/chmod 0600 "$F"
-      }
-
-      set_key "$HOME/.config/OpenWhispr"
-      # Only fix up the alternate spelling if the app actually made it.
-      if [ -d "$HOME/.config/open-whispr" ]; then
-        set_key "$HOME/.config/open-whispr"
-      fi
     '';
   };
 
@@ -1995,6 +3261,14 @@ in
         [username]
         style_user = "overlay1"
         style_root = "text bold"
+
+        # Off by default in starship. In a directory with an .envrc it shows
+        # "direnv loaded/allowed" (or "not allowed" for an .envrc that still
+        # needs `direnv allow`) — see programs.direnv. The prompt-side
+        # replacement for the env-diff spam hide_env_diff suppresses.
+        [direnv]
+        disabled = false
+        style = "overlay1"
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
@@ -2158,6 +3432,45 @@ in
       "x-scheme-handler/claude-cli" = "claude-code-url-handler.desktop";
     };
   };
+
+  # Web apps — one launcher entry per `webApps` attr in the let block (see
+  # the comment there for the app-id convention). Files land at
+  # ~/.local/share/applications/webapp-<key>.desktop. Exec args are
+  # double-quoted because the desktop-entry spec reserves '?' (yarr's
+  # actions) and requires quoting around reserved characters.
+  xdg.desktopEntries = lib.mapAttrs' (
+    key: app:
+    let
+      # Public apps: split `url` so actions can reuse the host. Lazy, so
+      # never forced for tailnet apps (which have no `url`).
+      host = lib.head (lib.match "https://([^/]+)/.*" app.url);
+      startPath = app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
+      launch =
+        p:
+        if app ? tailnetHost then
+          ''${lib.getExe webappLaunch} --tailnet "${app.tailnetHost}" "${p}"''
+        else
+          ''${lib.getExe webappLaunch} "https://${host}${p}"'';
+    in
+    lib.nameValuePair "webapp-${key}" {
+      inherit (app) name;
+      genericName = "Web App";
+      exec = launch startPath;
+      icon = "${app.icon}";
+      terminal = false;
+      categories = [ "Network" ];
+      # Lets docks/launchers tie the running window back to this entry.
+      # Only knowable at eval time for public URLs; tailnet app-ids embed the
+      # tailnet suffix, which this public repo never writes down.
+      settings = lib.optionalAttrs (!(app ? tailnetHost)) {
+        StartupWMClass = "chrome-${host}${lib.replaceStrings [ "/" ] [ "_" ] "_${startPath}"}-Default";
+      };
+      actions = lib.mapAttrs (actionName: actionPath: {
+        name = actionName;
+        exec = launch actionPath;
+      }) (app.actions or { });
+    }
+  ) webApps;
 
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
@@ -2479,15 +3792,6 @@ in
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
       - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
-      - [ ] OpenWhispr first run: pick and download a speech model in the app (the
-            model files live under ~/.config/OpenWhispr — not in the Nix store, so a
-            reinstall re-downloads them). Push-to-talk is right control, set
-            declaratively via DICTATION_KEY; changing it in the app's own UI will NOT
-            survive a rebuild, because the activation hook rewrites that line.
-            NOTE: auto-paste needs the `ydotool` and `uinput` groups, which a running
-            session does NOT pick up — log out and back in (or reboot) after the first
-            rebuild that added them, or text injection silently fails while dictation
-            itself appears to work. Check with `id -nG | tr " " "\n" | grep -E "ydotool|uinput|input"`.
       - [ ] wishlist Tailscale discovery: run `wishlist-ts-setup`. It points you at
             https://login.tailscale.com/admin/settings/oauth to generate an OAuth
             client (tick ONLY `devices:read`), then prompts for the id and secret and
