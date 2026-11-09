@@ -403,6 +403,22 @@ in
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   services.tailscale.enable = true;
+  # SSH, for remote login over the tailnet only. openFirewall is off so port
+  # 22 stays closed on Wi-Fi/LAN; the per-interface rule opens it on
+  # tailscale0 alone, so only this tailnet's devices can reach sshd. Keys
+  # only (no passwords, no root); the allowed public keys are
+  # users.users.sroberts.openssh.authorizedKeys below.
+  services.openssh = {
+    enable = true;
+    openFirewall = false;
+    settings = {
+      PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+      PermitRootLogin = "no";
+      AllowUsers = [ "sroberts" ];
+    };
+  };
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 22 ];
   # tally's soft-pad listener (systemd.user.services.tally in home.nix runs
   # `tally serve --remote`): TLS WebSocket on 47824 for paired vibepad phones,
   # plus mDNS on 5353 so the phone can find the laptop via Bonjour
@@ -627,6 +643,12 @@ in
   # User
   ############################################################
   users.users.sroberts = {
+    # Public keys allowed to SSH in (services.openssh above). Public keys
+    # are safe to commit; one line per client machine.
+    openssh.authorizedKeys.keys = [
+      # From github.com/sroberts.keys (2026-11-07).
+      "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDD2UtEE/wZVLcQUgDqj60t+WUoPdLoURNlbXR6qtLe95ruHS6iy4pOa91yRx9fizPAixlj1FzPwt8JTrqpmHsGQfgTEAnmTvUBlDybefh6OFJV2F9VOV08teKtAw92360bH4dB3kln1Ku7t6cp5Zgj18SmUsUF6clHZ4fRYTfA32arITG++NXmrWWWGVz0EzdSK2Bc1M7BG+VWHmLxRA+yn2Ias5jsPnAPJQ+yyGEQvA1spcF+Wrx94PiPMJ7hkPmqGrrKnS5tiQhMwZnY2GQQv6Dr4yaSVNTQu3lexqw42GqaJ588KUiSMGtown85dWoqZj9ekNXKOcpsIfxvzG3p"
+    ];
     isNormalUser = true;
     description = "Scott";
     shell = pkgs.zsh;
