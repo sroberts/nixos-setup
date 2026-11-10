@@ -2185,8 +2185,13 @@ in
       };
 
       # Media keys — PipeWire sinks via wpctl, transport via playerctl.
+      #
+      # These and the brightness keys are HIDDEN from the hotkey overlay
+      # (hotkey-overlay-title=null). The overlay can only print a key as its
+      # raw keysym (`XF86AudioLowerVolume`), which reads like a label rather
+      # than a key. The F-row keys are labelled on the keyboard itself anyway.
       "XF86AudioRaiseVolume" = {
-        _props.hotkey-overlay-title = "Volume Up";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "wpctl"
           "set-volume"
@@ -2195,7 +2200,7 @@ in
         ];
       };
       "XF86AudioLowerVolume" = {
-        _props.hotkey-overlay-title = "Volume Down";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "wpctl"
           "set-volume"
@@ -2204,7 +2209,7 @@ in
         ];
       };
       "XF86AudioMute" = {
-        _props.hotkey-overlay-title = "Mute Speakers";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "wpctl"
           "set-mute"
@@ -2213,7 +2218,7 @@ in
         ];
       };
       "XF86AudioMicMute" = {
-        _props.hotkey-overlay-title = "Mute Microphone";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "wpctl"
           "set-mute"
@@ -2222,21 +2227,21 @@ in
         ];
       };
       "XF86AudioPlay" = {
-        _props.hotkey-overlay-title = "Play / Pause";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "playerctl"
           "play-pause"
         ];
       };
       "XF86AudioNext" = {
-        _props.hotkey-overlay-title = "Next Track";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "playerctl"
           "next"
         ];
       };
       "XF86AudioPrev" = {
-        _props.hotkey-overlay-title = "Previous Track";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "playerctl"
           "previous"
@@ -2245,7 +2250,7 @@ in
 
       # Brightness — Framework keyboard top row.
       "XF86MonBrightnessUp" = {
-        _props.hotkey-overlay-title = "Brightness Up";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "brightnessctl"
           "s"
@@ -2253,7 +2258,7 @@ in
         ];
       };
       "XF86MonBrightnessDown" = {
-        _props.hotkey-overlay-title = "Brightness Down";
+        _props.hotkey-overlay-title = null;
         spawn = [
           "brightnessctl"
           "s"
