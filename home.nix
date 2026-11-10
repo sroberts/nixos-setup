@@ -1885,6 +1885,22 @@ in
           "launcher"
         ];
       };
+      # Emoji picker (Omarchy's Super+Ctrl+E) — the same Noctalia launcher,
+      # opened in its built-in emoji mode. The context argument is written
+      # straight into the search box, so "/emo " (trailing space) lands in the
+      # emoji provider ready for a query. A pick is copied to the clipboard and
+      # auto-pasted into the focused window (`shell.launcher.auto_paste`,
+      # default "auto"); with track_usage on, recent picks are listed first.
+      "Mod+Ctrl+E" = {
+        _props.hotkey-overlay-title = "Emoji Picker";
+        spawn = [
+          "noctalia"
+          "msg"
+          "panel-toggle"
+          "launcher"
+          "/emo "
+        ];
+      };
 
       # Launch-or-focus app binds (Omarchy-style Mod+Shift+<letter>): focus
       # the app if a window of it is open — cycling through them on repeat
