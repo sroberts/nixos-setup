@@ -1513,8 +1513,8 @@ in
       weather = {
         enabled = true;
         # "imperial", NOT "fahrenheit". Upstream's example.toml documents this
-        # key as `celsius | fahrenheit`, but that comment is stale — v5.3.0's
-        # code only ever compares against "imperial":
+        # key as `celsius | fahrenheit`, but that comment is stale — the code
+        # (checked through v5.5.0) only ever compares against "imperial":
         #
         #   bool WeatherService::useImperial() const
         #     { return m_activeConfig.unit == "imperial"; }
