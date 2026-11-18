@@ -394,19 +394,26 @@ in
   # before the integrations are useful.
   services.fprintd.enable = true;
   security.pam.services = {
-    sudo.fprintAuth = true; # sudo prompt
-    login.fprintAuth = true; # TTY login
+    sudo.fprintAuth = true; # sudo prompt (Ctrl+C at the finger prompt → password)
     su.fprintAuth = true; # su to another user
-    polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true; # noctalia-greeter at the login screen
-    # Noctalia's lock screen uses /etc/pam.d/login, so login.fprintAuth above
-    # is what lights up the lock screen's fingerprint path. In v5 the lock
-    # screen's auth is native (C++): it arms pam_fprintd at lock time and
-    # manages the fingerprint-vs-password handoff itself. The v4 QML flags that
-    # used to gate this (`allowPasswordWithFprintd` / `autoStartAuth`, once
-    # asserted by home.activation.noctaliaConfigSeed) no longer exist and are
-    # not needed. Re-verify the touch-to-unlock path after any Noctalia bump —
-    # this system-side fprintd wiring assumes Noctalia arms the reader for us.
+    polkit-1.fprintAuth = true; # GUI privilege prompts (Noctalia's polkit agent)
+    # `login` is deliberately password-only. Noctalia v5's lock screen drives
+    # the reader itself over fprintd's D-Bus API (FingerprintAuthenticator),
+    # and only sends the *typed password* through PAM, hardcoded to the
+    # `login` service (src/shell/lockscreen/lock_screen.cpp). With
+    # pam_fprintd at the top of `login`, a typed password stalled behind a
+    # second "place your finger" wait (up to fprintd's 30s timeout x 3
+    # tries) before pam_unix ever saw it — the "needs the finger even though
+    # I typed the password" flakiness. Upstream's own comment there says to
+    # strip pam_fprintd from `login` for exactly this reason.
+    #
+    # greetd's stack is just `substack login` (the greeter module renders
+    # it that way, so a greetd.fprintAuth here is a no-op), which makes the
+    # noctalia-greeter password-only too. That is intended: the greeter is
+    # where pam_gnome_keyring unlocks the keyring, and it can only do that
+    # with a password — a fingerprint login leaves the keyring locked.
+    # Re-verify touch-to-unlock on the lock screen after any Noctalia bump.
+    login.fprintAuth = false;
   };
 
   ############################################################
@@ -439,17 +446,14 @@ in
   # Security → Noctalia Greeter → Sync Now — see TODO.md). The greeter's
   # NixOS module sets services.greetd.enable + default_session.command with
   # mkDefault, so no explicit greetd block is needed here.
-  #   - allow_empty_password: fprintd's PAM module answers the password
-  #     prompt with an empty reply after a fingerprint match; without this
-  #     the greeter rejects that reply as invalid credentials.
   #   - keyboard.layout: greeter runs before the session's input config, so
   #     the layout has to be told explicitly.
   services.displayManager.noctalia-greeter = {
     enable = true;
-    settings = {
-      auth.allow_empty_password = true;
-      keyboard.layout = "us";
-    };
+    # No auth.allow_empty_password: it existed for pam_fprintd's empty reply
+    # after a finger match, and the greeter is password-only now (see the
+    # login.fprintAuth comment above).
+    settings.keyboard.layout = "us";
   };
 
   # Polkit auth agent: Noctalia's native one (programs.noctalia.settings.shell
