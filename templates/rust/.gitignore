@@ -1,0 +1,9 @@
+# direnv / nix-direnv cache (cached devShell env + its GC root)
+.direnv/
+
+# `nix build` output symlinks
+result
+result-*
+
+# cargo build output
+target/

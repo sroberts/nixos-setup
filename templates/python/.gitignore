@@ -1,0 +1,10 @@
+# direnv / nix-direnv cache (cached devShell env + its GC root)
+.direnv/
+
+# `nix build` output symlinks
+result
+result-*
+
+# uv-managed virtualenv + bytecode
+.venv/
+__pycache__/
