@@ -604,6 +604,7 @@ let
       osConfig.programs.niri.package
       config.programs.ghostty.package
       osConfig.services.power-profiles-daemon.package
+      screensaver
       pkgs.systemd
       pkgs.util-linux # mountpoint
     ];
@@ -634,6 +635,7 @@ let
       choice=$(
         printf '%s\t%s\n' \
           "Lock" "Lock the session now" \
+          "Screensaver" "Start the screensaver now (any key exits)" \
           "Show keybinds" "niri hotkey overlay (also Mod+Shift+/)" \
           "Power profile" "Currently: $profile" \
           "Toggle keep-awake" "Block sleep for long jobs; still locks + screen-off" \
@@ -649,6 +651,9 @@ let
       case "$choice" in
         "Lock")
           exec noctalia msg session lock
+          ;;
+        "Screensaver")
+          exec screensaver
           ;;
         "Show keybinds")
           exec niri msg action show-hotkey-overlay
@@ -833,6 +838,1068 @@ let
       # Wrapper mode. systemd-inhibit exits with the command's own status, so
       # this is transparent in scripts and `&&` chains.
       exec systemd-inhibit --what="$what" --who=keepawake --why="$*" --mode=block "$@"
+    '';
+  };
+
+  # Screensaver, Omarchy-style: a random spy- or hacker-movie quote, animated by
+  # terminaltexteffects (`tte`) with a random effect per pass, in a
+  # fullscreen black ghostty on every output. Any key, or focus leaving the
+  # window, dismisses it.
+  #
+  #   screensaver          start it on every output (no-op if locked or running)
+  #   screensaver --stop   close every screensaver window
+  #
+  # Triggered by Noctalia's idle manager ([idle.behavior.screensaver], 5 min,
+  # half the lock timeout like Omarchy's 2.5/5). Its resume_command runs
+  # `--stop` on the first input after idle, so mouse movement dismisses it
+  # too, and so does the first keypress at the lock screen (the lock at
+  # 10 min covers a still-running screensaver; unlocking must not reveal it).
+  # From the system menu there is no idle period, so only a key or a focus
+  # change ends it.
+  #
+  # Windows are found by app-id (ghostty `--class`, which must be a valid GTK
+  # application id, hence the dots). The window rule that makes them
+  # fullscreen is in wayland.windowManager.niri.settings.window-rule.
+  screensaverAppId = "dev.sjr.screensaver";
+
+  # Spy- and hacker-movie quotes, one per tte pass, each with who said it.
+  # Wording and speakers come from the films' Wikiquote pages, except The
+  # Gray Man, which has none: its two lines are from fan quote sites
+  # (moviemistakes.com, moviequotesandmore.com, thyquotes.com), whose wording
+  # disagrees slightly. Lives of Others lines are Wikiquote's English
+  # translation. Each entry becomes its own text file at build time: the
+  # quote wrapped to 52 columns at word boundaries, a blank line, then
+  # "— Speaker" and the film right-aligned under the block (tte centres the
+  # block as a whole, not line by line).
+  #
+  # A one-speaker quote sets `who`. A dialogue exchange leaves `who` null and
+  # names each speaker inline, "Name: line", one line per "\n"; its
+  # attribution is just "— Film".
+  screensaverQuotes =
+    let
+      quotes = [
+        {
+          who = "James Bond";
+          film = "Dr. No (1962)";
+          text = "Bond. James Bond.";
+        }
+        {
+          who = "James Bond";
+          film = "Dr. No (1962)";
+          text = "That's a Smith & Wesson, and you've had your six.";
+        }
+        {
+          who = null;
+          film = "Goldfinger (1964)";
+          text = "Bond: Do you expect me to talk?\nGoldfinger: No, Mr. Bond, I expect you to die!";
+        }
+        {
+          who = "Auric Goldfinger";
+          film = "Goldfinger (1964)";
+          text = "Mr Bond, they have a saying in Chicago: 'Once is happenstance. Twice is coincidence. The third time it's enemy action.'";
+        }
+        {
+          who = "James Bond";
+          film = "On Her Majesty's Secret Service (1969)";
+          text = "We have all the time in the world.";
+        }
+        {
+          who = null;
+          film = "GoldenEye (1995)";
+          text = "Trevelyan: For England, James?\nBond: No. For me.";
+        }
+        {
+          who = "Elliot Carver";
+          film = "Tomorrow Never Dies (1997)";
+          text = "Words are the new weapons, satellites the new artillery.";
+        }
+        {
+          who = null;
+          film = "The World Is Not Enough (1999)";
+          text = "Elektra: I could have given you the world.\nBond: The world is not enough.\nElektra: Foolish sentiment.";
+        }
+        {
+          who = null;
+          film = "Casino Royale (2006)";
+          text = "Bartender: Shaken or stirred?\nBond: Do I look like I give a damn?";
+        }
+        {
+          who = null;
+          film = "Casino Royale (2006)";
+          text = "Vesper: I'm the money.\nBond: Every penny of it.";
+        }
+        {
+          who = "James Bond";
+          film = "Casino Royale (2006)";
+          text = "I'm sorry. That last hand... nearly killed me.";
+        }
+        {
+          who = "M";
+          film = "Casino Royale (2006)";
+          text = "Christ, I miss the Cold War!";
+        }
+        {
+          who = "M";
+          film = "Skyfall (2012)";
+          text = "Orphans always make the best recruits.";
+        }
+        {
+          who = "M";
+          film = "Skyfall (2012)";
+          text = "Regret is unprofessional.";
+        }
+        {
+          who = "Q";
+          film = "Skyfall (2012)";
+          text = "I'll hazard I can do more damage on my laptop sitting in my pyjamas before my first cup of Earl Grey than you can do in a year in the field.";
+        }
+        {
+          who = "Voice on tape";
+          film = "Mission: Impossible (1996)";
+          text = "Your mission, Jim, should you choose to accept it...";
+        }
+        {
+          who = "Voice on tape";
+          film = "Mission: Impossible (1996)";
+          text = "This tape will self-destruct in five seconds. Good luck, Jim.";
+        }
+        {
+          who = "Ethan Hunt";
+          film = "Mission: Impossible (1996)";
+          text = "Kittridge, you've never seen me very upset.";
+        }
+        {
+          who = "Alan Hunley";
+          film = "Mission: Impossible - Rogue Nation (2015)";
+          text = "Sir, Hunt is the living manifestation of destiny, and he has made you... his mission.";
+        }
+        {
+          who = "The Professor";
+          film = "The Bourne Identity (2002)";
+          text = "Look at this. Look at what they make you give.";
+        }
+        {
+          who = "Jason Bourne";
+          film = "The Bourne Identity (2002)";
+          text = "Who has a safety deposit box full of... money and six passports and a gun?";
+        }
+        {
+          who = "Jason Bourne";
+          film = "The Bourne Identity (2002)";
+          text = "How can I know that and not know who I am?";
+        }
+        {
+          who = "Alexander Conklin";
+          film = "The Bourne Identity (2002)";
+          text = "I don't send you to kill! I send you to be invisible.";
+        }
+        {
+          who = "Jason Bourne";
+          film = "The Bourne Ultimatum (2007)";
+          text = "Get some rest, Pam. You look tired.";
+        }
+        {
+          who = "Jason Bourne";
+          film = "The Bourne Ultimatum (2007)";
+          text = "I remember. I remember everything.";
+        }
+        {
+          who = "Sam";
+          film = "Ronin (1998)";
+          text = "Whenever there is any doubt, there is no doubt. That's the first thing they teach you.";
+        }
+        {
+          who = "Sam";
+          film = "Ronin (1998)";
+          text = "Lady, I never walk into a place I don't know how to walk out of.";
+        }
+        {
+          who = "Vincent";
+          film = "Ronin (1998)";
+          text = "Everyone's your brother until the rent comes due.";
+        }
+        {
+          who = "Harry Hart";
+          film = "Kingsman: The Secret Service (2014)";
+          text = "Manners maketh man.";
+        }
+        {
+          who = "Harry Hart";
+          film = "Kingsman: The Secret Service (2014)";
+          text = "A suit is the modern gentleman's armour. And the Kingsman agents are the new knights.";
+        }
+        {
+          who = null;
+          film = "Bridge of Spies (2015)";
+          text = "Donovan: Aren't you worried?\nAbel: Would it help?";
+        }
+        {
+          who = "Turner";
+          film = "Three Days of the Condor (1975)";
+          text = "Listen. I work for the CIA. I'm not a spy. I just read books.";
+        }
+        {
+          who = null;
+          film = "Three Days of the Condor (1975)";
+          text = "Atwood: Otherwise...\nJoubert: Otherwise does not exist.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "When did Noah build the ark, Gladys? Before the rain.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "She had worked both ends against the middle for so long, the middle decided to give up and go home.";
+        }
+        {
+          who = "Harry Lime";
+          film = "The Third Man (1949)";
+          text = "Oh, Holly, you and I aren't heroes. The world doesn't make any heroes outside of your stories.";
+        }
+        {
+          who = "Major Calloway";
+          film = "The Third Man (1949)";
+          text = "Death's at the bottom of everything, Martins. Leave death to the professionals.";
+        }
+        {
+          who = "Alicia Huberman";
+          film = "Notorious (1946)";
+          text = "I'm allergic to American agents. Their fine points don't particularly appeal to me.";
+        }
+        {
+          who = "Thomas Reynolds";
+          film = "Enemy of the State (1998)";
+          text = "The only privacy that's left is the inside of your head.";
+        }
+        {
+          who = "Carl";
+          film = "Munich (2005)";
+          text = "The only thing that really scares you guys is stillness.";
+        }
+        {
+          who = "Admiral Greer";
+          film = "The Hunt for Red October (1990)";
+          text = "Now, understand, Commander: The torpedo did not self-destruct. You heard it hit the hull. And I... was never here.";
+        }
+        {
+          who = "Captain Marko Ramius";
+          film = "The Hunt for Red October (1990)";
+          text = "A great day, comrades. We sail into history.";
+        }
+        {
+          who = null;
+          film = "Patriot Games (1992)";
+          text = "Greer: Tell me one thing in life that is absolutely for certain.\nRyan: My daughter's love.";
+        }
+        {
+          who = "The coroner";
+          film = "Atomic Blonde (2017)";
+          text = "Miss Lloyd, in Germany, we don't make simple mistakes.";
+        }
+        {
+          who = "Maya";
+          film = "Zero Dark Thirty (2012)";
+          text = "You can't run a global network of interconnected cells from a cave.";
+        }
+        {
+          who = "Edward Wilson";
+          film = "The Good Shepherd (2006)";
+          text = "It isn't about dedication and loyalty, it's about belief in what we do.";
+        }
+        {
+          who = "Susan Cooper";
+          film = "Spy (2015)";
+          text = "Well-behaved women often make history.";
+        }
+        {
+          who = "Dr. Evil";
+          film = "Austin Powers: International Man of Mystery (1997)";
+          text = "There's nothing more pathetic than an aging hipster.";
+        }
+        {
+          who = "James Bond";
+          film = "From Russia with Love (1963)";
+          text = "You won't be needing this... 'old man'.";
+        }
+        {
+          who = null;
+          film = "Thunderball (1965)";
+          text = "Bond: Everything you give me...\nQ: ...is treated with equal contempt. Yes, I know.";
+        }
+        {
+          who = "James Bond";
+          film = "You Only Live Twice (1967)";
+          text = "Oh the things I do for England.";
+        }
+        {
+          who = "Blofeld";
+          film = "You Only Live Twice (1967)";
+          text = "You only live twice, Mr. Bond.";
+        }
+        {
+          who = null;
+          film = "Diamonds Are Forever (1971)";
+          text = "Mr. Wint: If at first you don't succeed, Mr. Kidd....\nMr. Kidd: Try, try again, Mr. Wint.";
+        }
+        {
+          who = "James Bond";
+          film = "Live and Let Die (1973)";
+          text = "I should have told you. Never go in there without a mongoose.";
+        }
+        {
+          who = "Mr. Big";
+          film = "Live and Let Die (1973)";
+          text = "Names is for tombstones, baby!";
+        }
+        {
+          who = "Sheriff J.W. Pepper";
+          film = "Live and Let Die (1973)";
+          text = "Secret AGENT? On WHOSE side?";
+        }
+        {
+          who = "Lazar";
+          film = "The Man with the Golden Gun (1974)";
+          text = "Mr. Bond, bullets do not kill. It is the finger that pulls the trigger.";
+        }
+        {
+          who = null;
+          film = "The Man with the Golden Gun (1974)";
+          text = "Bond: Six bullets to your one?\nScaramanga: I only need one.";
+        }
+        {
+          who = null;
+          film = "The Spy Who Loved Me (1977)";
+          text = "Bond: Q, have I ever let you down?\nQ: Frequently.";
+        }
+        {
+          who = "James Bond";
+          film = "The Spy Who Loved Me (1977)";
+          text = "Keeping the British end up, sir.";
+        }
+        {
+          who = "Hugo Drax";
+          film = "Moonraker (1979)";
+          text = "You appear with the tedious inevitability of an unloved season.";
+        }
+        {
+          who = "James Bond";
+          film = "For Your Eyes Only (1981)";
+          text = "That's détente, comrade. You don't have it, I don't have it!";
+        }
+        {
+          who = null;
+          film = "For Your Eyes Only (1981)";
+          text = "Bond: Forgive me, Father, for I have sinned.\nQ: That's putting it mildly, 007!";
+        }
+        {
+          who = null;
+          film = "A View to a Kill (1985)";
+          text = "May Day: Wow! What a view...\nZorin: ...to a kill!";
+        }
+        {
+          who = "Max Zorin";
+          film = "A View to a Kill (1985)";
+          text = "Intuitive improvisation is the secret of genius.";
+        }
+        {
+          who = "Mr. White";
+          film = "Spectre (2015)";
+          text = "I always knew death would wear a familiar face, but not yours.";
+        }
+        {
+          who = null;
+          film = "Spectre (2015)";
+          text = "Madeleine: Why, given every other possible option, does a man choose the life of a paid assassin?\nBond: Well, it was that or the priesthood.";
+        }
+        {
+          who = null;
+          film = "Mission: Impossible - Ghost Protocol (2011)";
+          text = "Benji: Now remember: 'Blue is glue!'\nEthan: And when it's red?\nBenji: Dead.";
+        }
+        {
+          who = "Ethan Hunt";
+          film = "Mission: Impossible - Ghost Protocol (2011)";
+          text = "Failure to a terrorist is just a rehearsal for success.";
+        }
+        {
+          who = "Erika Sloane";
+          film = "Mission: Impossible - Fallout (2018)";
+          text = "You use a scalpel. I prefer a hammer.";
+        }
+        {
+          who = "Erika Sloane";
+          film = "Mission: Impossible - Fallout (2018)";
+          text = "The IMF is Halloween, Alan. A bunch of grown men in rubber masks playing trick-or-treat.";
+        }
+        {
+          who = "Jason Bourne";
+          film = "The Bourne Ultimatum (2007)";
+          text = "This is where it started for me. This is where it ends.";
+        }
+        {
+          who = "Marie";
+          film = "The Bourne Supremacy (2004)";
+          text = "But that's why we write it down. Because sooner or later, you remember something good.";
+        }
+        {
+          who = "President Muffley";
+          film = "Dr. Strangelove (1964)";
+          text = "Gentlemen, you can't fight in here! This is the War Room!";
+        }
+        {
+          who = "The Jackal";
+          film = "The Day of the Jackal (1973)";
+          text = "This is a once in a lifetime job. Whoever does it can never work again.";
+        }
+        {
+          who = null;
+          film = "The Day of the Jackal (1973)";
+          text = "Rodin: What codename will you use?\nThe Jackal: Why not 'the Jackal'?";
+        }
+        {
+          who = "Ben Marco";
+          film = "The Manchurian Candidate (1962)";
+          text = "Intelligence officer. Stupidity officer is more like it.";
+        }
+        {
+          who = "Dr. Yen Lo";
+          film = "The Manchurian Candidate (1962)";
+          text = "His brain has not only been washed, as they say, it's been dry-cleaned.";
+        }
+        {
+          who = "Maxwell Smart";
+          film = "Get Smart (2008)";
+          text = "Freeze, times infinity.";
+        }
+        {
+          who = null;
+          film = "Get Smart (2008)";
+          text = "Smart: Well, not everything's a competition.\nAgent 99: If it were, I'd win.";
+        }
+        {
+          who = "David Percival";
+          film = "Atomic Blonde (2017)";
+          text = "Truth and lies. People like us don't know the difference.";
+        }
+        {
+          who = "Austin Powers";
+          film = "Austin Powers: International Man of Mystery (1997)";
+          text = "It's freedom, baby, yeah!";
+        }
+        {
+          who = "Golda Meir";
+          film = "Munich (2005)";
+          text = "Every civilization finds it necessary to negotiate compromises with its own values.";
+        }
+        {
+          who = null;
+          film = "Munich (2005)";
+          text = "Carl: It's strange, isn't it, to think of oneself as an assassin?\nAvner: Think of yourself as something else then.";
+        }
+        {
+          who = "Aisha";
+          film = "Body of Lies (2008)";
+          text = "A man is not his job.";
+        }
+        {
+          who = "Osbourne Cox";
+          film = "Burn After Reading (2008)";
+          text = "Next to you, we all have a drinking problem!";
+        }
+        {
+          who = "Dreyman";
+          film = "The Lives of Others (2006)";
+          text = "Can someone who has heard this music, I mean truly heard it, really be a bad person?";
+        }
+        {
+          who = "Clover Wilson";
+          film = "The Good Shepherd (2006)";
+          text = "Agency first, God second.";
+        }
+        {
+          who = "James Bond";
+          film = "The Living Daylights (1987)";
+          text = "I only kill professionals.";
+        }
+        {
+          who = null;
+          film = "The Living Daylights (1987)";
+          text = "Pushkin: Butchers.\nWhitaker: Surgeons. They cut away society's dead flesh.";
+        }
+        {
+          who = "General Georgi Koskov";
+          film = "The Living Daylights (1987)";
+          text = "For you I have great affection, but we have an old saying: duty has no sweethearts.";
+        }
+        {
+          who = "Colonel Moon";
+          film = "Die Another Day (2002)";
+          text = "I studied at Oxford and Harvard. Majored in Western hypocrisy.";
+        }
+        {
+          who = null;
+          film = "Die Another Day (2002)";
+          text = "Jinx: So, what do predators do...when the sun goes down?\nBond: They feast...like there's no tomorrow.";
+        }
+        {
+          who = "Q";
+          film = "Die Another Day (2002)";
+          text = "Yes, well, it's called the future, so get used to it.";
+        }
+        {
+          who = "James Bond";
+          film = "Quantum of Solace (2008)";
+          text = "I don't think the dead care about vengeance.";
+        }
+        {
+          who = "James Bond";
+          film = "Quantum of Solace (2008)";
+          text = "If they wanted his soul, they should have made a deal with a priest.";
+        }
+        {
+          who = null;
+          film = "Quantum of Solace (2008)";
+          text = "Camille: Friend of yours?\nBond: I don't have any friends.";
+        }
+        {
+          who = "Swanbeck";
+          film = "Mission: Impossible II (2000)";
+          text = "This is not mission difficult, Mr. Hunt, it's mission impossible.";
+        }
+        {
+          who = "Ethan Hunt";
+          film = "Mission: Impossible II (2000)";
+          text = "If I let you know where I'm going, I won't be on holiday.";
+        }
+        {
+          who = "Owen Davian";
+          film = "Mission: Impossible III (2006)";
+          text = "Oh no, it's fine. I always spill red wine on my white custom-made shirt.";
+        }
+        {
+          who = "Benji Dunn";
+          film = "Mission: Impossible III (2006)";
+          text = "Okay, you're on Interpol's most wanted list. And that, by the way, is a spectacular list to be on.";
+        }
+        {
+          who = "Aaron Cross";
+          film = "The Bourne Legacy (2012)";
+          text = "I'm still trying to figure out if you're supposed to kill me or give me a pep-talk.";
+        }
+        {
+          who = "Eric Byer";
+          film = "The Bourne Legacy (2012)";
+          text = "We are morally indefensible, and absolutely necessary.";
+        }
+        {
+          who = "Mark Turso";
+          film = "The Bourne Legacy (2012)";
+          text = "You were given a Ferrari and your people treated it like a lawnmower.";
+        }
+        {
+          who = "Robert Dewey";
+          film = "Jason Bourne (2016)";
+          text = "Better get some sleep, kid. You got a long 24 hours ahead of you.";
+        }
+        {
+          who = "Poppy Adams";
+          film = "Kingsman: The Golden Circle (2017)";
+          text = "I don't like easy. I like proof.";
+        }
+        {
+          who = "Agent Tequila";
+          film = "Kingsman: The Golden Circle (2017)";
+          text = "That's 1963 Statesman Reserve. You just made it personal.";
+        }
+        {
+          who = "Harry Hart";
+          film = "Kingsman: The Golden Circle (2017)";
+          text = "This is not the end. It is not the beginning of the end. But it is, perhaps, the end of the beginning.";
+        }
+        {
+          who = "Smith";
+          film = "The 39 Steps (1935)";
+          text = "These men will stick at nothing.";
+        }
+        {
+          who = "Rick Blaine";
+          film = "Casablanca (1942)";
+          text = "Of all the gin joints in all the towns in all the world, she walks into mine.";
+        }
+        {
+          who = "Captain Renault";
+          film = "Casablanca (1942)";
+          text = "Major Strasser has been shot. Round up the usual suspects.";
+        }
+        {
+          who = "Rick Blaine";
+          film = "Casablanca (1942)";
+          text = "Louis, I think this is the beginning of a beautiful friendship.";
+        }
+        {
+          who = null;
+          film = "Clear and Present Danger (1994)";
+          text = "Ryan: No, no, no! Not black and white Ritter, right and wrong!\nRitter: Gray! The world is gray, Jack!";
+        }
+        {
+          who = "Jack Ryan";
+          film = "Clear and Present Danger (1994)";
+          text = "I'm sorry, Mr. President, I don't dance.";
+        }
+        {
+          who = "Lester Siegel";
+          film = "Argo (2012)";
+          text = "We did suicide missions in the army that had better odds than this.";
+        }
+        {
+          who = "Jack O'Donnell";
+          film = "Argo (2012)";
+          text = "If we wanted applause, we would have joined the circus.";
+        }
+        {
+          who = "Tony Mendez";
+          film = "Argo (2012)";
+          text = "Or you could just send in training wheels and meet them at the border with Gatorade.";
+        }
+        {
+          who = "Alejandro Gillick";
+          film = "Sicario (2015)";
+          text = "Nothing will make sense to your American ears, and you will doubt everything that we do, but in the end you will understand.";
+        }
+        {
+          who = null;
+          film = "Sicario (2015)";
+          text = "Kate: What's our objective?\nGraver: To dramatically overreact.";
+        }
+        {
+          who = "Alejandro Gillick";
+          film = "Sicario (2015)";
+          text = "You are not a wolf. And this is the land of wolves now.";
+        }
+        {
+          who = "Albert Gibson";
+          film = "True Lies (1994)";
+          text = "You know what? I'm sick of being in the van. You guys can be in the van next time.";
+        }
+        {
+          who = "Elliot Carver";
+          film = "Tomorrow Never Dies (1997)";
+          text = "The distance between insanity and genius is measured only by success.";
+        }
+        {
+          who = "Renard";
+          film = "The World Is Not Enough (1999)";
+          text = "A man tires of being executed.";
+        }
+        {
+          who = "James Bond";
+          film = "Goldfinger (1964)";
+          text = "Shocking. Positively shocking.";
+        }
+        {
+          who = "M";
+          film = "Dr. No (1962)";
+          text = "If you carry a double-O number, it means you're licensed to kill, not get killed.";
+        }
+        {
+          who = "Szell";
+          film = "Marathon Man (1976)";
+          text = "Is it safe?";
+        }
+        {
+          who = "Dr. Christian Szell";
+          film = "Marathon Man (1976)";
+          text = "You're weak. Your father was weak in his way. Your brother in his, now you in yours. You are all so predictable.";
+        }
+        {
+          who = "Harry Caul";
+          film = "The Conversation (1974)";
+          text = "I'm not afraid of death but I am afraid of murder.";
+        }
+        {
+          who = "Harry Caul";
+          film = "The Conversation (1974)";
+          text = "I build all my own equipment.";
+        }
+        {
+          who = "Professor Michael Armstrong";
+          film = "Torn Curtain (1966)";
+          text = "It takes a scientist to pick a scientist's brain.";
+        }
+        {
+          who = "Victoria";
+          film = "Red (2010)";
+          text = "I kill people, dear.";
+        }
+        {
+          who = "Ivan Simonov";
+          film = "Red (2010)";
+          text = "I miss the old days. I haven't killed anyone in years.";
+        }
+        {
+          who = "James B. Donovan";
+          film = "Bridge of Spies (2015)";
+          text = "Everyone will hate me, but at least I'll lose.";
+        }
+        {
+          who = "George Smiley";
+          film = "Tinker Tailor Soldier Spy (2011)";
+          text = "He's a fanatic. And the fanatic is always concealing a secret doubt.";
+        }
+        {
+          who = "Control";
+          film = "Tinker Tailor Soldier Spy (2011)";
+          text = "Nothing is genuine anymore!";
+        }
+        {
+          who = "Bill Haydon";
+          film = "Tinker Tailor Soldier Spy (2011)";
+          text = "I had to pick a side, George. And the West has become so very ugly...";
+        }
+        {
+          who = "Johnny English";
+          film = "Johnny English (2003)";
+          text = "A good agent doesn't need gadgets. The only gadgets I've ever needed are a sharp eye, a finely tuned ear and a slightly bigger brain than is strictly necessary.";
+        }
+        {
+          who = "Johnny English";
+          film = "Johnny English (2003)";
+          text = "The word 'mistake' sir is not one that appears in my dictionary.";
+        }
+        {
+          who = "Neil";
+          film = "Tenet (2020)";
+          text = "What's happened's happened. Which is an expression of faith in the mechanics of the world. It's not an excuse to do nothing.";
+        }
+        {
+          who = "Brill";
+          film = "Enemy of the State (1998)";
+          text = "In guerrilla warfare they taught us to use our weaknesses as strengths.";
+        }
+        {
+          who = "Robert Clayton Dean";
+          film = "Enemy of the State (1998)";
+          text = "Oh, conspiracy theorists of the world, unite.";
+        }
+        {
+          who = "Maya";
+          film = "Zero Dark Thirty (2012)";
+          text = "I believe I was spared so I could finish the job.";
+        }
+        {
+          who = null;
+          film = "The Good Shepherd (2006)";
+          text = "Palmi: You're the guys that scare me. You're the people that make big wars.\nWilson: No, we make sure the wars are small ones.";
+        }
+        {
+          who = "Rick Ford";
+          film = "Spy (2015)";
+          text = "Well, I make a habit out of doing things that people say I can't do.";
+        }
+        {
+          who = null;
+          film = "Three Days of the Condor (1975)";
+          text = "Atwood: Where did he learn evasive moves?\nHiggins: He reads.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "Put away some money so you can die someplace warm and don't ever touch it.";
+        }
+        {
+          who = "Solomon Lane";
+          film = "Mission: Impossible - Fallout (2018)";
+          text = "I don't care in the least what people think or feel.";
+        }
+        {
+          who = "Lloyd Hansen";
+          film = "The Gray Man (2022)";
+          text = "If you wanna make an omelet, you gotta kill some people.";
+        }
+        {
+          who = "Lloyd Hansen";
+          film = "The Gray Man (2022)";
+          text = "Extra ten million to the first guy to put a bullet in this Ken doll's brain.";
+        }
+        {
+          who = "Razor";
+          film = "Hackers (1995)";
+          text = "Remember, hacking is more than just a crime. It's a survival trait.";
+        }
+        {
+          who = "The Plague";
+          film = "Hackers (1995)";
+          text = "There is no right or wrong, just fun and boring.";
+        }
+        {
+          who = "Acid Burn";
+          film = "Hackers (1995)";
+          text = "Never send a boy to do a woman's job.";
+        }
+        {
+          who = "Joshua";
+          film = "WarGames (1983)";
+          text = "A STRANGE GAME. THE ONLY WINNING MOVE IS NOT TO PLAY.";
+        }
+        {
+          who = "Joshua";
+          film = "WarGames (1983)";
+          text = "SHALL WE PLAY A GAME?";
+        }
+        {
+          who = "Stephen Falken";
+          film = "WarGames (1983)";
+          text = "General, you are listening to a machine! Do the world a favor and don't act like one.";
+        }
+        {
+          who = null;
+          film = "Sneakers (1992)";
+          text = "Carl: So, it's a code-breaker.\nBishop: No, it's The code-breaker. No more secrets.";
+        }
+        {
+          who = "Cosmo";
+          film = "Sneakers (1992)";
+          text = "The world isn't run by weapons anymore, or energy, or money, it's run by little ones and zeroes, little bits of data. It's all just electrons.";
+        }
+        {
+          who = null;
+          film = "Sneakers (1992)";
+          text = "Bishop: Organized crime?\nCosmo: Ha, don't kid yourself. It's not that organized.";
+        }
+        {
+          who = null;
+          film = "The Net (1995)";
+          text = "Devlin: Computers are your life, aren't they?\nAngela: Yes. The perfect hiding place.";
+        }
+        {
+          who = "Spoon Boy";
+          film = "The Matrix (1999)";
+          text = "There is no spoon.";
+        }
+        {
+          who = "Morpheus";
+          film = "The Matrix (1999)";
+          text = "Unfortunately, no one can be... told what the Matrix is. You have to see it for yourself.";
+        }
+        {
+          who = "Morpheus";
+          film = "The Matrix (1999)";
+          text = "Remember: all I'm offering is the truth. Nothing more.";
+        }
+        {
+          who = "Master Control Program";
+          film = "Tron (1982)";
+          text = "End of Line.";
+        }
+        {
+          who = "Flynn";
+          film = "Tron (1982)";
+          text = "Greetings, Programs!";
+        }
+        {
+          who = "Rinzler";
+          film = "Tron: Legacy (2010)";
+          text = "I fight—for the users!";
+        }
+        {
+          who = "Richard Mackey";
+          film = "Tron: Legacy (2010)";
+          text = "This year we put a “12” on the box.";
+        }
+        {
+          who = "Sean Parker";
+          film = "The Social Network (2010)";
+          text = "A million dollars isn't cool. You know what's cool? A billion dollars.";
+        }
+        {
+          who = "Erica Albright";
+          film = "The Social Network (2010)";
+          text = "The internet isn't written in pencil, Mark. It's written in ink.";
+        }
+        {
+          who = "Mark Zuckerberg";
+          film = "The Social Network (2010)";
+          text = "A guy who makes a nice chair doesn't owe money to everyone who has ever built a chair.";
+        }
+        {
+          who = "Milo Hoffman";
+          film = "Antitrust (2001)";
+          text = "Human knowledge belongs to the world.";
+        }
+        {
+          who = "Gary Winston";
+          film = "Antitrust (2001)";
+          text = "This business is binary, you're a one or a zero. Alive or dead.";
+        }
+        {
+          who = "Lex Murphy";
+          film = "Jurassic Park (1993)";
+          text = "It's a UNIX system, I know this!";
+        }
+        {
+          who = "Milton Waddams";
+          film = "Office Space (1999)";
+          text = "I believe you have my stapler...";
+        }
+        {
+          who = "Bill Lumbergh";
+          film = "Office Space (1999)";
+          text = "I'm going to need those TPS reports... ASAP...";
+        }
+        {
+          who = "Edward Snowden";
+          film = "Snowden (2016)";
+          text = "No matter who you are, every day of your life, you're sitting in a database just ready to be looked at.";
+        }
+        {
+          who = "Corbin O'Brian";
+          film = "Snowden (2016)";
+          text = "Secrecy is security and security is victory.";
+        }
+      ];
+    in
+    pkgs.runCommand "screensaver-quotes" { } (
+      ''
+        mkdir -p "$out"
+        # render TEXT WHO FILM N — WHO may be empty (a dialogue exchange).
+        render() {
+          printf '%b\n' "$1" | fold -s -w 52 | sed 's/[[:space:]]*$//' > body
+          {
+            if [ -n "$2" ]; then
+              echo "— $2"
+              echo "$3"
+            else
+              echo "— $3"
+            fi
+          } > attr
+          width=$(cat body attr | awk '{ if (length > w) w = length } END { print w }')
+          {
+            cat body
+            echo
+            while IFS= read -r line; do printf '%*s\n' "$width" "$line"; done < attr
+          } > "$out/$4.txt"
+        }
+      ''
+      + lib.concatImapStrings (
+        i: q:
+        "render ${lib.escapeShellArg q.text} ${
+          lib.escapeShellArg (if q.who == null then "" else q.who)
+        } ${lib.escapeShellArg q.film} ${toString i}\n"
+      ) quotes
+    );
+
+  # The loop inside each window. Runs one tte effect at a time and polls for
+  # a key (1 s read timeout) and for focus loss while it plays. The focus
+  # check waits out a 5 s grace period: the launcher moves focus between
+  # outputs while it opens one window per output, and an earlier window
+  # would otherwise see that and quit.
+  screensaverRun = pkgs.writeShellApplication {
+    name = "screensaver-run";
+    runtimeInputs = [
+      pkgs.terminaltexteffects
+      pkgs.ncurses # tput
+      pkgs.coreutils # shuf
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.jq
+      osConfig.programs.niri.package
+    ];
+    text = ''
+      app_id=${lib.escapeShellArg screensaverAppId}
+
+      quit_all() {
+        trap - INT TERM HUP
+        if [ -n "''${tte_pid:-}" ]; then kill "$tte_pid" 2>/dev/null || true; fi
+        niri msg -j windows \
+          | jq -r --arg a "$app_id" '.[] | select(.app_id == $a) | .id' \
+          | while read -r id; do niri msg action close-window --id "$id" || true; done
+        exit 0
+      }
+      trap quit_all INT TERM HUP
+
+      still_focused() {
+        niri msg -j focused-window | jq -e --arg a "$app_id" '.app_id == $a' >/dev/null
+      }
+
+      printf '\033[?25l' # hide the terminal cursor
+      started=$SECONDS
+      last=
+      while true; do
+        clear
+        # A random quote, never the same one twice in a row.
+        quote=$(find ${screensaverQuotes} -name '*.txt' | grep -vxF -- "$last" | shuf -n1)
+        last=$quote
+        # print is excluded: it is a plain typewriter, not a screensaver.
+        tte --input-file "$quote" \
+          --frame-rate 120 \
+          --canvas-width 0 --canvas-height "$(($(tput lines) - 1))" \
+          --anchor-canvas c --anchor-text c \
+          --random-effect --exclude-effects print &
+        tte_pid=$!
+        while kill -0 "$tte_pid" 2>/dev/null; do
+          if read -rsn1 -t 1; then quit_all; fi
+          if [ $((SECONDS - started)) -gt 5 ] && ! still_focused; then quit_all; fi
+        done
+        tte_pid=
+        # Hold the finished quote long enough to read before the next one.
+        if read -rsn1 -t 6; then quit_all; fi
+      done
+    '';
+  };
+
+  screensaver = pkgs.writeShellApplication {
+    name = "screensaver";
+    runtimeInputs = [
+      config.programs.noctalia.package
+      osConfig.programs.niri.package
+      pkgs.jq
+      pkgs.coreutils
+    ];
+    text = ''
+      app_id=${lib.escapeShellArg screensaverAppId}
+
+      count() {
+        niri msg -j windows | jq --arg a "$app_id" '[.[] | select(.app_id == $a)] | length'
+      }
+
+      if [ "''${1:-}" = "--stop" ]; then
+        niri msg -j windows \
+          | jq -r --arg a "$app_id" '.[] | select(.app_id == $a) | .id' \
+          | while read -r id; do niri msg action close-window --id "$id" || true; done
+        exit 0
+      fi
+
+      # Under the lock screen nobody would see it, and it would still be
+      # there after unlock.
+      if noctalia msg status 2>/dev/null | jq -e '.locked' >/dev/null; then exit 0; fi
+      [ "$(count)" -eq 0 ] || exit 0
+
+      # One window per enabled output. A new window opens on the focused
+      # output, so focus each in turn and wait for that window to map before
+      # moving on; otherwise a slow start lands two windows on one output.
+      # Spawned through niri so the windows are niri's children, not ours.
+      niri msg -j outputs \
+        | jq -r 'to_entries[] | select(.value.current_mode != null) | .key' \
+        | while read -r output; do
+          before=$(count)
+          niri msg action focus-monitor "$output"
+          niri msg action spawn -- ${lib.getExe config.programs.ghostty.package} \
+            --class="$app_id" \
+            --gtk-single-instance=false \
+            --background=#000000 \
+            --font-size=20 \
+            --window-padding-x=0 --window-padding-y=0 \
+            --window-decoration=none \
+            --confirm-close-surface=false \
+            --mouse-hide-while-typing=true \
+            -e ${lib.getExe screensaverRun}
+          for _ in $(seq 50); do
+            [ "$(count)" -gt "$before" ] && break
+            sleep 0.1
+          done
+        done
     '';
   };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
@@ -1746,6 +2813,16 @@ in
           action = "screen_off";
           enabled = true;
         };
+        # Screensaver (see the let block). No locked_timeout: the launcher
+        # itself refuses to start under the lock. resume_command closes it on
+        # the first input after idle — mouse included — which tte's
+        # key-only exit can't see.
+        screensaver = {
+          timeout = 300;
+          command = "${screensaver}/bin/screensaver";
+          resume_command = "${screensaver}/bin/screensaver --stop";
+          enabled = true;
+        };
         hibernate = {
           timeout = 900;
           command = "${suspendUnlessOnAc}/bin/suspend-unless-on-ac";
@@ -1789,6 +2866,15 @@ in
   xdg.configFile."niri/config.kdl".force = true;
 
   wayland.windowManager.niri.settings = {
+    # Screensaver windows (screensaverAppId in the let block) open
+    # fullscreen and focused on whichever output the launcher focused.
+    window-rule = [
+      {
+        match._props.app-id._raw = ''r#"^dev\.sjr\.screensaver$"#'';
+        open-fullscreen = true;
+        open-focused = true;
+      }
+    ];
     input.touchpad = {
       tap = { };
       natural-scroll = { };
@@ -2302,6 +3388,8 @@ in
   # The idle escalation is driven entirely by Noctalia's own idle manager,
   # configured declaratively via programs.noctalia.settings.idle.behavior above:
   #
+  #   - SCREENSAVER (5 min): [idle.behavior.screensaver] timeout=300, the
+  #     `screensaver` script (let block); resume_command closes it on input.
   #   - LOCK (10 min): [idle.behavior.lock] timeout=600, native action="lock".
   #     Locks via WlSessionLock — the ONLY path that works, since Noctalia
   #     ignores logind's Lock signal, so `loginctl lock-session` is a no-op.
