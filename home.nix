@@ -1574,6 +1574,46 @@ let
           text = "Put away some money so you can die someplace warm and don't ever touch it.";
         }
         {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "Technology gets better everyday. That's fine. But most of the time all you need is a stick of gum, a pocket knife and a smile.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "You go off the reservation, I will not come after you.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "Don't ever risk your life or career for an asset. If it comes down to you or them... send flowers.";
+        }
+        {
+          who = "Nathan Muir";
+          film = "Spy Game (2001)";
+          text = "What if she were an asset? You told her four lies that now have to be true.";
+        }
+        {
+          who = null;
+          film = "Spy Game (2001)";
+          text = "Bishop: I thought spies drank martinis.\nMuir: Scotch, never less than twelve years old.\nBishop: Is that right? Agency rules?\nMuir: My rules.";
+        }
+        {
+          who = null;
+          film = "Spy Game (2001)";
+          text = "Bishop: Happy Birthday, Nathan. Did you know Langley has seven different birth dates for you?\nMuir: And they're all wrong.";
+        }
+        {
+          who = null;
+          film = "Spy Game (2001)";
+          text = "Muir: The man reading the menu. Threat?\nBishop: Only to the hostess.";
+        }
+        {
+          who = "Troy Fogler";
+          film = "Spy Game (2001)";
+          text = "No one knows Nathan, not really.";
+        }
+        {
           who = "Solomon Lane";
           film = "Mission: Impossible - Fallout (2018)";
           text = "I don't care in the least what people think or feel.";
