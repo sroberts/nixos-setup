@@ -23,7 +23,7 @@ three on every PR and push to `main`:
 
 ```bash
 nix flake check --no-build --show-trace          # flake evaluates, outputs well-formed
-nix fmt                                          # nixfmt; tree is already clean
+git ls-files '*.nix' | xargs nix fmt            # nixfmt; bare `nix fmt` formats nothing
 nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath
 ```
 

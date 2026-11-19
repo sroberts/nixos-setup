@@ -45,8 +45,9 @@ jobs:
 
       # Enforce nixfmt formatting on every .nix file. The flake's formatter
       # output (formatter.x86_64-linux = nixfmt) defines the canonical style;
-      # this just refuses to merge anything that drifts. Run `nix fmt` locally
-      # to fix.
+      # this just refuses to merge anything that drifts. To fix locally, pass the
+      # files: `git ls-files '*.nix' | xargs nix fmt` (bare `nix fmt` runs
+      # nixfmt on stdin and formats nothing).
       - name: nix fmt --check
         run: find . -name '*.nix' -not -path './.git/*' -print0 | xargs -0 nix fmt -- --check
 

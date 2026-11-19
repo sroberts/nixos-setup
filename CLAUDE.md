@@ -60,7 +60,7 @@ There are no tests — a NixOS config is verified by evaluating and rebuilding i
 
 `os-update` / `os-diff` are `writeShellApplication`s in `home.nix`'s `let` block (rationale in the comment above them); `nh` is `programs.nh` in `configuration.nix` with `clean` deliberately off — `nix.gc` stays the one GC mechanism (weekly, `--delete-older-than 30d`), and the nh module warns if both run.
 
-Formatting **is** enforced: nixfmt is the linter, the tree is already clean, and CI fails on any drift. Run `nix fmt` after editing a `.nix` file — it is a no-op unless you actually introduced drift, so it will not produce a churn diff.
+Formatting **is** enforced: nixfmt is the linter, the tree is already clean, and CI fails on any drift. After editing a `.nix` file, format it by name: `nix fmt home.nix` (or `git ls-files '*.nix' | xargs nix fmt` for the whole tree). It only rewrites what actually drifted, so it will not produce a churn diff. **Bare `nix fmt` with no file arguments does not format anything:** the flake's formatter is plain `nixfmt`, which with no arguments reads stdin, so it fails on empty input and leaves every file untouched. Check with `git ls-files '*.nix' | xargs nix fmt -- --check`, the same check CI runs.
 
 ## Architecture
 
