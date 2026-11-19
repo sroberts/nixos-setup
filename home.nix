@@ -4611,56 +4611,57 @@ in
   # ~/.local/share/applications/webapp-<key>.desktop. Exec args are
   # double-quoted because the desktop-entry spec reserves '?' (yarr's
   # actions) and requires quoting around reserved characters.
-  xdg.desktopEntries = lib.mapAttrs' (
-    key: app:
-    let
-      # Public apps: split `url` so actions can reuse the host. Lazy, so
-      # never forced for tailnet apps (which have no `url`).
-      host = lib.head (lib.match "https://([^/]+)/.*" app.url);
-      startPath = app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
-      launch =
-        p:
-        if app ? tailnetHost then
-          ''${lib.getExe webappLaunch} --tailnet "${app.tailnetHost}" "${p}"''
-        else
-          ''${lib.getExe webappLaunch} "https://${host}${p}"'';
-    in
-    lib.nameValuePair "webapp-${key}" {
-      inherit (app) name;
-      genericName = "Web App";
-      exec = launch startPath;
-      icon = "${app.icon}";
-      terminal = false;
-      categories = [ "Network" ];
-      # Lets docks/launchers tie the running window back to this entry.
-      # Only knowable at eval time for public URLs; tailnet app-ids embed the
-      # tailnet suffix, which this public repo never writes down.
-      settings = lib.optionalAttrs (!(app ? tailnetHost)) {
-        StartupWMClass = "chrome-${host}${lib.replaceStrings [ "/" ] [ "_" ] "_${startPath}"}-Default";
+  xdg.desktopEntries =
+    lib.mapAttrs' (
+      key: app:
+      let
+        # Public apps: split `url` so actions can reuse the host. Lazy, so
+        # never forced for tailnet apps (which have no `url`).
+        host = lib.head (lib.match "https://([^/]+)/.*" app.url);
+        startPath = app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
+        launch =
+          p:
+          if app ? tailnetHost then
+            ''${lib.getExe webappLaunch} --tailnet "${app.tailnetHost}" "${p}"''
+          else
+            ''${lib.getExe webappLaunch} "https://${host}${p}"'';
+      in
+      lib.nameValuePair "webapp-${key}" {
+        inherit (app) name;
+        genericName = "Web App";
+        exec = launch startPath;
+        icon = "${app.icon}";
+        terminal = false;
+        categories = [ "Network" ];
+        # Lets docks/launchers tie the running window back to this entry.
+        # Only knowable at eval time for public URLs; tailnet app-ids embed the
+        # tailnet suffix, which this public repo never writes down.
+        settings = lib.optionalAttrs (!(app ? tailnetHost)) {
+          StartupWMClass = "chrome-${host}${lib.replaceStrings [ "/" ] [ "_" ] "_${startPath}"}-Default";
+        };
+        actions = lib.mapAttrs (actionName: actionPath: {
+          name = actionName;
+          exec = launch actionPath;
+        }) (app.actions or { });
+      }
+    ) webApps
+    // {
+      # The default URL handler (`openLink` in the let block); see xdg.mimeApps.
+      # NoDisplay keeps it out of the launcher — it only ever opens links.
+      open-link = {
+        name = "Open Link";
+        exec = "${lib.getExe openLink} %U";
+        terminal = false;
+        noDisplay = true;
+        mimeType = [
+          "text/html"
+          "x-scheme-handler/http"
+          "x-scheme-handler/https"
+          "x-scheme-handler/about"
+          "x-scheme-handler/unknown"
+        ];
       };
-      actions = lib.mapAttrs (actionName: actionPath: {
-        name = actionName;
-        exec = launch actionPath;
-      }) (app.actions or { });
-    }
-  ) webApps
-  // {
-    # The default URL handler (`openLink` in the let block); see xdg.mimeApps.
-    # NoDisplay keeps it out of the launcher — it only ever opens links.
-    open-link = {
-      name = "Open Link";
-      exec = "${lib.getExe openLink} %U";
-      terminal = false;
-      noDisplay = true;
-      mimeType = [
-        "text/html"
-        "x-scheme-handler/http"
-        "x-scheme-handler/https"
-        "x-scheme-handler/about"
-        "x-scheme-handler/unknown"
-      ];
     };
-  };
 
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
