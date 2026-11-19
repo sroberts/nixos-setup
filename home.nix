@@ -921,22 +921,12 @@ let
         {
           who = null;
           film = "Casino Royale (2006)";
-          text = "Bartender: Shaken or stirred?\nBond: Do I look like I give a damn?";
-        }
-        {
-          who = null;
-          film = "Casino Royale (2006)";
           text = "Vesper: I'm the money.\nBond: Every penny of it.";
         }
         {
           who = "James Bond";
           film = "Casino Royale (2006)";
           text = "I'm sorry. That last hand... nearly killed me.";
-        }
-        {
-          who = "M";
-          film = "Casino Royale (2006)";
-          text = "Christ, I miss the Cold War!";
         }
         {
           who = "M";
@@ -1119,11 +1109,6 @@ let
           text = "There's nothing more pathetic than an aging hipster.";
         }
         {
-          who = "James Bond";
-          film = "From Russia with Love (1963)";
-          text = "You won't be needing this... 'old man'.";
-        }
-        {
           who = null;
           film = "Thunderball (1965)";
           text = "Bond: Everything you give me...\nQ: ...is treated with equal contempt. Yes, I know.";
@@ -1137,16 +1122,6 @@ let
           who = "Blofeld";
           film = "You Only Live Twice (1967)";
           text = "You only live twice, Mr. Bond.";
-        }
-        {
-          who = null;
-          film = "Diamonds Are Forever (1971)";
-          text = "Mr. Wint: If at first you don't succeed, Mr. Kidd....\nMr. Kidd: Try, try again, Mr. Wint.";
-        }
-        {
-          who = "James Bond";
-          film = "Live and Let Die (1973)";
-          text = "I should have told you. Never go in there without a mongoose.";
         }
         {
           who = "Mr. Big";
@@ -1174,11 +1149,6 @@ let
           text = "Bond: Q, have I ever let you down?\nQ: Frequently.";
         }
         {
-          who = "James Bond";
-          film = "The Spy Who Loved Me (1977)";
-          text = "Keeping the British end up, sir.";
-        }
-        {
           who = "Hugo Drax";
           film = "Moonraker (1979)";
           text = "You appear with the tedious inevitability of an unloved season.";
@@ -1190,18 +1160,8 @@ let
         }
         {
           who = null;
-          film = "For Your Eyes Only (1981)";
-          text = "Bond: Forgive me, Father, for I have sinned.\nQ: That's putting it mildly, 007!";
-        }
-        {
-          who = null;
           film = "A View to a Kill (1985)";
           text = "May Day: Wow! What a view...\nZorin: ...to a kill!";
-        }
-        {
-          who = "Max Zorin";
-          film = "A View to a Kill (1985)";
-          text = "Intuitive improvisation is the secret of genius.";
         }
         {
           who = "Mr. White";
@@ -1279,9 +1239,29 @@ let
           text = "Smart: Well, not everything's a competition.\nAgent 99: If it were, I'd win.";
         }
         {
+          who = null;
+          film = "Atomic Blonde (2017)";
+          text = "Percival: Truth and lies. People like us don't know the difference.\nLorraine: No, we know the difference, David. We choose to ignore it.";
+        }
+        {
+          who = "Lorraine Broughton";
+          film = "Atomic Blonde (2017)";
+          text = "You know those movies where the picture just starts to slow down... and melt? Then catch fire? Well, that's Berlin.";
+        }
+        {
           who = "David Percival";
           film = "Atomic Blonde (2017)";
-          text = "Truth and lies. People like us don't know the difference.";
+          text = "Ironic. The news will tell them there will be no more secrets. But you and I, we both know that's not true. This world is run on secrets.";
+        }
+        {
+          who = null;
+          film = "Atomic Blonde (2017)";
+          text = "Percival: It's a double pleasure to deceive the deceiver.\nLorraine: Niccolo Machiavelli. It was on your shelf.";
+        }
+        {
+          who = null;
+          film = "Atomic Blonde (2017)";
+          text = "Delphine: When you tell the truth, you look different. Your eyes change.\nLorraine: Thanks for the warning.";
         }
         {
           who = "Austin Powers";
@@ -1337,16 +1317,6 @@ let
           who = "Colonel Moon";
           film = "Die Another Day (2002)";
           text = "I studied at Oxford and Harvard. Majored in Western hypocrisy.";
-        }
-        {
-          who = null;
-          film = "Die Another Day (2002)";
-          text = "Jinx: So, what do predators do...when the sun goes down?\nBond: They feast...like there's no tomorrow.";
-        }
-        {
-          who = "Q";
-          film = "Die Another Day (2002)";
-          text = "Yes, well, it's called the future, so get used to it.";
         }
         {
           who = "James Bond";
@@ -1492,11 +1462,6 @@ let
           who = "Renard";
           film = "The World Is Not Enough (1999)";
           text = "A man tires of being executed.";
-        }
-        {
-          who = "James Bond";
-          film = "Goldfinger (1964)";
-          text = "Shocking. Positively shocking.";
         }
         {
           who = "M";
