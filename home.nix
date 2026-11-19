@@ -573,6 +573,46 @@ let
     '';
   };
 
+  # Default URL handler (xdg.mimeApps below): open a link in Chromium AND
+  # bring that window into view. Without this, a link clicked in a terminal
+  # (Ghostty → xdg-open, Herdr → the OpenURI portal) does open, but silently:
+  # when Chromium is already running, the second `chromium <url>` just hands
+  # the URL to the running session ("Opening in existing browser session")
+  # and exits. The tab lands in Chromium's last-active window, and that window
+  # never takes focus, because niri only moves focus for an xdg-activation
+  # token and neither the terminal nor the portal passes one through. In
+  # niri's scrolling layout that window is usually an off-screen column, so
+  # the click looks like it did nothing.
+  #
+  # So after the hand-off, focus the normal browser window (app-id
+  # `chromium-browser`; --app web-app windows have their own app-ids and are
+  # never where Chromium puts a tab) with the newest `focus_timestamp`, which
+  # is the window Chromium just used. If no browser window exists, `chromium`
+  # opens a new one, and niri focuses new windows by itself.
+  openLink = pkgs.writeShellApplication {
+    name = "open-link";
+    runtimeInputs = [
+      osConfig.programs.niri.package
+      pkgs.chromium # same derivation configuration.nix installs
+      pkgs.jq
+    ];
+    text = ''
+      browsers() {
+        niri msg -j windows | jq '[ .[] | select(.app_id == "chromium-browser") ]'
+      }
+
+      if [ "$(browsers | jq length)" -eq 0 ]; then
+        exec chromium "$@"
+      fi
+
+      chromium "$@"
+      target=$(browsers | jq -r '
+        max_by(.focus_timestamp // { secs: 0, nanos: 0 } | [.secs, .nanos]) | .id
+      ')
+      exec niri msg action focus-window --id "$target"
+    '';
+  };
+
   # System menu (Mod+Alt+Space) — one key to a fuzzy list of session/system
   # actions, after Omarchy's menu. The picker is Noctalia's own launcher in
   # dmenu mode (`noctalia dmenu`, src/launcher/dmenu_cli.cpp): it reads
@@ -4547,14 +4587,19 @@ in
   # for itself — so `xdg-open https://...` (e.g. `gh auth refresh`) opens
   # Signal instead of a browser. home-manager replaces mimeapps.list with a
   # store-path symlink, which Signal can't clobber.
+  #
+  # The handler is open-link.desktop (xdg.desktopEntries), not
+  # chromium-browser.desktop directly: it opens the URL in the same Chromium
+  # and then focuses that window, which niri otherwise never does for a link
+  # handed to an already-running Chromium (`openLink` in the let block).
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      "text/html" = "chromium-browser.desktop";
-      "x-scheme-handler/http" = "chromium-browser.desktop";
-      "x-scheme-handler/https" = "chromium-browser.desktop";
-      "x-scheme-handler/about" = "chromium-browser.desktop";
-      "x-scheme-handler/unknown" = "chromium-browser.desktop";
+      "text/html" = "open-link.desktop";
+      "x-scheme-handler/http" = "open-link.desktop";
+      "x-scheme-handler/https" = "open-link.desktop";
+      "x-scheme-handler/about" = "open-link.desktop";
+      "x-scheme-handler/unknown" = "open-link.desktop";
       # Claude Code's URL handler (claude-cli://...) — preserved from the
       # runtime mimeapps.list so `claude` URL launches still work.
       "x-scheme-handler/claude-cli" = "claude-code-url-handler.desktop";
@@ -4598,7 +4643,24 @@ in
         exec = launch actionPath;
       }) (app.actions or { });
     }
-  ) webApps;
+  ) webApps
+  // {
+    # The default URL handler (`openLink` in the let block); see xdg.mimeApps.
+    # NoDisplay keeps it out of the launcher — it only ever opens links.
+    open-link = {
+      name = "Open Link";
+      exec = "${lib.getExe openLink} %U";
+      terminal = false;
+      noDisplay = true;
+      mimeType = [
+        "text/html"
+        "x-scheme-handler/http"
+        "x-scheme-handler/https"
+        "x-scheme-handler/about"
+        "x-scheme-handler/unknown"
+      ];
+    };
+  };
 
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
