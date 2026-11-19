@@ -49,8 +49,8 @@ let
         src = pkgs.fetchFromGitHub {
           owner = "sroberts";
           repo = "tally";
-          rev = "06b0ea5cff15793ab208929e0fd9f44abfd99c38";
-          hash = "sha256-hvNiRfRjRkjuinWaglEPeZUDR3vgWgR9rsnITr9qVyE=";
+          rev = "54458ac09c05c9b770d91bf1754b95abd4c33e33";
+          hash = "sha256-Tv1zR/H7Oq/DX9+10ccmAFA1mFc3oXfOYgqS100Scm8=";
         };
         vendorHash = "sha256-584KLBelow3VgO+k49iWoUssSEgM1RizjsBUtDtGJf0=";
         subPackages = [ "." ];
