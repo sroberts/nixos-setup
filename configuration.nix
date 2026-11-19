@@ -380,6 +380,14 @@ in
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   services.tailscale.enable = true;
+  # tally's browser pad (`tally serve --web`) fetches its HTTPS certificate
+  # with `tailscale cert` as the user, which on Linux needs the user to be
+  # Tailscale's operator.
+  services.tailscale.extraSetFlags = [ "--operator=sroberts" ];
+  # The browser pad itself: HTTPS on 47825, reached by this machine's
+  # MagicDNS name, so it opens on the tailnet only. Sign-in is a password
+  # (`tally web`), so the open port alone grants nothing. Its port is opened
+  # on tailscale0 with sshd's, below.
   # SSH, for remote login over the tailnet only. openFirewall is off so port
   # 22 stays closed on Wi-Fi/LAN; the per-interface rule opens it on
   # tailscale0 alone, so only this tailnet's devices can reach sshd. Keys
@@ -395,10 +403,14 @@ in
       AllowUsers = [ "sroberts" ];
     };
   };
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 22 ];
+  # Tailnet-only ports: sshd (22) and tally's browser pad (47825, above).
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [
+    22
+    47825
+  ];
   # tally's soft-pad listener (systemd.user.services.tally in home.nix runs
-  # `tally serve --remote`): TLS WebSocket on 47824 for paired vibepad phones,
-  # plus mDNS on 5353 so the phone can find the laptop via Bonjour
+  # `tally serve --remote --web`): TLS WebSocket on 47824 for paired vibepad
+  # phones, plus mDNS on 5353 so the phone can find the laptop via Bonjour
   # (_tally._tcp) when its address changes. Auth is the pinned cert + token
   # from `tally pair`, so the open port alone grants nothing.
   networking.firewall.allowedTCPPorts = [ 47824 ];

@@ -24,22 +24,37 @@ let
     vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
   };
 
-  # sroberts/tally — host daemon that mirrors herdr's agent states to the
-  # vibe-macropad (USB serial) and the vibepad iPhone app. No tags or flake
-  # upstream, so it's pinned to a commit; bump `rev` + `hash` by hand. go.mod
-  # asks for Go 1.27, newer than the default `buildGoModule` toolchain.
-  tally = pkgs.buildGo127Module {
-    pname = "tally";
-    version = "0-unstable-2026-10-19";
-    src = pkgs.fetchFromGitHub {
-      owner = "sroberts";
-      repo = "tally";
-      rev = "f444368d03170cfcc44b9de94535605a155813db";
-      hash = "sha256-g7vnqcACaWOKnalMmJbH5JNoMEIuQjmJ42PNaAZpBuY=";
-    };
-    vendorHash = "sha256-VPTg7xj2H5waBLy6jUGHypp7K7/+zo0k5/QPAYYMA0Q=";
-    subPackages = [ "cmd/tally" ];
-  };
+  # sroberts/tally — host daemon that mirrors the Herdr app's agent states
+  # (herdr-core, across its connected machines) to the browser pad, the
+  # vibepad iPhone app and the vibe-macropad, and drives the app's window
+  # from them. Pinned to a commit; bump `rev`, `hash` and `vendorHash` by
+  # hand. go.mod asks for Go 1.27, newer than the default `buildGoModule`
+  # toolchain. The CLI lives at the repo root, so the main package is ".".
+  # tally's go.mod sets a security floor (Go 1.27.4) newer than nixpkgs'
+  # go_1_27, so it builds with that release from go.dev's source tarball
+  # (hash from go.dev/dl). Drop the override once nixpkgs catches up.
+  tally =
+    (pkgs.buildGo127Module.override {
+      go = pkgs.go_1_27.overrideAttrs (_: rec {
+        version = "1.27.4";
+        src = pkgs.fetchurl {
+          url = "https://go.dev/dl/go${version}.src.tar.gz";
+          hash = "sha256-c8+4VxrsDAEXdofbhxY9Rqog6XeWcncokaoXZU2aYJk=";
+        };
+      });
+    })
+      {
+        pname = "tally";
+        version = "0-unstable-2026-11-18";
+        src = pkgs.fetchFromGitHub {
+          owner = "sroberts";
+          repo = "tally";
+          rev = "06b0ea5cff15793ab208929e0fd9f44abfd99c38";
+          hash = "sha256-hvNiRfRjRkjuinWaglEPeZUDR3vgWgR9rsnITr9qVyE=";
+        };
+        vendorHash = "sha256-584KLBelow3VgO+k49iWoUssSEgM1RizjsBUtDtGJf0=";
+        subPackages = [ "." ];
+      };
 
   # ── herdr.dev desktop app ───────────────────────────────────────
   # The GUI sibling of the `herdr` TUI already installed below (inputs.herdr,
@@ -2401,12 +2416,16 @@ in
   # tally's background agent, declared here instead of via `tally
   # install-agent` (which writes the same unit imperatively into
   # ~/.config/systemd/user/). Mirrors that unit: `tally serve`, restart 2 s
-  # after any exit. `--remote` also serves paired vibepad phones on :47824;
-  # the firewall opening for it is in configuration.nix. Pair with `tally pair`.
+  # after any exit. `--remote` also serves paired vibepad phones on :47824
+  # (pair with `tally pair`); `--web` serves the browser pad over HTTPS on
+  # :47825 at this machine's MagicDNS name, with a certificate from
+  # `tailscale cert` (sign in with `tally web`). The firewall openings and
+  # the Tailscale operator setting the certificate needs are in
+  # configuration.nix.
   systemd.user.services.tally = {
     Unit.Description = "tally: herdr agent status for the vibepads";
     Service = {
-      ExecStart = "${tally}/bin/tally serve --remote";
+      ExecStart = "${tally}/bin/tally serve --remote --web";
       Restart = "always";
       RestartSec = 2;
     };
