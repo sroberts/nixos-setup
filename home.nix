@@ -45,14 +45,14 @@ let
     })
       {
         pname = "tally";
-        version = "0-unstable-2026-11-18";
+        version = "0-unstable-2026-11-19";
         src = pkgs.fetchFromGitHub {
           owner = "sroberts";
           repo = "tally";
-          rev = "54458ac09c05c9b770d91bf1754b95abd4c33e33";
-          hash = "sha256-Tv1zR/H7Oq/DX9+10ccmAFA1mFc3oXfOYgqS100Scm8=";
+          rev = "958700c11c3e0d1a265e0dc1e0a4236bc3a2d180";
+          hash = "sha256-6JR5T3TRZfUBqnHllTmC9aY2m0jIx25N2RY1/h1XWlU=";
         };
-        vendorHash = "sha256-584KLBelow3VgO+k49iWoUssSEgM1RizjsBUtDtGJf0=";
+        vendorHash = "sha256-RPt6QwkBpr1bntOUQ7/9m/q1JI60DDhBTIc/VBK//N4=";
         subPackages = [ "." ];
       };
 
