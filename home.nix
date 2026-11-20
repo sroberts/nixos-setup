@@ -843,17 +843,21 @@ let
 
   # Screensaver, Omarchy-style: a random spy- or hacker-movie quote, animated by
   # terminaltexteffects (`tte`) with a random effect per pass, in a
-  # fullscreen black ghostty on every output. Any key, or focus leaving the
-  # window, dismisses it.
+  # fullscreen black ghostty on every output, mirrored: every screen plays the
+  # same quote with the same effect at the same moment. Any key, or focus
+  # leaving the screensaver, dismisses it, and dismissing it always locks the
+  # session: getting back to the desktop takes the password, however the
+  # screensaver ends.
   #
   #   screensaver          start it on every output (no-op if locked or running)
-  #   screensaver --stop   close every screensaver window
+  #   screensaver --stop   lock, then close every screensaver window
   #
   # Triggered by Noctalia's idle manager ([idle.behavior.screensaver], 5 min,
   # half the lock timeout like Omarchy's 2.5/5). Its resume_command runs
   # `--stop` on the first input after idle, so mouse movement dismisses it
-  # too, and so does the first keypress at the lock screen (the lock at
-  # 10 min covers a still-running screensaver; unlocking must not reveal it).
+  # (and locks) too. When the 10 min idle lock comes up over a running
+  # screensaver, it takes focus, so the windows see focus leave and close
+  # behind the lock screen; unlocking never reveals a stale screensaver.
   # From the system menu there is no idle period, so only a key or a focus
   # change ends it.
   #
@@ -861,6 +865,46 @@ let
   # application id, hence the dots). The window rule that makes them
   # fullscreen is in wayland.windowManager.niri.settings.window-rule.
   screensaverAppId = "dev.sjr.screensaver";
+
+  # The one way a screensaver ends: lock first, wait for the lock screen to be
+  # up, then close the windows. Noctalia's lock is a session lock, which
+  # draws above every window, so the desktop is never visible in between.
+  # The windows close only after the lock is confirmed. If it never comes up
+  # (5 s), they stay open, so a lock failure leaves the screensaver on screen
+  # rather than revealing the desktop unlocked; a keypress then retries.
+  # A no-op when no screensaver is open, so the idle manager's
+  # resume_command cannot lock a session whose screensaver never started
+  # (e.g. input during the pre-action fade).
+  screensaverDismiss = pkgs.writeShellApplication {
+    name = "screensaver-dismiss";
+    runtimeInputs = [
+      config.programs.noctalia.package
+      osConfig.programs.niri.package
+      pkgs.jq
+      pkgs.coreutils
+    ];
+    text = ''
+      app_id=${lib.escapeShellArg screensaverAppId}
+      mapfile -t windows < <(niri msg -j windows \
+        | jq -r --arg a "$app_id" '.[] | select(.app_id == $a) | .id')
+      [ "''${#windows[@]}" -gt 0 ] || exit 0
+
+      locked() {
+        noctalia msg status 2>/dev/null | jq -e '.locked' >/dev/null
+      }
+      locked || noctalia msg session lock >/dev/null 2>&1 || true
+      for _ in $(seq 50); do
+        locked && break
+        sleep 0.1
+      done
+      if ! locked; then
+        echo "screensaver-dismiss: session did not lock; leaving the screensaver up" >&2
+        exit 1
+      fi
+
+      for id in "''${windows[@]}"; do niri msg action close-window --id "$id" || true; done
+    '';
+  };
 
   # Spy- and hacker-movie quotes, one per tte pass, each with who said it.
   # Wording and speakers come from the films' Wikiquote pages, except The
@@ -1795,61 +1839,118 @@ let
       ) quotes
     );
 
-  # The loop inside each window. Runs one tte effect at a time and polls for
-  # a key (1 s read timeout) and for focus loss while it plays. The focus
-  # check waits out a 5 s grace period: the launcher moves focus between
-  # outputs while it opens one window per output, and an earlier window
-  # would otherwise see that and quit.
+  # The loop inside each window: `screensaver-run <state-dir> <index>`.
+  #
+  # Every output shows the same thing at the same moment. Window 0 leads:
+  # before each pass it waits until every window has reported in for that
+  # pass, holds the previous quote long enough to read, then publishes the
+  # pass in $dir/pass ("N SEED COLS LINES QUOTE", written atomically). Every
+  # window, the leader included, then plays it. Mirroring rests on
+  # `tte --seed`, which seeds Python's global `random`, so it fixes both the
+  # effect choice and the effect's own randomness: with the same seed and the
+  # same canvas, every window renders the same frames. The canvas is the
+  # smallest terminal grid across the windows (each reports its size as it
+  # checks in), centred on the larger screens.
+  #
+  # Each window polls for a key (0.1 s read timeout) the whole time, and for
+  # focus leaving the screensaver once $dir/ready exists, i.e. once the
+  # launcher has finished moving windows between outputs. A window that
+  # never reports in only delays a pass by the 30 s check-in timeout.
   screensaverRun = pkgs.writeShellApplication {
     name = "screensaver-run";
     runtimeInputs = [
       pkgs.terminaltexteffects
       pkgs.ncurses # tput
-      pkgs.coreutils # shuf
+      pkgs.coreutils # shuf, sort
       pkgs.findutils
       pkgs.gnugrep
+      pkgs.gawk
       pkgs.jq
       osConfig.programs.niri.package
     ];
     text = ''
       app_id=${lib.escapeShellArg screensaverAppId}
+      dir=$1
+      index=$2
 
-      quit_all() {
-        trap - INT TERM HUP
+      stop_tte() {
         if [ -n "''${tte_pid:-}" ]; then kill "$tte_pid" 2>/dev/null || true; fi
-        niri msg -j windows \
-          | jq -r --arg a "$app_id" '.[] | select(.app_id == $a) | .id' \
-          | while read -r id; do niri msg action close-window --id "$id" || true; done
-        exit 0
+        tte_pid=
       }
-      trap quit_all INT TERM HUP
+      # The window is being closed (dismissed from another window, or by
+      # --stop): nothing to do but stop.
+      trap 'stop_tte; exit 0' INT TERM HUP
 
-      still_focused() {
-        niri msg -j focused-window | jq -e --arg a "$app_id" '.app_id == $a' >/dev/null
+      # A key or a focus change here: lock, then close every window. If the
+      # lock fails, the screensaver keeps running and the next key retries.
+      quit_all() {
+        if ${lib.getExe screensaverDismiss}; then
+          stop_tte
+          exit 0
+        fi
+      }
+
+      # One poll step: exit everything on a key, or on focus leaving the
+      # screensaver windows once placement is done.
+      tick() {
+        if read -rsn1 -t 0.1; then quit_all; fi
+        if [ -e "$dir/ready" ] \
+          && ! niri msg -j focused-window | jq -e --arg a "$app_id" '.app_id == $a' >/dev/null; then
+          quit_all
+        fi
+      }
+
+      # The pass number currently published in $dir/pass (0 if none yet).
+      published() {
+        if [ -e "$dir/pass" ]; then awk '{ print $1; exit }' "$dir/pass"; else echo 0; fi
       }
 
       printf '\033[?25l' # hide the terminal cursor
-      started=$SECONDS
+      while [ ! -e "$dir/ready" ]; do tick; done
+      total=$(cat "$dir/count")
+
+      n=0
       last=
       while true; do
+        n=$((n + 1))
+        # Check in for pass n with this window's current grid.
+        printf '%s %s %s\n' "$n" "$(tput cols)" "$(tput lines)" > "$dir/at-$index.tmp"
+        mv "$dir/at-$index.tmp" "$dir/at-$index"
+
+        if [ "$index" -eq 0 ]; then
+          waited=0
+          while [ "$(cat "$dir"/at-* 2>/dev/null | awk -v n="$n" '$1 == n' | wc -l)" -lt "$total" ] \
+            && [ "$waited" -lt 300 ]; do
+            tick
+            waited=$((waited + 1))
+          done
+          # Hold the finished quote long enough to read (6 s).
+          if [ "$n" -gt 1 ]; then for _ in $(seq 60); do tick; done; fi
+          read -r cols lines < <(cat "$dir"/at-* | awk -v n="$n" '
+            $1 == n { if (!c || $2 < c) c = $2; if (!l || $3 < l) l = $3 }
+            END { print c, l }')
+          # A random quote, never the same one twice in a row.
+          quote=$(find ${screensaverQuotes} -name '*.txt' | grep -vxF -- "$last" | shuf -n1)
+          last=$quote
+          printf '%s %s %s %s %s\n' "$n" "$(shuf -i 1-2147483647 -n1)" "$cols" "$((lines - 1))" "$quote" \
+            > "$dir/pass.tmp"
+          mv "$dir/pass.tmp" "$dir/pass"
+        fi
+
+        while [ "$(published)" -lt "$n" ]; do tick; done
+        read -r _ seed cols lines quote < "$dir/pass"
+
         clear
-        # A random quote, never the same one twice in a row.
-        quote=$(find ${screensaverQuotes} -name '*.txt' | grep -vxF -- "$last" | shuf -n1)
-        last=$quote
         # print is excluded: it is a plain typewriter, not a screensaver.
         tte --input-file "$quote" \
+          --seed "$seed" \
           --frame-rate 120 \
-          --canvas-width 0 --canvas-height "$(($(tput lines) - 1))" \
+          --canvas-width "$cols" --canvas-height "$lines" \
           --anchor-canvas c --anchor-text c \
           --random-effect --exclude-effects print &
         tte_pid=$!
-        while kill -0 "$tte_pid" 2>/dev/null; do
-          if read -rsn1 -t 1; then quit_all; fi
-          if [ $((SECONDS - started)) -gt 5 ] && ! still_focused; then quit_all; fi
-        done
+        while kill -0 "$tte_pid" 2>/dev/null; do tick; done
         tte_pid=
-        # Hold the finished quote long enough to read before the next one.
-        if read -rsn1 -t 6; then quit_all; fi
       done
     '';
   };
@@ -1864,47 +1965,68 @@ let
     ];
     text = ''
       app_id=${lib.escapeShellArg screensaverAppId}
+      dir="''${XDG_RUNTIME_DIR:-/tmp}/screensaver"
 
-      count() {
-        niri msg -j windows | jq --arg a "$app_id" '[.[] | select(.app_id == $a)] | length'
+      ids() {
+        niri msg -j windows | jq -r --arg a "$app_id" '[.[] | select(.app_id == $a) | .id] | sort[]'
       }
 
       if [ "''${1:-}" = "--stop" ]; then
-        niri msg -j windows \
-          | jq -r --arg a "$app_id" '.[] | select(.app_id == $a) | .id' \
-          | while read -r id; do niri msg action close-window --id "$id" || true; done
-        exit 0
+        exec ${lib.getExe screensaverDismiss}
       fi
 
       # Under the lock screen nobody would see it, and it would still be
       # there after unlock.
       if noctalia msg status 2>/dev/null | jq -e '.locked' >/dev/null; then exit 0; fi
-      [ "$(count)" -eq 0 ] || exit 0
+      [ -z "$(ids)" ] || exit 0
 
-      # One window per enabled output. A new window opens on the focused
-      # output, so focus each in turn and wait for that window to map before
-      # moving on; otherwise a slow start lands two windows on one output.
-      # Spawned through niri so the windows are niri's children, not ours.
-      niri msg -j outputs \
-        | jq -r 'to_entries[] | select(.value.current_mode != null) | .key' \
-        | while read -r output; do
-          before=$(count)
-          niri msg action focus-monitor "$output"
-          niri msg action spawn -- ${lib.getExe config.programs.ghostty.package} \
-            --class="$app_id" \
-            --gtk-single-instance=false \
-            --background=#000000 \
-            --font-size=20 \
-            --window-padding-x=0 --window-padding-y=0 \
-            --window-decoration=none \
-            --confirm-close-surface=false \
-            --mouse-hide-while-typing=true \
-            -e ${lib.getExe screensaverRun}
-          for _ in $(seq 50); do
-            [ "$(count)" -gt "$before" ] && break
-            sleep 0.1
-          done
-        done
+      rm -rf "$dir"
+      mkdir -p "$dir"
+      # Whatever happens below, release the windows: they wait for this file
+      # before they start (and before they watch focus).
+      trap 'touch "$dir/ready"' EXIT
+
+      mapfile -t outputs < <(niri msg -j outputs \
+        | jq -r 'to_entries[] | select(.value.current_mode != null) | .key')
+      home=$(niri msg -j focused-output | jq -r '.name')
+
+      # Spawn every window up front, through niri so they are its children,
+      # not ours. They all open on the focused output, however slowly ghostty
+      # starts; placement happens once they exist, by window id, so it never
+      # depends on start-up timing.
+      for i in "''${!outputs[@]}"; do
+        niri msg action spawn -- ${lib.getExe config.programs.ghostty.package} \
+          --class="$app_id" \
+          --gtk-single-instance=false \
+          --background=#000000 \
+          --font-size=20 \
+          --window-padding-x=0 --window-padding-y=0 \
+          --window-decoration=none \
+          --confirm-close-surface=false \
+          --mouse-hide-while-typing=true \
+          -e ${lib.getExe screensaverRun} "$dir" "$i"
+      done
+
+      # Up to 30 s for all of them to map.
+      mapfile -t windows < <(ids)
+      for _ in $(seq 300); do
+        [ "''${#windows[@]}" -ge "''${#outputs[@]}" ] && break
+        sleep 0.1
+        mapfile -t windows < <(ids)
+      done
+
+      # The windows are interchangeable (they mirror one another), so pair
+      # them with outputs in id order. A window that keeps its output still
+      # gets the move, which is a no-op.
+      for i in "''${!windows[@]}"; do
+        [ "$i" -lt "''${#outputs[@]}" ] || break
+        niri msg action move-window-to-monitor --id "''${windows[$i]}" "''${outputs[$i]}"
+      done
+      # Leave focus on the output that had it (its screensaver window is the
+      # fullscreen one there), so dismissing it lands you back where you were.
+      niri msg action focus-monitor "$home"
+
+      echo "''${#windows[@]}" > "$dir/count"
     '';
   };
   # herdr-app look, migrated from the herdr TUI's ~/.config/herdr/config.toml.
@@ -2872,7 +2994,7 @@ in
 
   wayland.windowManager.niri.settings = {
     # Screensaver windows (screensaverAppId in the let block) open
-    # fullscreen and focused on whichever output the launcher focused.
+    # fullscreen and focused; the launcher then moves one to each output.
     window-rule = [
       {
         match._props.app-id._raw = ''r#"^dev\.sjr\.screensaver$"#'';
