@@ -1813,21 +1813,18 @@ let
       ''
         mkdir -p "$out"
         # render TEXT WHO FILM N — WHO may be empty (a dialogue exchange).
+        # The file is the quote's lines unwrapped, a lone "@@", then the
+        # attribution lines; screensaver-run lays it out for the screen.
         render() {
-          printf '%b\n' "$1" | fold -s -w 52 | sed 's/[[:space:]]*$//' > body
           {
+            printf '%b\n' "$1"
+            echo "@@"
             if [ -n "$2" ]; then
               echo "— $2"
               echo "$3"
             else
               echo "— $3"
             fi
-          } > attr
-          width=$(cat body attr | awk '{ if (length > w) w = length } END { print w }')
-          {
-            cat body
-            echo
-            while IFS= read -r line; do printf '%*s\n' "$width" "$line"; done < attr
           } > "$out/$4.txt"
         }
       ''
@@ -1865,6 +1862,7 @@ let
       pkgs.findutils
       pkgs.gnugrep
       pkgs.gawk
+      pkgs.gnused
       pkgs.jq
       osConfig.programs.niri.package
     ];
@@ -1900,6 +1898,43 @@ let
         fi
       }
 
+      # layout QUOTE COLS > text — wrap the quote to fill the shared grid and
+      # centre it. The wrap width is the grid minus a margin, then narrowed
+      # as far as it goes without adding a line, so the lines come out even
+      # (no single word stranded on the last one). A one-speaker quote has
+      # each line centred in the block; an exchange stays left-aligned so the
+      # speaker names line up. The attribution sits right-aligned under it.
+      # tte then centres the whole block on the canvas.
+      layout() {
+        local body attr width lines narrower
+        body=$(sed '/^@@$/,$d' "$1")
+        attr=$(sed '1,/^@@$/d' "$1")
+        width=$(($2 - 8))
+        [ "$width" -ge 20 ] || width=20
+        lines=$(printf '%s\n' "$body" | fold -s -w "$width" | wc -l)
+        while [ "$width" -gt 12 ]; do
+          narrower=$(printf '%s\n' "$body" | fold -s -w $((width - 1)) | wc -l)
+          [ "$narrower" -eq "$lines" ] || break
+          width=$((width - 1))
+        done
+        {
+          printf '%s\n' "$body" | fold -s -w "$width" | sed 's/[[:space:]]*$//'
+          echo "@@"
+          printf '%s\n' "$attr"
+        } | LC_ALL=C.UTF-8 gawk '
+          /^@@$/ { sep = 1; next }
+          { if (sep) a[++na] = $0; else b[++nb] = $0
+            if (length($0) > w) w = length($0) }
+          END {
+            # A dialogue exchange (its only attribution line is the film)
+            # stays left-aligned so the speaker names line up.
+            for (i = 1; i <= nb; i++)
+              printf "%*s%s\n", (na == 1 ? 0 : int((w - length(b[i])) / 2)), "", b[i]
+            print ""
+            for (i = 1; i <= na; i++) printf "%*s\n", w, a[i]
+          }'
+      }
+
       # The pass number currently published in $dir/pass (0 if none yet).
       published() {
         if [ -e "$dir/pass" ]; then awk '{ print $1; exit }' "$dir/pass"; else echo 0; fi
@@ -1929,10 +1964,13 @@ let
           read -r cols lines < <(cat "$dir"/at-* | awk -v n="$n" '
             $1 == n { if (!c || $2 < c) c = $2; if (!l || $3 < l) l = $3 }
             END { print c, l }')
-          # A random quote, never the same one twice in a row.
+          # A random quote, never the same one twice in a row, laid out once
+          # for the shared grid so every window plays identical text.
           quote=$(find ${screensaverQuotes} -name '*.txt' | grep -vxF -- "$last" | shuf -n1)
           last=$quote
-          printf '%s %s %s %s %s\n' "$n" "$(shuf -i 1-2147483647 -n1)" "$cols" "$((lines - 1))" "$quote" \
+          layout "$quote" "$cols" > "$dir/text-$n"
+          rm -f "$dir/text-$((n - 2))"
+          printf '%s %s %s %s %s\n' "$n" "$(shuf -i 1-2147483647 -n1)" "$cols" "$((lines - 1))" "$dir/text-$n" \
             > "$dir/pass.tmp"
           mv "$dir/pass.tmp" "$dir/pass"
         fi
@@ -1986,20 +2024,34 @@ let
       # before they start (and before they watch focus).
       trap 'touch "$dir/ready"' EXIT
 
+      # Each output's font size is set from its logical size so every screen
+      # gets about the same character grid, ~64 columns by 18+ rows: the
+      # quote then fills a laptop panel and a 27" monitor alike. JetBrains
+      # Mono's cell is 0.6 em wide and ~1.32 em tall, and ghostty renders a
+      # point as 4/3 logical px, so a cell is ~0.8 pt wide and ~1.76 pt tall.
+      # The windows still share the smallest grid, so a miss here only costs
+      # a little margin, never alignment.
       mapfile -t outputs < <(niri msg -j outputs \
-        | jq -r 'to_entries[] | select(.value.current_mode != null) | .key')
+        | jq -r 'to_entries[] | select(.value.current_mode != null and .value.logical != null) | .key')
+      mapfile -t sizes < <(niri msg -j outputs \
+        | jq -r 'to_entries[] | select(.value.current_mode != null and .value.logical != null)
+            | [(.value.logical.width / (0.8 * 64)), (.value.logical.height / (1.76 * 18))]
+            | [min, 12] | max | floor')
       home=$(niri msg -j focused-output | jq -r '.name')
 
       # Spawn every window up front, through niri so they are its children,
       # not ours. They all open on the focused output, however slowly ghostty
-      # starts; placement happens once they exist, by window id, so it never
-      # depends on start-up timing.
+      # starts; placement happens once they exist, so it never depends on
+      # start-up timing. Window i is sized for output i and titled
+      # "screensaver i" (a fixed --title, which the program can't change),
+      # which is how placement finds it.
       for i in "''${!outputs[@]}"; do
         niri msg action spawn -- ${lib.getExe config.programs.ghostty.package} \
           --class="$app_id" \
+          --title="screensaver $i" \
           --gtk-single-instance=false \
           --background=#000000 \
-          --font-size=20 \
+          --font-size="''${sizes[$i]}" \
           --window-padding-x=0 --window-padding-y=0 \
           --window-decoration=none \
           --confirm-close-surface=false \
@@ -2015,12 +2067,13 @@ let
         mapfile -t windows < <(ids)
       done
 
-      # The windows are interchangeable (they mirror one another), so pair
-      # them with outputs in id order. A window that keeps its output still
-      # gets the move, which is a no-op.
-      for i in "''${!windows[@]}"; do
-        [ "$i" -lt "''${#outputs[@]}" ] || break
-        niri msg action move-window-to-monitor --id "''${windows[$i]}" "''${outputs[$i]}"
+      # Move window i to output i, found by its title: each was sized for
+      # its own output. A window that is already there gets a no-op move.
+      for i in "''${!outputs[@]}"; do
+        id=$(niri msg -j windows | jq -r --arg a "$app_id" --arg t "screensaver $i" \
+          'first(.[] | select(.app_id == $a and .title == $t) | .id) // empty')
+        [ -n "$id" ] || continue
+        niri msg action move-window-to-monitor --id "$id" "''${outputs[$i]}"
       done
       # Leave focus on the output that had it (its screensaver window is the
       # fullscreen one there), so dismissing it lands you back where you were.
