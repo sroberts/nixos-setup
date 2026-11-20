@@ -2348,24 +2348,40 @@ let
     '';
   };
 
-  # Whisper model for voxtype dictation (services.voxtype below), fetched
+  # Parakeet model for voxtype dictation (services.voxtype below), fetched
   # reproducibly into the store instead of via `voxtype setup --download` /
   # the HM module's `loadModels`, which download imperatively into ~/.local
-  # at service start. Same URL + hash as voxtype's own nix/models.nix.
+  # at service start. Parakeet's model is a directory of files, so each file
+  # is a fetchurl pinned to one Hugging Face commit (not `main`, which upstream
+  # re-uploads to) and linkFarm assembles the directory voxtype expects.
+  # Repo, file names and the int8 choice match voxtype's own
+  # `parakeet-tdt-0.6b-v3-int8` catalog entry; the two big files' hashes are
+  # the LFS sha256s Hugging Face publishes for that commit.
   #
-  # Why small.en: English-only models are faster AND more accurate for English
-  # than their multilingual twins. On the 780M via Vulkan, small.en
-  # transcribes the 11 s whisper.cpp jfk.wav sample in ~1.7 s (measured), so a
-  # typical dictation clip lands in well under 2 s, and it is noticeably
-  # better than base.en on names, jargon and punctuation. medium.en /
-  # large-v3-turbo (1.5-1.6 GB) roughly triple the latency for a gain that
-  # doesn't matter for short dictation. 466 MB in the store; with
-  # on_demand_loading = false it stays resident in the daemon (the iGPU
-  # shares the 93 GB of system RAM, so that is cheap).
-  voxtypeModel = pkgs.fetchurl {
-    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
-    hash = "sha256-xhONbVjsyDIgl+D5h8MvG+i7ChhTKj+I9zTRu/nEHl0=";
-  };
+  # Why Parakeet TDT 0.6b v3 over Whisper: Whisper (small.en) kept returning
+  # empty or "♪♪" transcripts for longer and quieter clips, its known
+  # hallucination mode; Parakeet is a transducer, so it doesn't invent text
+  # over silence, and it adds punctuation and capitalisation itself.
+  # Why int8: voxtype-onnx runs it on the CPU (nixpkgs' onnxruntime has no
+  # ROCm/MIGraphX provider for the 780M), where the 652 MB int8 encoder is
+  # several times faster than the 2.6 GB fp32 one at near-identical accuracy.
+  voxtypeParakeetModel =
+    let
+      rev = "8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce";
+      hf = name: hash: {
+        inherit name;
+        path = pkgs.fetchurl {
+          url = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/${rev}/${name}";
+          inherit hash;
+        };
+      };
+    in
+    pkgs.linkFarm "parakeet-tdt-0.6b-v3-int8" [
+      (hf "encoder-model.int8.onnx" "sha256-YTnS+n4bCGCXsnfHFJcl7bq4nMfHrmSyPHQb5AVa/wk=")
+      (hf "decoder_joint-model.int8.onnx" "sha256-7qdIPuPRowN12u3I7YPjlgyRsJiBISeg2Z0ciXdmenA=")
+      (hf "vocab.txt" "sha256-1YVEZ56kvGrFY9H1Ret9R0vWz6Rn8KbiwdwcfTfjw10=")
+      (hf "config.json" "sha256-ZmkDx2uXmMrywhCv1PbNYLCKjb+YAOyNejvA0hSKxGY=")
+    ];
 
   # os-update — one command to bump every flake input and SEE what that does
   # before anything is activated. Same idea as Omarchy's `omarchy-update`,
@@ -2769,6 +2785,11 @@ in
           # until a recording starts, so it only takes bar space while it has
           # something to say. Clicking it stops the recording.
           "screen_recorder"
+          # Dictation state from the community gabedunn/voxtype plugin (see
+          # `plugins` below): mic-off glyph when idle, red mic while
+          # recording, spinner while transcribing. Left-click toggles a
+          # recording, right-click stops one; Right Ctrl still works as before.
+          "voxtype"
           "media"
           "tray"
           "notifications"
@@ -2784,6 +2805,7 @@ in
       # Bar-widget instance for the recorder indicator listed in `end` above.
       # Plugin widgets are referenced by "<author>/<plugin>:<entry>".
       widget.screen_recorder.type = "noctalia/screen_recorder:recorder";
+      widget.voxtype.type = "gabedunn/voxtype:status";
 
       # Battery: glyph only, no percentage label. display_mode stays at the
       # default "glyph" (vs "graphic", the filled battery shape); show_label
@@ -2962,7 +2984,16 @@ in
       # Same base-vs-override rule as theme.templates. Toggling the plugin
       # off in Settings -> Plugins writes `[plugins].enabled` to
       # ~/.local/state/noctalia/settings.toml, and that wins over this list.
-      plugins.enabled = [ "noctalia/screen_recorder" ];
+      #
+      # gabedunn/voxtype comes from the built-in `community` source
+      # (github.com/noctalia-dev/community-plugins), same unpinned model. It
+      # reads voxtype's state file (`state_file = "auto"` in services.voxtype)
+      # and runs `voxtype` / `voxtype-audio-bridge`, which are on the shell
+      # unit's PATH via /etc/profiles/per-user.
+      plugins.enabled = [
+        "noctalia/screen_recorder"
+        "gabedunn/voxtype"
+      ];
 
       # Plugin-level settings for the recorder. Key names come from the
       # plugin's plugin.toml manifest, not the docs. Unset keys keep the
@@ -2981,6 +3012,12 @@ in
         # Indicator only while recording. See the bar `end` list.
         hide_inactive = true;
       };
+
+      # Live dictation overlay: a Noctalia-themed panel with audio levels
+      # while recording and an animation while transcribing, closed when done.
+      # It replaces voxtype's own OSD, which is switched off in
+      # services.voxtype (that one kept failing to start its frontend).
+      plugin_settings."gabedunn/voxtype".osd_enabled = true;
 
       # v5 folds the polkit agent into native config; this replaces v4's
       # plugins.json `polkit-agent`. niri-nix ships no agent of its own, so
@@ -3647,14 +3684,14 @@ in
 
   # Local voice dictation — voxtype (the tool behind Omarchy's Super+Ctrl+X
   # dictation), via home-manager's own services.voxtype module. Fully
-  # offline: whisper.cpp runs in-process against the store-pinned model in
-  # the `let` above; no audio or text leaves the machine.
+  # offline: NVIDIA Parakeet runs in-process on ONNX Runtime against the
+  # store-pinned model in the `let` above; no audio or text leaves the machine.
   #
   # Pieces:
-  #   - package: nixpkgs' voxtype-vulkan (cached on cache.nixos.org). Vulkan
-  #     is the reliable GPU path on the RDNA3 780M; the ROCm/hipblas build
-  #     would need HSA_OVERRIDE_GFX_VERSION for gfx1103 and a from-source
-  #     ROCm compile, for no latency win at this model size.
+  #   - package: nixpkgs' voxtype-onnx (cached on cache.nixos.org), the build
+  #     with the Parakeet engine. voxtype-vulkan is Whisper-only ("rebuild
+  #     with --features parakeet"); Parakeet runs on the CPU here, which is
+  #     fast enough for the int8 model.
   #   - The daemon runs as a systemd user unit on graphical-session.target and
   #     keeps the model loaded, so a toggle only pays transcription time.
   #   - Push-to-talk on RIGHT CTRL: hold to record, release to transcribe
@@ -3677,7 +3714,7 @@ in
   #     no text; on_no_speech is off so those taps don't post a notification.
   services.voxtype = {
     enable = true;
-    package = pkgs.voxtype-vulkan;
+    package = pkgs.voxtype-onnx;
     settings = {
       # The daemon publishes idle/recording/transcribing here under
       # $XDG_RUNTIME_DIR/voxtype (`voxtype status`, `voxtype record …`).
@@ -3697,11 +3734,20 @@ in
         # still bounded if the toggle is forgotten.
         max_duration_secs = 300;
       };
-      whisper = {
-        model = "${voxtypeModel}";
-        language = "en";
+      engine = "parakeet";
+      parakeet = {
+        model = "${voxtypeParakeetModel}";
+        # TDT (not CTC) matches the files above; explicit rather than
+        # relying on voxtype's directory sniffing.
+        model_type = "tdt";
+        # Keep the model resident so a press only pays transcription time.
         on_demand_loading = false;
       };
+      # voxtype's own overlay is off: the gabedunn/voxtype Noctalia plugin
+      # draws it instead (plugin_settings in programs.noctalia). The plugin
+      # README asks for exactly this, and voxtype's built-in one gave up at
+      # every start ("OSD child exited 3 times within 5s").
+      osd.enabled = false;
       output = {
         mode = "type";
         driver_order = [
@@ -3711,7 +3757,7 @@ in
         fallback_to_clipboard = true;
         notification = {
           # "Recording Started" when listening begins, the transcript when
-          # it's done; the overlay OSD also shows a live level meter.
+          # it's done; the Noctalia plugin's overlay shows a live level meter.
           on_recording_start = true;
           on_recording_stop = false;
           on_transcription = true;
