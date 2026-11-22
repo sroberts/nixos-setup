@@ -2881,9 +2881,9 @@ in
             #   ghostty  — migrated: `theme = noctalia` set declaratively above
             #              so apply.sh no-ops on the config; only the theme file
             #              is written. (issue #62)
-            #   starship — migrated: config seeded writable so apply.sh can
-            #              inject the palette (see programs.starship + the
-            #              starshipConfigSeed activation). (issue #62)
+            #   starship — NOT here any more: v5 moved it to the community
+            #              catalog (see community_ids below). Listed here it is
+            #              silently skipped and the palette is never injected.
             #   niri     — migrated: the `include "noctalia.kdl"` line is added
             #              declaratively via wayland.windowManager.niri
             #              .extraConfig (see the niri block below), so
@@ -2892,7 +2892,6 @@ in
             #              through HM). (issue #62)
             "btop"
             "ghostty"
-            "starship"
             "niri"
           ];
           # Community templates are fetched from api.noctalia.dev/templates at
@@ -2922,6 +2921,10 @@ in
             "zellij"
             "discord"
             "steam"
+            # Community (not builtin) since v5. Its apply.sh injects
+            # [palettes.noctalia] into the writable ~/.config/starship.toml
+            # seeded by starshipConfigSeed (see programs.starship). (issue #62)
+            "starship"
           ];
         };
       };
@@ -4666,11 +4669,15 @@ in
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      # Stamp on a hash of the CONTENT, not the store path: writeText's path
+      # changes on every nixpkgs bump, which used to reseed (and strip
+      # Noctalia's injected theme) after each flake update.
+      WANT="$(${pkgs.coreutils}/bin/sha256sum "$SRC" | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
       if [ ! -f "$DEST" ] || \
-         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
         ${pkgs.coreutils}/bin/rm -f "$DEST"
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
-        printf '%s' "$SRC" > "$STAMP"
+        printf '%s' "$WANT" > "$STAMP"
       fi
     '';
   };
@@ -4771,11 +4778,15 @@ in
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      # Stamp on a hash of the CONTENT, not the store path: writeText's path
+      # changes on every nixpkgs bump, which used to reseed (and strip
+      # Noctalia's injected theme) after each flake update.
+      WANT="$(${pkgs.coreutils}/bin/sha256sum "$SRC" | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
       if [ ! -f "$DEST" ] || \
-         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
         ${pkgs.coreutils}/bin/rm -f "$DEST"
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
-        printf '%s' "$SRC" > "$STAMP"
+        printf '%s' "$WANT" > "$STAMP"
       fi
     '';
   };
