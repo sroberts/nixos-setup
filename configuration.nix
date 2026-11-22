@@ -96,34 +96,42 @@ in
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # PINNED to the 7.2 series — deliberately NOT linuxPackages_latest.
+  # PINNED to the 6.18 LTS series — deliberately NOT linuxPackages_latest,
+  # and spelled linuxPackages_6_18 rather than linuxPackages so a change of
+  # nixpkgs' default kernel can't move it either.
   #
-  # linuxPackages_latest hands you whatever major kernel nixpkgs ships at the
-  # moment you update, unreviewed. On 2026-10-27 that silently moved this
-  # machine 7.2.10 -> 7.3.0 as part of a routine input bump, and the first
-  # suspend-then-hibernate escalation on 7.3.0 froze the machine hard at
-  # `PM: hibernation: hibernation entry` — it had to be power-cycled, and the
-  # next boot was cold, not a resume.
+  # History: linuxPackages_latest hands you whatever major kernel nixpkgs
+  # ships at the moment you update, unreviewed. On 2026-10-27 that silently
+  # moved this machine 7.2.10 -> 7.3.0 as part of a routine input bump, and
+  # the first suspend-then-hibernate escalation on 7.3.0 froze the machine
+  # hard after `PM: hibernation: hibernation entry` — power-cycled, next boot
+  # cold. 7.2.10 had hibernated that morning, so it was pinned to 7.2 (PR
+  # #112) until nixpkgs removed 7.2 at end of life (2026-11).
   #
-  # Evidence it is the kernel and not userspace: hibernation succeeded on
-  # 7.2.10 that same morning ("Allocated 38910536 kbytes in 9.55 seconds",
-  # then `hibernation exit`), and the freeze happens after userspace is
-  # frozen, so no compositor or shell code is running at that point.
-  # amdgpu + hibernate on this hardware has a long tail of trouble — see
-  # nixpkgs#413932, "black screen/freeze after wake up from hibernate on
-  # amdgpu/framework laptop 13", open since 2025.
+  # Why 6.18 LTS and not 7.3.x (researched 2026-11-20):
+  #   - None of the 7.3.1-7.3.5 stable changelogs touches the hibernation
+  #     core or amdgpu's S4 paths, so 7.3.5 should be assumed to hang like
+  #     7.3.0 did. regzbot tracks no matching 7.3 regression.
+  #   - 6.18's kernel/power/hibernate.c has been unchanged since Nov 2025; it
+  #     predates the 7.2/7.3 image-preallocation reorder and the deadlock fix
+  #     layered on top of it.
+  #   - It carries the TTM swapout fix behind post-hibernate hard lockups on
+  #     AMD APUs (drm/amd#5387): broken only in 6.18.57-58, fixed in 6.18.59.
+  #   - Reports of hibernate working on 6.18 with Framework 13 7840U, and in
+  #     nixpkgs#413932 ("fixed on 6.18.8").
+  #   - LTS: no end-of-life removal breaking a flake update for years.
+  #
+  # If 6.18 hangs at hibernation entry too, suspect the amdgpu-with-a-
+  # compositor intermittent S4 hang (pop-os/pop#4085, Phoenix 780M on
+  # 7.0/7.1: fails only with a KMS client running) or the Wi-Fi/Bluetooth
+  # drivers (unloading them pre-hibernate fixed it for several people in
+  # nixpkgs#413932), not the kernel version. Test by hibernating from a TTY.
   #
   # This box hibernates on a 15-minute idle escalation, so a broken hibernate
   # path does not announce itself until you walk away — which is exactly how
-  # it bit us. Treat a kernel move as a change to TEST (suspend, wait out
-  # HibernateDelaySec, confirm resume), not a free ride on `nix flake update`.
-  #
-  # Note nixpkgs' 7.2 series is 7.2.11 here; 7.2.10 exactly would require
-  # pinning nixpkgs itself. Same series, one patch release on.
-  #
-  # Revisit when a later kernel is known-good on Framework 13 AMD: bump to
-  # linuxPackages_7_3 (or newer) deliberately and hibernate-test it before
-  # trusting it.
+  # it bit us. Treat a kernel move as a change to TEST (`systemctl
+  # hibernate`, then a suspend-then-hibernate), not a free ride on
+  # `nix flake update`.
   #
   # 6.12+ floor for Ryzen 7040.
   #
@@ -143,7 +151,7 @@ in
   # of 2026-10-27. tuxedo-drivers is broken the same way (nixpkgs#576266).
   # Running kmodigest by hand produces the .cer the aggregator wants; drop
   # this whole block once #578004 lands.
-  boot.kernelPackages = pkgs.linuxPackages_7_2.extend (
+  boot.kernelPackages = pkgs.linuxPackages_6_18.extend (
     _kfinal: kprev: {
       framework-laptop-kmod = kprev.framework-laptop-kmod.overrideAttrs (_old: {
         installPhase = ''

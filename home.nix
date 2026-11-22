@@ -2010,7 +2010,9 @@ let
           last=$quote
           layout "$quote" "$cols" > "$dir/text-$n"
           rm -f "$dir/text-$((n - 2))"
-          printf '%s %s %s %s %s\n' "$n" "$(shuf -i 1-2147483647 -n1)" "$cols" "$((lines - 1))" "$dir/text-$n" \
+          # Canvas height: two rows under the smallest grid, so even that
+          # window has a spare row to shift the canvas into for centring.
+          printf '%s %s %s %s %s\n' "$n" "$(shuf -i 1-2147483647 -n1)" "$cols" "$((lines - 2))" "$dir/text-$n" \
             > "$dir/pass.tmp"
           mv "$dir/pass.tmp" "$dir/pass"
         fi
@@ -2018,13 +2020,37 @@ let
         while [ "$(published)" -lt "$n" ]; do tick; done
         read -r _ seed cols lines quote < "$dir/pass"
 
+        # tte draws its canvas downward from the cursor, and its vertical
+        # canvas anchor counts from the terminal's bottom, so on a window
+        # taller than the shared canvas `--anchor-canvas c` leaves the
+        # padding all below the text. Centre vertically here instead, and let
+        # tte centre only horizontally (`s`: column offset, no row offset).
+        #
+        # Inside the canvas, tte centres the text with integer maths that can
+        # leave it a row high (rows count up from the bottom: the text's
+        # bottom row is 1 + delta, delta = canvas centre row - h/2). Redo that
+        # sum, then move the cursor so the TEXT, not the canvas, lands
+        # centred in this window. Clamped so the canvas stays on screen and
+        # tte's row-per-line prep never scrolls it.
+        rows=$(tput lines)
+        h=$(wc -l < "$quote")
+        delta=$((1 + (lines - 1) / 2 - h / 2))
+        above=$((lines - h - delta)) # canvas rows above the text
+        top=$(((rows - h) / 2 - above))
+        [ "$top" -le $((rows - lines - 1)) ] || top=$((rows - lines - 1))
+        [ "$top" -ge 0 ] || top=0
         clear
+        tput cup "$top" 0
         # print is excluded: it is a plain typewriter, not a screensaver.
+        # --no-restore-cursor/--no-eol: by default tte re-shows the cursor
+        # and prints a newline when an effect ends, leaving a cursor on
+        # screen through the hold between quotes.
         tte --input-file "$quote" \
           --seed "$seed" \
           --frame-rate 120 \
           --canvas-width "$cols" --canvas-height "$lines" \
-          --anchor-canvas c --anchor-text c \
+          --anchor-canvas s --anchor-text c \
+          --no-restore-cursor --no-eol \
           --random-effect --exclude-effects print &
         tte_pid=$!
         while kill -0 "$tte_pid" 2>/dev/null; do tick; done
@@ -2071,12 +2097,19 @@ let
       # point as 4/3 logical px, so a cell is ~0.8 pt wide and ~1.76 pt tall.
       # The windows still share the smallest grid, so a miss here only costs
       # a little margin, never alignment.
-      mapfile -t outputs < <(niri msg -j outputs \
-        | jq -r 'to_entries[] | select(.value.current_mode != null and .value.logical != null) | .key')
-      mapfile -t sizes < <(niri msg -j outputs \
-        | jq -r 'to_entries[] | select(.value.current_mode != null and .value.logical != null)
-            | [(.value.logical.width / (0.8 * 64)), (.value.logical.height / (1.76 * 18))]
-            | [min, 12] | max | floor')
+      # Names and sizes come from ONE query, sorted by name: niri's outputs
+      # object has no stable key order between calls, so two separate
+      # queries could pair a name with the other output's font size.
+      outputs=()
+      sizes=()
+      while read -r name size; do
+        outputs+=("$name")
+        sizes+=("$size")
+      done < <(niri msg -j outputs \
+        | jq -r 'to_entries | sort_by(.key)[]
+            | select(.value.current_mode != null and .value.logical != null)
+            | "\(.key) \([(.value.logical.width / (0.8 * 64)), (.value.logical.height / (1.76 * 18))]
+                | [min, 12] | max | floor)"')
       home=$(niri msg -j focused-output | jq -r '.name')
 
       # Spawn every window up front, through niri so they are its children,
@@ -2109,15 +2142,28 @@ let
 
       # Move window i to output i, found by its title: each was sized for
       # its own output. A window that is already there gets a no-op move.
+      placed=()
+      home_id=
       for i in "''${!outputs[@]}"; do
         id=$(niri msg -j windows | jq -r --arg a "$app_id" --arg t "screensaver $i" \
           'first(.[] | select(.app_id == $a and .title == $t) | .id) // empty')
         [ -n "$id" ] || continue
         niri msg action move-window-to-monitor --id "$id" "''${outputs[$i]}"
+        placed+=("$id")
+        [ "''${outputs[$i]}" != "$home" ] || home_id=$id
       done
-      # Leave focus on the output that had it (its screensaver window is the
-      # fullscreen one there), so dismissing it lands you back where you were.
-      niri msg action focus-monitor "$home"
+      # A window moved by --id lands as a new column beside that output's
+      # active one, and niri does not scroll the view to it: it sits off to
+      # the side, partly off-screen, with the desktop still showing. Focusing
+      # each one makes it its workspace's active column and scrolls it into
+      # view. Then leave focus on the home output's window, so dismissing
+      # lands you back where you were.
+      for id in "''${placed[@]}"; do niri msg action focus-window --id "$id"; done
+      if [ -n "$home_id" ]; then
+        niri msg action focus-window --id "$home_id"
+      else
+        niri msg action focus-monitor "$home"
+      fi
 
       echo "''${#windows[@]}" > "$dir/count"
     '';
@@ -2881,9 +2927,9 @@ in
             #   ghostty  — migrated: `theme = noctalia` set declaratively above
             #              so apply.sh no-ops on the config; only the theme file
             #              is written. (issue #62)
-            #   starship — migrated: config seeded writable so apply.sh can
-            #              inject the palette (see programs.starship + the
-            #              starshipConfigSeed activation). (issue #62)
+            #   starship — NOT here any more: v5 moved it to the community
+            #              catalog (see community_ids below). Listed here it is
+            #              silently skipped and the palette is never injected.
             #   niri     — migrated: the `include "noctalia.kdl"` line is added
             #              declaratively via wayland.windowManager.niri
             #              .extraConfig (see the niri block below), so
@@ -2892,7 +2938,6 @@ in
             #              through HM). (issue #62)
             "btop"
             "ghostty"
-            "starship"
             "niri"
           ];
           # Community templates are fetched from api.noctalia.dev/templates at
@@ -2922,6 +2967,10 @@ in
             "zellij"
             "discord"
             "steam"
+            # Community (not builtin) since v5. Its apply.sh injects
+            # [palettes.noctalia] into the writable ~/.config/starship.toml
+            # seeded by starshipConfigSeed (see programs.starship). (issue #62)
+            "starship"
           ];
         };
       };
@@ -3940,7 +3989,15 @@ in
     # THIRD PARTY, not herdr.dev — penso/herdr-gpui, Apache-2.0. See the
     # longer note on the flake input. Built from source (no binary cache),
     # so expect the first build after a tag bump to be slow.
-    inputs.herdr-gpui.packages.${pkgs.stdenv.hostPlatform.system}.default
+    #
+    # + sqlite: nixpkgs' cargo setup hook now exports
+    # LIBSQLITE3_SYS_USE_PKG_CONFIG=1, so rusqlite links the system SQLite
+    # instead of its `bundled` copy, and upstream's recipe doesn't list it
+    # ("rust-lld: unable to find library -lsqlite3"). Drop this once
+    # upstream's flake adds pkgs.sqlite to buildInputs.
+    (inputs.herdr-gpui.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
+      buildInputs = old.buildInputs ++ [ pkgs.sqlite ];
+    }))
 
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
@@ -4666,11 +4723,15 @@ in
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      # Stamp on a hash of the CONTENT, not the store path: writeText's path
+      # changes on every nixpkgs bump, which used to reseed (and strip
+      # Noctalia's injected theme) after each flake update.
+      WANT="$(${pkgs.coreutils}/bin/sha256sum "$SRC" | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
       if [ ! -f "$DEST" ] || \
-         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
         ${pkgs.coreutils}/bin/rm -f "$DEST"
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
-        printf '%s' "$SRC" > "$STAMP"
+        printf '%s' "$WANT" > "$STAMP"
       fi
     '';
   };
@@ -4771,11 +4832,15 @@ in
       ''}"
       ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$DEST")" \
                                      "$(${pkgs.coreutils}/bin/dirname "$STAMP")"
+      # Stamp on a hash of the CONTENT, not the store path: writeText's path
+      # changes on every nixpkgs bump, which used to reseed (and strip
+      # Noctalia's injected theme) after each flake update.
+      WANT="$(${pkgs.coreutils}/bin/sha256sum "$SRC" | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
       if [ ! -f "$DEST" ] || \
-         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$SRC" ]; then
+         [ "$(${pkgs.coreutils}/bin/cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
         ${pkgs.coreutils}/bin/rm -f "$DEST"
         ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$DEST"
-        printf '%s' "$SRC" > "$STAMP"
+        printf '%s' "$WANT" > "$STAMP"
       fi
     '';
   };
