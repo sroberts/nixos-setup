@@ -46,7 +46,7 @@
       # config.toml). Bump by editing the tag below and re-verifying the
       # programs.noctalia options in home.nix still exist — a plain
       # `nix flake update noctalia` won't move a tag-pinned ref.
-      url = "github:noctalia-dev/noctalia-shell/v5.5.0";
+      url = "github:noctalia-dev/noctalia-shell/v5.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

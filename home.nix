@@ -3989,7 +3989,15 @@ in
     # THIRD PARTY, not herdr.dev — penso/herdr-gpui, Apache-2.0. See the
     # longer note on the flake input. Built from source (no binary cache),
     # so expect the first build after a tag bump to be slow.
-    inputs.herdr-gpui.packages.${pkgs.stdenv.hostPlatform.system}.default
+    #
+    # + sqlite: nixpkgs' cargo setup hook now exports
+    # LIBSQLITE3_SYS_USE_PKG_CONFIG=1, so rusqlite links the system SQLite
+    # instead of its `bundled` copy, and upstream's recipe doesn't list it
+    # ("rust-lld: unable to find library -lsqlite3"). Drop this once
+    # upstream's flake adds pkgs.sqlite to buildInputs.
+    (inputs.herdr-gpui.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
+      buildInputs = old.buildInputs ++ [ pkgs.sqlite ];
+    }))
 
     # sroberts/tally — vibepad daemon for herdr; built from source in the
     # `let` above. Runs via systemd.user.services.tally below.
