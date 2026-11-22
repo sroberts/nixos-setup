@@ -438,34 +438,78 @@ let
   # A machine with no Mains supply AND no battery is a desktop: treated as
   # permanently on AC, so it never idle-suspends. Without that fallback the
   # loop would find nothing online and suspend a desktop every 15 minutes.
+  # on_ac (shell function): the check itself, shared with idleTimeouts below.
+  onAcFn = ''
+    on_ac() {
+      found_mains=0
+      found_battery=0
+      for ps in /sys/class/power_supply/*; do
+        [ -r "$ps/type" ] || continue
+        case "$(cat "$ps/type")" in
+          Mains)
+            found_mains=1
+            [ -r "$ps/online" ] || continue
+            [ "$(cat "$ps/online")" = "1" ] && return 0
+            ;;
+          Battery) found_battery=1 ;;
+        esac
+      done
+      # No mains and no battery => desktop; treat as always on AC.
+      [ "$found_mains" = "0" ] && [ "$found_battery" = "0" ] && return 0
+      return 1
+    }
+  '';
   suspendUnlessOnAc = pkgs.writeShellApplication {
     name = "suspend-unless-on-ac";
     runtimeInputs = [ pkgs.systemd ];
     text = ''
-      on_ac() {
-        found_mains=0
-        found_battery=0
-        for ps in /sys/class/power_supply/*; do
-          [ -r "$ps/type" ] || continue
-          case "$(cat "$ps/type")" in
-            Mains)
-              found_mains=1
-              [ -r "$ps/online" ] || continue
-              [ "$(cat "$ps/online")" = "1" ] && return 0
-              ;;
-            Battery) found_battery=1 ;;
-          esac
-        done
-        # No mains and no battery => desktop; treat as always on AC.
-        [ "$found_mains" = "0" ] && [ "$found_battery" = "0" ] && return 0
-        return 1
-      }
-
+      ${onAcFn}
       if on_ac; then
         echo "on AC — skipping idle suspend" >&2
         exit 0
       fi
       exec systemctl suspend-then-hibernate
+    '';
+  };
+
+  # Idle timeouts by power source. Noctalia's idle behaviors can't be
+  # conditioned on power (see above), so this rewrites their timeouts in
+  # place whenever the power source may have changed, via `noctalia msg
+  # config-set`. That writes Noctalia's override layer
+  # (~/.local/state/noctalia/settings.toml) and the idle manager reloads its
+  # behaviors live. Run from Noctalia's own hooks (programs.noctalia.settings
+  # .hooks): `started` sets the right values at login, whatever an earlier
+  # session left in the override file, and battery_charging /
+  # battery_discharging / battery_plugged fire on plug and unplug.
+  # battery_plugged is the charge-limit case: plugged in but not charging
+  # reports pending_charge or fully_charged, not charging.
+  #
+  # The hooks are only a trigger: the script ignores which one fired and
+  # reads sysfs itself, so a hook that fires twice or out of order can't
+  # leave the wrong values. config-set is a no-op when the value is already
+  # set, so the idle timers only restart on a real change.
+  #
+  #                 battery   AC
+  #   screensaver    5 min   15 min
+  #   lock          10 min   20 min
+  #   screen off    11 min   21 min
+  #   sleep         15 min   (never; suspendUnlessOnAc)
+  #
+  # The battery numbers must match the declared defaults in
+  # programs.noctalia.settings.idle.behavior.
+  idleTimeouts = pkgs.writeShellApplication {
+    name = "idle-timeouts";
+    runtimeInputs = [ config.programs.noctalia.package ];
+    text = ''
+      ${onAcFn}
+      if on_ac; then
+        screensaver=900 lock=1200 screen_off=1260
+      else
+        screensaver=300 lock=600 screen_off=660
+      fi
+      noctalia msg config-set idle.behavior.screensaver.timeout "$screensaver"
+      noctalia msg config-set idle.behavior.lock.timeout "$lock"
+      noctalia msg config-set idle.behavior.screen-off.timeout "$screen_off"
     '';
   };
   # Screen colour picker, bound to Mod+Shift+C below (Omarchy ships the same
@@ -3107,6 +3151,17 @@ in
       # both a manual Super+Alt+L and the lid-close lock below. Key names are
       # from the schema (src/config/schema/config_schema.cpp), not
       # example.toml, which has gone stale before.
+      # Re-time the idle behaviors for the current power source: at login
+      # and on every plug/unplug (idleTimeouts in the let block).
+      hooks = {
+        started = "${idleTimeouts}/bin/idle-timeouts";
+        battery_charging = "${idleTimeouts}/bin/idle-timeouts";
+        battery_discharging = "${idleTimeouts}/bin/idle-timeouts";
+        battery_plugged = "${idleTimeouts}/bin/idle-timeouts";
+      };
+
+      # Timeouts below are the BATTERY values. On AC, idleTimeouts overrides
+      # screensaver / lock / screen-off to 15 / 20 / 21 min.
       idle.behavior = {
         lock = {
           timeout = 600;
@@ -3693,6 +3748,9 @@ in
 
   # The idle escalation is driven entirely by Noctalia's own idle manager,
   # configured declaratively via programs.noctalia.settings.idle.behavior above:
+  #
+  #   (Times below are on battery. On AC, idleTimeouts in the let block moves
+  #   screensaver / lock / screen-off to 15 / 20 / 21 min and sleep never runs.)
   #
   #   - SCREENSAVER (5 min): [idle.behavior.screensaver] timeout=300, the
   #     `screensaver` script (let block); resume_command closes it on input.
