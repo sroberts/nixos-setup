@@ -670,6 +670,11 @@ in
       #
       # Revisit once nixpkgs carries ollama >= 0.40.13: re-add both names and
       # rebuild. `nix eval nixpkgs#ollama.version` is the one-line check.
+      #
+      # inkling-2-mini (~20 GB safetensors, vision + tools + thinking) is
+      # waiting on the same thing: its config blob says `requires: 0.40.17`.
+      # On 2026-11-22 nixos-unstable had 0.40.16 and only master had 0.40.17.
+      # Add it with the flake update that brings 0.40.17 in.
     ];
   };
 
