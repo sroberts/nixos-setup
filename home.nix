@@ -2803,7 +2803,40 @@ in
     # Prebuilt nix-index database + comma; configured under "Shell +
     # integrations" below (programs.nix-index / programs.nix-index-database).
     inputs.nix-index-database.homeModules.default
+    # Hermes Agent's own module; programs.hermes-agent below.
+    inputs.hermes-agent.homeManagerModules.default
   ];
+
+  # Hermes Agent (Nous Research): the `hermes` CLI on PATH. Only the CLI.
+  # services.hermes-agent (a gateway daemon that keeps running after logout)
+  # is left off. It needs model credentials and linger, so it stays off until
+  # there is a reason to run it. Setup (`hermes setup`, API keys) is runtime
+  # state in ~/.hermes and is listed in ~/TODO.md.
+  #
+  # The package override works around a nixpkgs skew. Hermes autopatchelfs
+  # the prebuilt tools it bundles (node, pnpm, ripgrep, ffmpeg) with a
+  # patchelf that carries an extra upstream patch (NixOS/patchelf commit
+  # 59acc3d). That patch was written against patchelf 0.19.2, which is what
+  # Hermes' own lock has. Our nixpkgs has `patchelf` at 0.15.2, so the patch
+  # fails to apply and the whole package fails to build.
+  # `patchelfUnstable` (0.19.2-unstable-2026-10-20) already contains that
+  # commit. So this re-imports Hermes' pm-packages.nix with patchelfUnstable,
+  # and makes its `overrideAttrs` a no-op so the patch is not applied twice.
+  # Drop the override once Hermes builds with plain `inputs.hermes-agent`
+  # (check: `nix build .#nixosConfigurations.<host>.config.system.build.toplevel`
+  # without it).
+  programs.hermes-agent = {
+    enable = true;
+    package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.default.override {
+      pmPackages = lib.filterAttrs (_: lib.isDerivation) (
+        pkgs.callPackage "${inputs.hermes-agent}/nix/pm-packages.nix" {
+          patchelf = pkgs.patchelfUnstable // {
+            overrideAttrs = _: pkgs.patchelfUnstable;
+          };
+        }
+      );
+    };
+  };
 
   # home-manager gained its own modules/programs/noctalia/ upstream, which
   # declares the same `programs.noctalia` options as the module imported from
@@ -5339,6 +5372,10 @@ in
             ~/.config/herdr-app/settings.json on every rebuild, so changing the
             theme in the app's own picker does NOT stick — edit home.nix instead.
             Everything else in that file (zoom, sounds, telemetry) stays yours.
+      - [ ] Hermes Agent: run `hermes setup` once to pick a model provider and
+            enter its key. State lives in ~/.hermes, outside Nix. The CLI is
+            pinned in flake.nix (hermes-agent input), so bump the tag there
+            instead of using `hermes update`.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`

@@ -72,6 +72,18 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Hermes Agent (Nous Research). Upstream's own flake, in place of its
+    # `curl … install.sh | bash` installer, which installs into ~ outside
+    # Nix. Its home-manager module is imported in home.nix. Tag-pinned to a
+    # release; bump by editing the tag. home-manager is only used by
+    # upstream's checks, but following ours keeps a second copy out of the
+    # lock file.
+    hermes-agent = {
+      url = "github:NousResearch/hermes-agent/v0.23.3";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
+
     # nix-index-database — a prebuilt nix-index database (file → package
     # index of nixpkgs), rebuilt weekly upstream, plus a home-manager module
     # that wires it into `nix-locate`, zsh's command_not_found_handler and a
