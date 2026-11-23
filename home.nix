@@ -3460,6 +3460,17 @@ in
           "--new-window"
         ];
       };
+      # A for Agent: Super+Shift+H is taken by focus-monitor-left. Native
+      # Wayland reports app-id `hermes`; the XWayland spelling is the
+      # launcher's StartupWMClass.
+      "Mod+Shift+A" = {
+        _props.hotkey-overlay-title = "Hermes";
+        spawn = [
+          "${launchOrFocus}/bin/launch-or-focus"
+          "^(hermes|com\\.nousresearch\\.hermes)$"
+          "hermes-desktop"
+        ];
+      };
 
       # Window
       "Mod+Q".close-window = [ ];
