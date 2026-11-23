@@ -2807,10 +2807,13 @@ in
     inputs.hermes-agent.homeManagerModules.default
   ];
 
-  # Hermes Agent (Nous Research): the `hermes` CLI on PATH. Only the CLI.
-  # services.hermes-agent (a gateway daemon that keeps running after logout)
-  # is left off. It needs model credentials and linger, so it stays off until
-  # there is a reason to run it. Setup (`hermes setup`, API keys) is runtime
+  # Hermes Agent (Nous Research): the `hermes` CLI on PATH, plus Hermes
+  # Desktop (`desktop.enable`), the Electron app, with a launcher entry. The
+  # desktop app is a passthru of `package`, so it runs the same Nix-built
+  # Hermes runtime (including the override below) and downloads nothing on
+  # first start. services.hermes-agent (a gateway daemon that keeps running
+  # after logout) is left off. It needs model credentials and linger, so it
+  # stays off until there is a reason to run it. Setup (`hermes setup`, API keys) is runtime
   # state in ~/.hermes and is listed in ~/TODO.md.
   #
   # The package override works around a nixpkgs skew. Hermes autopatchelfs
@@ -2827,6 +2830,7 @@ in
   # without it).
   programs.hermes-agent = {
     enable = true;
+    desktop.enable = true;
     package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.default.override {
       pmPackages = lib.filterAttrs (_: lib.isDerivation) (
         pkgs.callPackage "${inputs.hermes-agent}/nix/pm-packages.nix" {
