@@ -630,7 +630,24 @@ in
 
   services.ollama = {
     enable = true;
-    package = pkgs.ollama-rocm; # Radeon 780M iGPU; switch to pkgs.ollama (cpu) or pkgs.ollama-vulkan if rocm crashes
+    # Radeon 840M iGPU (Ryzen AI 5 340); switch to pkgs.ollama (cpu) or
+    # pkgs.ollama-vulkan if rocm crashes.
+    package = pkgs.ollama-rocm;
+    # The 840M reports gfx1152, which ollama-rocm has no rocBLAS kernels
+    # for, so without this Ollama logs "dropping ROCm device — no rocblas
+    # support for gfx target" and runs everything on the CPU. 11.5.0 maps
+    # it to gfx1150 (Strix Point), the nearest supported RDNA 3.5 target.
+    # Check with `journalctl -u ollama | grep "inference compute"` (want
+    # library=ROCm, not cpu) and `ollama ps` (want GPU, not CPU).
+    rocmOverrideGfx = "11.5.0";
+    # Even once the 840M is recognised, Ollama skips integrated GPUs unless
+    # told otherwise ("dropping integrated GPU; to enable, set
+    # OLLAMA_IGPU_ENABLE=1").
+    environmentVariables.OLLAMA_IGPU_ENABLE = "1";
+    # Keep a loaded model resident for a day instead of Ollama's 5 minutes,
+    # as Hermes' Ollama guide recommends: Hermes' ~20 GB model otherwise
+    # unloads between sessions and every new one waits for the reload.
+    environmentVariables.OLLAMA_KEEP_ALIVE = "24h";
     # Pulled on first start by ollama-model-loader.service.
     loadModels = [
       "llama3.2"
@@ -648,6 +665,20 @@ in
       # model list empty, so auto-discovery lists every pulled model in the
       # picker without any of them being wired to an agent role.
       "d1"
+      # Hermes Agent's two candidate models (home.nix picks one). Both are
+      # MoE with 3-4B active parameters, so they stay fast where a dense
+      # ~30B (qwen3.8, gemma4:31b) would not, and both carry tools +
+      # thinking with a 256K window, above Hermes' 64K minimum.
+      #   qwen3.6:35b-a3b — 22 GB, vision. Hermes' default.
+      #   gemma4:26b-a4b  — 18 GB, same family as gemma4:31b, the model
+      #                     Hermes' own Ollama guide recommends.
+      "qwen3.6:35b-a3b"
+      "gemma4:26b-a4b"
+
+      # inkling-2-mini (26b-a5b) is NOT here: its manifest says
+      # `requires: 0.40.18` and nixpkgs has 0.40.16 (2026-11-27). Same size
+      # class as the two above; add it once nixpkgs catches up if it is worth
+      # comparing.
 
       # lfm3 and lfm3-audio are NOT here, and cannot be yet. Both are gated on
       # a newer runtime than nixpkgs ships:
@@ -670,11 +701,6 @@ in
       #
       # Revisit once nixpkgs carries ollama >= 0.40.13: re-add both names and
       # rebuild. `nix eval nixpkgs#ollama.version` is the one-line check.
-      #
-      # inkling-2-mini (~20 GB safetensors, vision + tools + thinking) is
-      # waiting on the same thing: its config blob says `requires: 0.40.17`.
-      # On 2026-11-22 nixos-unstable had 0.40.16 and only master had 0.40.17.
-      # Add it with the flake update that brings 0.40.17 in.
     ];
   };
 

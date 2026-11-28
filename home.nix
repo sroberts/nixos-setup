@@ -2959,6 +2959,33 @@ in
     };
   };
 
+  # Hermes' model: qwen3.6:35b-a3b on the local Ollama (configuration.nix
+  # pulls it, and gemma4:26b-a4b as the alternative; swap `default` to try
+  # it). Hermes has no separate local-Ollama provider; `custom` with
+  # Ollama's OpenAI-compatible /v1 endpoint and no key is upstream's way.
+  #
+  # services.hermes-agent.enable is here only so these settings reach
+  # ~/.hermes/config.yaml. With gateway.enable and backend.mode at their
+  # defaults (off, "none") it runs no daemon, just an activation step that
+  # deep-merges `settings` into config.yaml. The cost is managed mode: Hermes
+  # then refuses every runtime config write (`hermes config set`, saving a
+  # `hermes model` pick, the desktop settings panes) and names the rebuild
+  # instead. Config changes go here.
+  #
+  # context_length caps the num_ctx Hermes sends to Ollama on each request.
+  # Uncapped, Hermes would ask for the model's full 256K window, and the KV
+  # cache for that on top of a ~20 GB model is more memory than an agent
+  # session needs to hold. 131072 is twice Hermes' 64K minimum for tool use.
+  services.hermes-agent = {
+    enable = true;
+    settings.model = {
+      provider = "custom";
+      base_url = "http://localhost:11434/v1";
+      default = "qwen3.6:35b-a3b";
+      context_length = 131072;
+    };
+  };
+
   # home-manager gained its own modules/programs/noctalia/ upstream, which
   # declares the same `programs.noctalia` options as the module imported from
   # the noctalia flake above. Two declarations of one option is a hard eval
@@ -5518,10 +5545,15 @@ in
             ~/.config/herdr-app/settings.json on every rebuild, so changing the
             theme in the app's own picker does NOT stick — edit home.nix instead.
             Everything else in that file (zoom, sounds, telemetry) stays yours.
-      - [ ] Hermes Agent: run `hermes setup` once to pick a model provider and
-            enter its key. State lives in ~/.hermes, outside Nix. The CLI is
-            pinned in flake.nix (hermes-agent input), so bump the tag there
-            instead of using `hermes update`.
+      - [ ] Hermes Agent: the model (qwen3.6:35b-a3b on local Ollama) is declared
+            in home.nix, so there is no provider or key to enter. Check that
+            `ollama list` shows qwen3.6:35b-a3b (~22 GB, pulled by
+            ollama-model-loader.service on first start), then run `hermes`.
+            Config is managed: `hermes setup`, `hermes config set` and the
+            app's settings panes all refuse, so change
+            services.hermes-agent.settings instead. Optional API keys
+            (OpenRouter, xAI, ...) go in ~/.hermes/.env by hand. The CLI is pinned in flake.nix (hermes-agent input), so
+            bump the tag there instead of using `hermes update`.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
