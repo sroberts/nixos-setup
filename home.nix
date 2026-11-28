@@ -2307,10 +2307,19 @@ let
   #            a private identifier for a live network (same reasoning as
   #            wishlist-ts above). The host labels themselves are just
   #            service names.
-  #   icon   — a store path; pinned-commit raw URLs so the hash stays valid.
-  #            Most come from homarr-labs/dashboard-icons; Fizzy's is its own
-  #            app icon from basecamp/fizzy.
+  #   icon   — a store path. Public icons are pinned-commit raw URLs so the
+  #            hash stays valid: homarr-labs/dashboard-icons, or the app's own
+  #            repo for the Outpost apps that are public. Private repos can't
+  #            be fetched without a token, so their icons are vendored under
+  #            assets/webapps/; apps with no icon of their own use a generic
+  #            Papirus one (the GTK icon theme below).
   #   actions — optional right-click shortcuts (name → path on the same host).
+  #            They always open a new window (`webapp-launch --new`), since
+  #            focusing the open one would drop the action's view.
+  #
+  # Every entry is also listed in the Mod+Alt+W picker (`webappMenu`), and
+  # every launch focuses the app's open window instead of opening a second
+  # one (see webappLaunch).
   #
   # Window identity (for niri window rules / launch-or-focus): Chromium names
   # an `--app=URL` window's Wayland app-id
@@ -2319,17 +2328,20 @@ let
   # web_app::GenerateApplicationNameFromURL() builds "<host>_<path>", and
   # shell_integration_linux::GetXdgAppIdForWebApp() feeds that through
   # GetShortcutFileName() ("chrome-" + app + "-" + profile dir, illegal chars
-  # → '_'). The installed-PWA window that this replaces shows the same shape
-  # (`niri msg windows` → "chrome-<extid>-Default"). So https://claude.ai/
-  # opens as `chrome-claude.ai__-Default`. The QUERY string is not part of
-  # the app-id, but the PATH is — which is why every action below stays on
-  # its app's start path (a different path would be a different app-id, i.e.
-  # a window that launch-or-focus and window rules would not recognise).
+  # → '_'). So https://claude.ai/ opens as `chrome-claude.ai__-Default`. The
+  # QUERY string is not part of the app-id, but the PATH is — which is why
+  # every action below stays on its app's start path (a different path would
+  # be a different app-id, i.e. a window that launch-or-focus and window
+  # rules would not recognise). The app-id is fixed when the window opens,
+  # so navigating inside it (or out to the Outpost login and back) keeps it.
   # Tailnet apps' app-ids contain the tailnet suffix
-  # (`chrome-rss.<tailnet>.ts.net__-Default`), so they can't carry an exact
-  # StartupWMClass here; match them with a regex like ^chrome-rss\..*__-Default$.
+  # (`chrome-yarr.<tailnet>.ts.net__-Default`), so they can't carry an exact
+  # StartupWMClass here; webapp-launch works theirs out at launch time.
+  #
+  # Do NOT also install any of these with Chromium's "Install page as app":
+  # that adds a second, imperative launcher entry with the same name (it
+  # happened with Claude) whose windows nothing here recognises.
   webApps = {
-    # Migrated from the hand-installed PWA shortcuts:
     claude = {
       name = "Claude";
       url = "https://claude.ai/";
@@ -2338,34 +2350,6 @@ let
         hash = "sha256-nmYj6cA0YsUfDPcfJOOL7I5uG5MJI2PmPfWApvCk2+A=";
       };
     };
-    yarr = {
-      name = "yarr!";
-      tailnetHost = "rss";
-      path = "/";
-      icon = pkgs.fetchurl {
-        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/yarr.svg";
-        hash = "sha256-TCLbkkxG5XdG1VMxfQqwcpne9Ds0ZMXdrhZ//qSQQqw=";
-      };
-      actions = {
-        Starred = "/?view=starred";
-        Triage = "/?view=triage";
-        Unread = "/?view=unread";
-      };
-    };
-    # The old Fizzy PWA also had "Latest Activity" (/1/) and "Notifications"
-    # (/1/notifications) shortcuts. Both are different PATHS, so as `--app`
-    # windows they would get different app-ids from the main window; they
-    # are deliberately not carried over — both are one click inside Fizzy.
-    fizzy = {
-      name = "Fizzy";
-      tailnetHost = "todo";
-      path = "/";
-      icon = pkgs.fetchurl {
-        url = "https://raw.githubusercontent.com/basecamp/fizzy/4031d98b7b1790ef6ae4e7fd32fbe418d8e36fb6/public/app-icon.png";
-        hash = "sha256-OP+g9lAC4rIvrxl+LHxtTHxm4zTtu+/Y1G3gwNQ5jpM=";
-      };
-    };
-    # Added:
     gmail = {
       name = "Gmail";
       url = "https://mail.google.com/";
@@ -2392,11 +2376,97 @@ let
         hash = "sha256-/z0Yv50GoifM/VVpdLL880T4Mz/lKGOlJcvV5D/eoAQ=";
       };
     };
+
+    # Outpost apps (github.com/sroberts/outpost). Each service is its own
+    # tailnet node named after its `tailscale_name`, and every node goes
+    # through Outpost's login gateway: the first launch in a window bounces
+    # to https://outpost.<tailnet>/login?app=<name> and back, which keeps the
+    # window's app-id (fixed at open). Logins live in the Default profile, so
+    # signing in once in any window covers the browser and the other apps.
+    # Adding one: `tailnetHost` = its tailscale_name, `path = "/"`.
+    outpost = {
+      name = "Outpost";
+      tailnetHost = "outpost";
+      path = "/";
+      icon = "${pkgs.papirus-icon-theme}/share/icons/Papirus/64x64/apps/preferences-system-network.svg";
+    };
+    yarr = {
+      name = "yarr!";
+      tailnetHost = "yarr";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/59f1e9a4108f4f510f41e9588f078631de1e1405/svg/yarr.svg";
+        hash = "sha256-TCLbkkxG5XdG1VMxfQqwcpne9Ds0ZMXdrhZ//qSQQqw=";
+      };
+      actions = {
+        Starred = "/?view=starred";
+        Triage = "/?view=triage";
+        Unread = "/?view=unread";
+      };
+    };
+    tasking = {
+      name = "Tasking";
+      tailnetHost = "tasking";
+      path = "/";
+      icon = ./assets/webapps/tasking.png; # private repo, so vendored
+    };
+    sous = {
+      name = "Sous";
+      tailnetHost = "sous";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/sroberts/sous/632f60f752b1cf7b67df906de76600893b235a70/web/public/icons/icon.svg";
+        hash = "sha256-SfYj5Q/WiIZpNOcCJy2UkHyR1INO8E5pSpmAlHLO76A=";
+      };
+    };
+    domestique = {
+      name = "Domestique";
+      tailnetHost = "domestique";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/sroberts/domestique/1cd637e61c71ba51af508130ee508792cf54df23/web/public/icons/icon-512.png";
+        hash = "sha256-oy4MgUcja++wPDU8PLmL2L9hEVzqO6wcFgOpg9+lFXc=";
+      };
+    };
+    dossier = {
+      name = "Dossier";
+      tailnetHost = "dossier";
+      path = "/";
+      icon = "${pkgs.papirus-icon-theme}/share/icons/Papirus/64x64/apps/accessories-notes.svg";
+    };
+    soft-serve = {
+      name = "Soft Serve";
+      tailnetHost = "soft-serve";
+      path = "/";
+      icon = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/sroberts/soft-serve/fbe263edeb448c1e698e0e7e06e1407bca012742/pkg/web/ui_static/icon-512.png";
+        hash = "sha256-VVsEB4eK4BKH6LdZBAN7McgnW6APpC39IuaROSGIdWQ=";
+      };
+    };
   };
 
-  # The one launcher every web-app entry execs:
-  #   webapp-launch <https-url>
-  #   webapp-launch --tailnet <host> <path>
+  # Launch arguments for one web app at one path, shared by the desktop
+  # entries (xdg.desktopEntries below) and the picker (webappMenu).
+  webappArgs =
+    app: p:
+    if app ? tailnetHost then
+      [
+        "--tailnet"
+        app.tailnetHost
+        p
+      ]
+    else
+      [ "https://${lib.head (lib.match "https://([^/]+)/.*" app.url)}${p}" ];
+  webappStartPath = app: app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
+
+  # The one launcher every web-app entry, the picker and the Claude bind exec:
+  #   webapp-launch [--new] <https-url>
+  #   webapp-launch [--new] --tailnet <host> <path>
+  # If a window of that app is already open it is focused (launch-or-focus,
+  # so repeat presses cycle through several) instead of opening a second one;
+  # `--new` always opens a window, which the right-click actions use. The
+  # app-id is worked out here from the final URL by the rule in the webApps
+  # comment, which is what makes this work for tailnet apps too.
   # It pins `--profile-directory=Default` so the app-id suffix is always
   # "-Default" (and the windows share the main profile's logins and the
   # policy-installed extensions). pkgs.chromium is the same derivation
@@ -2410,6 +2480,8 @@ let
       tailscale
       jq
       libnotify
+      launchOrFocus
+      osConfig.programs.niri.package # `--new` spawns through niri
     ];
     text = ''
       fail() {
@@ -2418,8 +2490,14 @@ let
         exit 1
       }
 
+      new=0
+      if [ "''${1:-}" = "--new" ]; then
+        new=1
+        shift
+      fi
+
       if [ "''${1:-}" = "--tailnet" ]; then
-        [ "$#" -eq 3 ] || fail "usage: webapp-launch --tailnet <host> <path>"
+        [ "$#" -eq 3 ] || fail "usage: webapp-launch [--new] --tailnet <host> <path>"
         host=$2
         path=$3
         # Override for testing or a non-MagicDNS setup.
@@ -2430,13 +2508,52 @@ let
         [ -n "$suffix" ] || fail "could not read the tailnet name from tailscaled — is Tailscale up? (\`tailscale status\`)"
         url="https://$host.$suffix$path"
       else
-        [ "$#" -eq 1 ] || fail "usage: webapp-launch <url> | --tailnet <host> <path>"
+        [ "$#" -eq 1 ] || fail "usage: webapp-launch [--new] <url> | [--new] --tailnet <host> <path>"
         url=$1
       fi
 
-      exec chromium --profile-directory=Default --app="$url"
+      cmd=(chromium --profile-directory=Default --app="$url")
+      if [ "$new" -eq 1 ]; then
+        exec niri msg action spawn -- "''${cmd[@]}"
+      fi
+
+      # chrome-<host>_<path>-Default: drop the scheme, query and fragment,
+      # '/' → '_', then regex-escape it for launch-or-focus's exact match.
+      rest=''${url#https://}
+      rest=''${rest%%[?#]*}
+      app_id="chrome-''${rest%%/*}_$(printf '%s' "/''${rest#*/}" | tr '/' '_')-Default"
+      re=$(printf '%s' "$app_id" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
+      exec launch-or-focus "^$re$" "''${cmd[@]}"
     '';
   };
+
+  # Mod+Alt+W: every web app in one themed picker (Noctalia's launcher in
+  # dmenu mode, as in systemMenu), so the Outpost apps don't each need a
+  # keybind. Picking one goes through webapp-launch, so an open app is
+  # focused rather than opened twice. The list is fixed at build time from
+  # `webApps`, sorted by name.
+  webappMenu =
+    let
+      entries = lib.sort (a: b: lib.toLower a.name < lib.toLower b.name) (lib.attrValues webApps);
+      cases = lib.concatMapStrings (app: ''
+        ${lib.escapeShellArg app.name}) exec webapp-launch ${lib.escapeShellArgs (webappArgs app (webappStartPath app))} ;;
+      '') entries;
+    in
+    pkgs.writeShellApplication {
+      name = "webapp-menu";
+      runtimeInputs = [
+        config.programs.noctalia.package
+        webappLaunch
+      ];
+      text = ''
+        choice=$(printf '%s\n' ${lib.escapeShellArgs (map (a: a.name) entries)} \
+          | noctalia dmenu --prompt "Web apps") || exit 0
+        case "$choice" in
+          ${cases}
+          *) exit 0 ;;
+        esac
+      '';
+    };
 
   # Parakeet model for voxtype dictation (services.voxtype below), fetched
   # reproducibly into the store instead of via `voxtype setup --download` /
@@ -3472,6 +3589,21 @@ in
         ];
       };
 
+      # Web apps (webApps in the let block). Claude gets its own bind; the
+      # rest are one picker away, so the Outpost apps don't use up letters.
+      # webapp-launch does the launch-or-focus itself.
+      "Mod+Shift+C" = {
+        _props.hotkey-overlay-title = "Claude";
+        spawn = [
+          "${lib.getExe webappLaunch}"
+          "https://claude.ai/"
+        ];
+      };
+      "Mod+Alt+W" = {
+        _props.hotkey-overlay-title = "Web Apps";
+        spawn = "${lib.getExe webappMenu}";
+      };
+
       # Window
       "Mod+Q".close-window = [ ];
 
@@ -3669,7 +3801,7 @@ in
       # and a notification shows hex + rgb(). Escape cancels silently. See
       # pickColor in the let block. Absolute store path so the bind doesn't
       # depend on niri's spawn PATH.
-      "Mod+Shift+C" = {
+      "Mod+Alt+C" = {
         _props.hotkey-overlay-title = "Colour Picker";
         spawn = "${pickColor}/bin/pick-color";
       };
@@ -4995,21 +5127,20 @@ in
     lib.mapAttrs' (
       key: app:
       let
-        # Public apps: split `url` so actions can reuse the host. Lazy, so
-        # never forced for tailnet apps (which have no `url`).
         host = lib.head (lib.match "https://([^/]+)/.*" app.url);
-        startPath = app.path or (lib.head (lib.match "https://[^/]+(/.*)" app.url));
+        startPath = webappStartPath app;
+        # Each arg double-quoted (desktop-entry Exec quoting, not shell's);
+        # none of them contain a char that would need escaping inside.
         launch =
-          p:
-          if app ? tailnetHost then
-            ''${lib.getExe webappLaunch} --tailnet "${app.tailnetHost}" "${p}"''
-          else
-            ''${lib.getExe webappLaunch} "https://${host}${p}"'';
+          extra: p:
+          lib.concatMapStringsSep " " (a: ''"${a}"'') (
+            [ (lib.getExe webappLaunch) ] ++ extra ++ webappArgs app p
+          );
       in
       lib.nameValuePair "webapp-${key}" {
         inherit (app) name;
         genericName = "Web App";
-        exec = launch startPath;
+        exec = launch [ ] startPath;
         icon = "${app.icon}";
         terminal = false;
         categories = [ "Network" ];
@@ -5021,7 +5152,7 @@ in
         };
         actions = lib.mapAttrs (actionName: actionPath: {
           name = actionName;
-          exec = launch actionPath;
+          exec = launch [ "--new" ] actionPath;
         }) (app.actions or { });
       }
     ) webApps
