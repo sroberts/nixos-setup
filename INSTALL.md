@@ -271,9 +271,27 @@ docker run --rm hello-world
 
 # Ollama up (if rocm caused a crash, swap to pkgs.ollama-vulkan or pkgs.ollama in configuration.nix)
 curl -s http://localhost:11434/api/version
+journalctl -u ollama -b | grep "inference compute"   # want library=ROCm, not cpu
+
+# Models pulled. ollama-model-loader.service downloads services.ollama.loadModels
+# in the background on first start (~85 GB); wait for it to finish.
+systemctl status ollama-model-loader   # inactive (dead) = done
+ollama list                            # qwen3.6:35b-a3b and gemma4:26b-a4b present
 
 # AI CLIs on PATH
 claude --version
+
+# Hermes Agent. Do NOT run `hermes setup`: services.hermes-agent in home.nix
+# makes the config Nix-managed (~/.hermes/.managed), so the wizard refuses,
+# and there is nothing to set anyway. The model (qwen3.6:35b-a3b on the
+# local Ollama, no API key) is declared there. Change it in home.nix, not
+# with `hermes config set` or the app's settings panes. `hermes doctor`
+# still says "Run 'hermes setup' to configure missing API keys": those are
+# optional extras (OpenRouter, xAI, Discord, image gen). If you want one,
+# add it to ~/.hermes/.env by hand, which keeps secrets out of this repo.
+hermes doctor                          # all ✓ except optional extras
+hermes                                 # chat; ask it to run a tool (e.g. `ls`)
+ollama ps                              # while it answers: model loaded, on GPU
 ```
 
 Work through `~/TODO.md` (auto-created on first activation) for the
